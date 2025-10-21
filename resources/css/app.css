@@ -1,0 +1,51 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+/* scan paths */
+@source "../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php";
+@source "../../storage/framework/views/*.php";
+@source "../**/*.blade.php";
+@source "../**/*.js";
+
+/* Brand tokens (Tailwind v4) */
+@theme {
+  --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji',
+               'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+
+  /* brand (carrot orange) */
+  --color-brand:      #f39b3c; /* 500 */
+  --color-brand-600:  #db8b33;
+  --color-brand-700:  #c07a2b;
+
+  /* accent (true blue) */
+  --color-accent:     #3c63b1; /* 500 */
+  --color-accent-600: #34579d;
+  --color-accent-700: #2d4c89;
+
+  /* ink / navy (oxford blue) */
+  --color-ink:        #14243c;
+  --color-ink-600:    #0f1b2b;
+
+  /* support (mint) */
+  --color-mint:       #bbd8b3;
+
+  /* neutrals */
+  --color-surface:    #ffffff;
+  --color-muted:      #f3f4f6;
+}
+
+
+/* 3rd-party CSS */
+@import "@fortawesome/fontawesome-free/css/all.min.css";
+@import "sweetalert2/dist/sweetalert2.min.css";
+
+/* tiny helpers */
+.skeleton { @apply animate-pulse bg-gray-200 rounded; }
+
+/* component-ish utilities (optional) */
+.btn { @apply inline-flex items-center justify-center rounded-xl px-4 py-2 font-medium transition; }
+.btn-primary    { @apply bg-brand text-white hover:bg-brand-600 focus:outline-none focus:ring-2 focus:ring-brand/40; }
+.btn-secondary  { @apply bg-accent text-white hover:bg-accent-600 focus:outline-none focus:ring-2 focus:ring-accent/40; }
+.btn-outline    { @apply border border-brand text-brand hover:bg-brand/10; }
+.chip           { @apply inline-flex items-center rounded-lg px-2.5 py-1 text-sm; }
+.chip-accent    { @apply bg-accent/10 text-accent; }
