@@ -1,23 +1,13 @@
-@extends('layouts.front')
-@section('title', __('error.401.title'))
+@extends('errors._layout')
 
-@section('content')
-<div class="min-h-[60vh] grid place-items-center px-4 sm:px-6 lg:px-8">
-  <div class="w-full max-w-xl text-center">
-    <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-blue-50 text-blue-600 ring-1 ring-blue-100 mx-auto">
-      <svg class="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M12 11v4"/><path d="M12 7h.01"/><circle cx="12" cy="12" r="10"/>
-      </svg>
-    </div>
+@section('title', 'Unauthorized')
+@section('code', '401')
+@section('headline', 'Authentication required')
+@section('message', 'You must be logged in to access this page.')
 
-    <h1 class="mt-4 text-2xl font-bold text-gray-900">401 — {{ __('error.401.title') }}</h1>
-    <p class="mt-2 text-gray-600">{{ __('error.401.desc') }}</p>
-
-    <div class="mt-6 flex flex-wrap items-center justify-center gap-3">
-      <a href="{{ route('login') }}" class="btn btn-primary">{{ __('error.actions.sign_in') }}</a>
-      <button type="button" onclick="history.back()" class="btn btn-outline">{{ __('error.actions.go_back') }}</button>
-      <a href="{{ route('home') }}" class="btn btn-outline">{{ __('error.actions.home') }}</a>
-    </div>
-  </div>
-</div>
+@section('icon')
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+    <path d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4Z" stroke="currentColor" stroke-width="2"/>
+    <path d="M20 21a8 8 0 1 0-16 0" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+</svg>
 @endsection

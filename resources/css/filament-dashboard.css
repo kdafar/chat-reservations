@@ -1,0 +1,15 @@
+@custom-variant dark (&:where(.dark, .dark *));
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+
+@import "@fortawesome/fontawesome-free/css/all.min.css";
+@import "sweetalert2/dist/sweetalert2.min.css";
+
+
+
+@source "../views/**/*.blade.php";
+@source "../views/filament/**/*.blade.php";
+@source "../views/vendor/filament/**/*.blade.php";
+@source "../js/**/*.js";
+@source "../js/**/*.ts";

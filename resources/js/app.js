@@ -90,3 +90,24 @@ document.addEventListener('DOMContentLoaded', () => {
     if (viewport) EmblaCarousel(viewport, { align: 'start', loop: false })
   })
 })
+
+// -----------------------------------------------------------------------------
+// Executive Dashboard (Filament): Browser event listener for chart refresh
+// Safe: no IIFE, no ASI pitfalls, idempotent.
+// -----------------------------------------------------------------------------
+if (!window.__execDashListenerRegistered) {
+  window.__execDashListenerRegistered = true;
+
+  window.addEventListener('dashboard-updated', (e) => {
+    console.log('[dashboard-updated] fired', e.detail);
+    window.__execDash = e.detail?.dashboardData ?? null;
+
+    // allow echarts to resize after Livewire DOM changes
+    window.dispatchEvent(new Event('resize'));
+  });
+
+  // Filament uses SPA-like navigation; keep visibility
+  document.addEventListener('livewire:navigated', () => {
+    console.log('[livewire:navigated] execdash listener still active');
+  });
+}

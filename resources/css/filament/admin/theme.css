@@ -1,0 +1,50 @@
+@config "../../tailwind.config.js";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---- Filament v3 design tokens ------------------------------------------------
+   We set tokens for both light and dark. Your UI is dark, so `.dark .fi` matters.
+   ------------------------------------------------------------------------------*/
+
+/* Light (optional; keep subtle) */
+.fi {
+  --primary-600: #b19860;
+  --primary-500: #b19860;
+  --primary-700: #9a844e;
+}
+
+/* Dark theme */
+.dark .fi {
+  /* brand */
+  --primary-600: #b19860;
+  --primary-500: #b19860;
+  --primary-700: #9a844e;
+  --ring: var(--primary-600);
+
+  /* surfaces */
+  --background: #1b2134;            /* app body bg */
+  --content-background: #1a2033;    /* cards / content surface */
+  --muted: #2a314c;                 /* subtle borders & fills */
+
+  /* layout */
+  --sidebar-background: #1f253a;
+  --topbar-background: #1f253a;
+
+  /* text colors in dark */
+  --text-900: #f3f4f6;
+  --text-800: #e6e8f0;
+  --text-700: #cfd3e2;
+}
+
+/* Sidebar links / active state fine-tuning */
+.dark .fi .fi-sidebar-item a {
+  color: var(--text-700);
+}
+.dark .fi .fi-sidebar-item a:hover {
+  color: var(--text-800);
+}
+.dark .fi .fi-sidebar-item-active a,
+.dark .fi .fi-sidebar-item-active .fi-icon {
+  color: #b19860;
+}

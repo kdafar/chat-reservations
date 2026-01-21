@@ -10,6 +10,7 @@ use Spatie\Translatable\HasTranslations;
 
 class Promotion extends Model
 {
+    use \App\Models\Concerns\BelongsToBranchScope;
     use HasTranslations, SoftDeletes;
 
     protected $fillable = [

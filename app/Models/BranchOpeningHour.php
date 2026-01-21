@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class BranchOpeningHour extends Model
 {
+    use \App\Models\Concerns\BelongsToBranchScope;
     use HasFactory;
 
     protected $fillable = [

@@ -2,37 +2,77 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\DB;
 use Spatie\Translatable\HasTranslations;
+use App\Models\User;
 
 class Partner extends Model
 {
     use HasTranslations;
 
-    protected $fillable = ['name', 'slug', 'logo_path', 'is_active'];
+    protected $fillable = ['name', 'slug', 'logo_path', 'is_active', 'website', 'email', 'license_number', 'footer_text'];
 
     public $translatable = ['name'];
 
     protected $casts = [
-        'name' => 'array', // For spatie/laravel-translatable
+        'name' => 'array',
         'is_active' => 'boolean',
     ];
+
+    /**
+     * SAFE SCOPE: Filters Partners based on User Access.
+     * Logic:
+     * 1. If Admin -> Show All.
+     * 2. If Linked via partner_user -> Show those.
+     * 3. If Linked via branch_user -> Show the parent partners of those branches.
+     */
+    public function scopeForUser(Builder $query, ?User $user = null): Builder
+    {
+        $user = $user ?? auth()->user();
+
+        // 1. Guard: No user or CLI context
+        if (! $user) {
+            return $query;
+        }
+
+        // 2. Guard: Admin Bypass (Matches your existing Logic in BelongsToBranchScope)
+        if (method_exists($user, 'hasRole') && $user->hasRole('admin')) {
+            return $query;
+        }
+
+        // 3. Get Direct Partner IDs (from partner_user pivot)
+        $directIds = DB::table('partner_user')
+            ->where('user_id', $user->id)
+            ->pluck('partner_id');
+
+        // 4. Get Indirect Partner IDs (from branch_user -> branches table)
+        // This ensures if a user is assigned ONLY to a Branch, they can still "see" the parent Clinic.
+        $indirectIds = DB::table('branch_user')
+            ->join('branches', 'branch_user.branch_id', '=', 'branches.id')
+            ->where('branch_user.user_id', $user->id)
+            ->pluck('branches.partner_id');
+
+        // 5. Merge and Unique
+        $allIds = $directIds->merge($indirectIds)->unique()->filter();
+
+        // 6. Apply Filter
+        return $query->whereIn('id', $allIds);
+    }
 
     public function branches()
     {
         return $this->hasMany(Branch::class);
     }
 
-    // NEW: services at partner level
     public function services(): BelongsToMany
     {
-        // Assumes you have a pivot table named 'partner_service'
         return $this->belongsToMany(Service::class);
     }
 
-    // NEW: partner-level users (owners/managers)
     public function users()
     {
         return $this->belongsToMany(User::class, 'partner_user');

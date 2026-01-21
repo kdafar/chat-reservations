@@ -1,6 +1,7 @@
 <?php
 
 use App\Console\Commands\PlatformVerify;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -19,6 +20,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'guest.front' => \App\Http\Middleware\GuestFront::class,
             'ensure.phoneVerified' => \App\Http\Middleware\EnsurePhoneVerified::class, // if you created it
             'partner.context' => \App\Http\Middleware\PartnerContext::class,
+            'pos.key' => \App\Http\Middleware\VerifyPosKey::class,
         ]);
 
         //  always run locale inside the web group
@@ -34,4 +36,18 @@ return Application::configure(basePath: dirname(__DIR__))
         PlatformVerify::class,
         \App\Console\Commands\SendTestMessage::class,
         // add more command classes here
-    ])->create();
+    ])
+    ->withSchedule(function (Schedule $schedule) {
+        $schedule->command('audience:refresh')
+            ->dailyAt('03:10')
+            ->withoutOverlapping()
+            ->onOneServer();
+        $schedule->command('clinic:daily-cleanup')->dailyAt('03:00');
+        $schedule->command('booking:cleanup-holds')->everyMinute();
+        $schedule->command('wa:sessions:expire')->everyFifteenMinutes();
+        $schedule->command('tables:free-stuck --hours=6')->dailyAt('03:00');
+        $schedule->command('queue:work --queue=campaigns,default --sleep=1 --max-time=55 --stop-when-empty')
+            ->everyMinute()
+            ->withoutOverlapping();
+    })
+    ->create();

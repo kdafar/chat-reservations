@@ -46,7 +46,7 @@ class PromotionResource extends Resource
     {
         return $form->schema([
             Section::make(__('Details'))->schema([
-                // ✅ Translatable fields (single keys, like StateResource)
+                // Translatable fields (single keys, like StateResource)
                 TextInput::make('title')
                     ->label(__('Title'))
                     ->required()

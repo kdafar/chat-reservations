@@ -2,9 +2,7 @@
 
 namespace App\Filament\Pages;
 
-use App\Filament\Widgets\FlowCompletionChart;
-use App\Filament\Widgets\SessionsPerDayChart;
-use App\Filament\Widgets\StatsOverview;
+use App\Filament\Widgets\WhatsAppStatusWidget;
 
 class Dashboard extends \Filament\Pages\Dashboard
 {
@@ -12,12 +10,12 @@ class Dashboard extends \Filament\Pages\Dashboard
 
     protected static string $view = 'filament.pages.dashboard';
 
+    protected static ?string $slug = 'dashboard';
+
     public function getHeaderWidgets(): array
     {
         return [
-            StatsOverview::class,
-            SessionsPerDayChart::class,
-            FlowCompletionChart::class,
+            WhatsAppStatusWidget::class,
         ];
     }
 

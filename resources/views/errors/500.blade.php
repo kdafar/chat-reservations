@@ -1,20 +1,14 @@
-@extends('layouts.front')
-@section('title', __('error.500.title'))
-@section('content')
-<div class="min-h-[60vh] grid place-items-center px-4 sm:px-6 lg:px-8">
-  <div class="w-full max-w-xl text-center">
-    <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-red-50 text-red-600 ring-1 ring-red-100 mx-auto">
-      <svg class="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <polyline points="7 13 10 16 17 9"></polyline>
-        <circle cx="12" cy="12" r="10"></circle>
-      </svg>
-    </div>
-    <h1 class="mt-4 text-2xl font-bold text-gray-900">500 — {{ __('error.500.title') }}</h1>
-    <p class="mt-2 text-gray-600">{{ __('error.500.desc') }}</p>
-    <div class="mt-6 flex flex-wrap items-center justify-center gap-3">
-      <button type="button" onclick="history.back()" class="btn btn-outline">{{ __('error.actions.go_back') }}</button>
-      <a href="{{ route('home') }}" class="btn btn-primary">{{ __('error.actions.home') }}</a>
-    </div>
-  </div>
-</div>
+@extends('errors._layout')
+
+@section('title', 'Server Error')
+@section('code', '500')
+@section('headline', 'Something went wrong')
+@section('message', 'An unexpected error occurred. Please try again. If the problem persists, contact support.')
+
+@section('icon')
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+    <path d="M12 9v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    <path d="M12 17h.01" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+    <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" stroke="currentColor" stroke-width="2"/>
+</svg>
 @endsection

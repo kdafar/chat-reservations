@@ -63,7 +63,7 @@ class CartController extends Controller
                 ];
             }
 
-            return $flat + $reserved; // ✅ keep reserved keys
+            return $flat + $reserved; // keep reserved keys
         }
 
         // CASE 2: map: groupId => id|[ids]
@@ -101,7 +101,7 @@ class CartController extends Controller
             }
         }
 
-        return $out + $reserved; // ✅ keep reserved keys
+        return $out + $reserved; // keep reserved keys
     }
 
     /**

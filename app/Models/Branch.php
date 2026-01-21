@@ -17,10 +17,10 @@ class Branch extends Model
 
     protected $fillable = [
         'partner_id', 'slug', 'logo_path', 'cover_image_path',
-        'name', 'phone', 'address',
+        'name', 'email', 'license_number', 'phone', 'address',
         'city_id', 'block_id', 'latitude', 'longitude',
         'rating_avg', 'rating_count',
-        'delivery_fee', 'min_order_amount',
+        'delivery_fee', 'min_order_amount', 'max_booking_days',
         'is_available', 'open_for_delivery', 'open_for_pickup',
     ];
 
@@ -41,6 +41,7 @@ class Branch extends Model
         'is_available' => 'boolean',
         'open_for_delivery' => 'boolean',
         'open_for_pickup' => 'boolean',
+        'max_booking_days' => 'integer',
     ];
 
     public $translatable = ['name'];
@@ -312,5 +313,16 @@ class Branch extends Model
     {
         return $this->hasMany(GatewayAccount::class, 'branch_id')
             ->where('owner_type', 'branch');
+    }
+
+    public function getLocalizedNameAttribute(): string
+    {
+        $name = $this->attributes['name'] ?? null;
+
+        // If casted to array in $casts, use $this->name directly:
+        $arr = is_array($this->name) ? $this->name : (is_string($name) ? json_decode($name, true) : []);
+        $locale = app()->getLocale();
+
+        return $arr[$locale] ?? $arr['en'] ?? $arr['ar'] ?? (is_string($this->name) ? $this->name : 'Branch #'.$this->id);
     }
 }

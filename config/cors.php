@@ -5,7 +5,7 @@ return [
     'allowed_methods' => ['*'],
     'allowed_origins' => [
         'http://localhost:3010',
-        'https://zad-hub.com',
+        'https://barfres.majestic-kw.com',
     ],
     'allowed_headers' => ['*'],
     'exposed_headers' => [],

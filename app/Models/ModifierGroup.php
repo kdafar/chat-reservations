@@ -7,6 +7,7 @@ use Spatie\Translatable\HasTranslations;
 
 class ModifierGroup extends Model
 {
+    use \App\Models\Concerns\BelongsToBranchScope;
     use HasTranslations;
 
     protected $fillable = ['branch_id', 'name', 'is_required', 'min_choices', 'max_choices'];

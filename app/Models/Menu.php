@@ -7,6 +7,7 @@ use Spatie\Translatable\HasTranslations;
 
 class Menu extends Model
 {
+    use \App\Models\Concerns\BelongsToBranchScope;
     use HasTranslations;
 
     protected $fillable = ['branch_id', 'name', 'description', 'is_active'];

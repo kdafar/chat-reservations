@@ -60,7 +60,7 @@
       <img
         src="{{ asset('storage/images/logo.svg') }}"
         alt="{{ config('app.name', 'Zad Hub') }}"
-        class="h-14 sm:h-16 md:h-18 w-auto filter brightness-0 invert"
+        class="h-14 sm:h-16 md:h-18 w-auto"
         onerror="this.src='{{ asset('images/logo.svg') }}'">
       <span class="sr-only">{{ config('app.name', 'Zad Hub') }}</span>
     </div>

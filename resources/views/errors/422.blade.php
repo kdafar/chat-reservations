@@ -1,17 +1,14 @@
-@extends('layouts.front')
-@section('title', __('error.422.title'))
-@section('content')
-<div class="min-h-[60vh] grid place-items-center px-4 sm:px-6 lg:px-8">
-  <div class="w-full max-w-xl text-center">
-    <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-amber-50 text-amber-600 ring-1 ring-amber-100 mx-auto">
-      <svg class="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4"/><path d="M12 17h.01"/><circle cx="12" cy="12" r="10"/></svg>
-    </div>
-    <h1 class="mt-4 text-2xl font-bold text-gray-900">422 — {{ __('error.422.title') }}</h1>
-    <p class="mt-2 text-gray-600">{{ __('error.422.desc') }}</p>
-    <div class="mt-6 flex flex-wrap items-center justify-center gap-3">
-      <button type="button" onclick="history.back()" class="btn btn-outline">{{ __('error.actions.go_back') }}</button>
-      <a href="{{ route('home') }}" class="btn btn-primary">{{ __('error.actions.home') }}</a>
-    </div>
-  </div>
-</div>
+@extends('errors._layout')
+
+@section('title', 'Unprocessable Request')
+@section('code', '422')
+@section('headline', 'Invalid request data')
+@section('message', 'The request was well-formed but could not be processed. Please check the submitted data and try again.')
+
+@section('icon')
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+    <path d="M12 8v5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    <path d="M12 16h.01" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+    <path d="M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0Z" stroke="currentColor" stroke-width="2"/>
+</svg>
 @endsection

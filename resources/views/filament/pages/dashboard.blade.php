@@ -1,5 +1,5 @@
 <x-filament-panels::page.simple>
-    @if(method_exists($this, 'getHeaderWidgets'))
+    @if (method_exists($this, 'getHeaderWidgets'))
         <x-filament-widgets::widgets
             :widgets="$this->getHeaderWidgets()"
             :columns="$this->getHeaderWidgetsColumns()"
@@ -8,105 +8,267 @@
     @endif
 
     <style>
-        .custom-prose h2 {
-            font-size: 1.5rem;
-            font-weight: 600;
-            margin-top: 2rem;
-            margin-bottom: 1rem;
-        }
-        .custom-prose h3 {
-            font-size: 1.25rem;
-            font-weight: 600;
-            margin-top: 1.5rem;
-            margin-bottom: 0.75rem;
-        }
-        .custom-prose p, .custom-prose ul, .custom-prose ol {
-            line-height: 1.7;
-        }
-        .custom-prose ul, .custom-prose ol {
-            padding-left: 1.5rem;
-        }
-        .custom-prose li {
-            margin-bottom: 0.5rem;
-        }
+        .custom-prose h2 { font-size: 1.5rem; font-weight: 700; margin-top: 2rem; margin-bottom: 1rem; }
+        .custom-prose h3 { font-size: 1.15rem; font-weight: 700; margin-top: 1.5rem; margin-bottom: .75rem; }
+        .custom-prose p, .custom-prose ul, .custom-prose ol { line-height: 1.7; }
+        .custom-prose ul, .custom-prose ol { padding-left: 1.5rem; }
+        .custom-prose li { margin-bottom: .5rem; }
         .custom-prose code {
             background-color: var(--gray-100);
             color: var(--danger-600);
-            padding: 0.2rem 0.4rem;
-            border-radius: 4px;
-            font-weight: 600;
-            font-size: 0.9em;
+            padding: .2rem .4rem;
+            border-radius: 6px;
+            font-weight: 700;
+            font-size: .9em;
         }
-        .dark .custom-prose code {
-            background-color: var(--gray-800);
-            color: var(--danger-400);
+        .dark .custom-prose code { background-color: var(--gray-800); color: var(--danger-400); }
+
+        .quick-link-card { transition: all .2s ease-in-out; }
+        .quick-link-card:hover { transform: translateY(-3px); box-shadow: 0 10px 22px rgba(0,0,0,.10); }
+        .dark .quick-link-card:hover { box-shadow: 0 10px 22px rgba(0,0,0,.25); }
+
+        .hero {
+            border: 1px solid rgba(148,163,184,.35);
+            background:
+                radial-gradient(1200px 400px at 10% 0%, rgba(59,130,246,.12), transparent 60%),
+                radial-gradient(900px 360px at 90% 0%, rgba(16,185,129,.10), transparent 60%),
+                linear-gradient(180deg, rgba(255,255,255,.85), rgba(255,255,255,.60));
         }
-        .quick-link-card {
-            transition: all 0.2s ease-in-out;
+        .dark .hero {
+            border-color: rgba(51,65,85,.55);
+            background:
+                radial-gradient(1200px 400px at 10% 0%, rgba(59,130,246,.18), transparent 60%),
+                radial-gradient(900px 360px at 90% 0%, rgba(16,185,129,.14), transparent 60%),
+                linear-gradient(180deg, rgba(17,24,39,.75), rgba(17,24,39,.55));
         }
-        .quick-link-card:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            gap: .5rem;
+            padding: .4rem .6rem;
+            border-radius: 999px;
+            border: 1px solid rgba(148,163,184,.35);
+            background: rgba(255,255,255,.75);
+            font-size: .8rem;
         }
-        .dark .quick-link-card:hover {
-            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        .dark .pill {
+            border-color: rgba(51,65,85,.55);
+            background: rgba(17,24,39,.55);
         }
+
+        .section-title {
+            font-size: .9rem;
+            font-weight: 800;
+            letter-spacing: .03em;
+            text-transform: uppercase;
+            color: rgba(100,116,139,1);
+        }
+        .dark .section-title { color: rgba(148,163,184,1); }
+
+        .card-title {
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+            gap: 10px;
+        }
+        .card-title h4 { margin:0; }
+        .kbd {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            font-size: .72rem;
+            padding: .15rem .4rem;
+            border-radius: 6px;
+            border: 1px solid rgba(148,163,184,.35);
+            background: rgba(248,250,252,.7);
+        }
+        .dark .kbd { border-color: rgba(51,65,85,.55); background: rgba(15,23,42,.65); }
     </style>
 
-    <div class="custom-prose text-gray-600 dark:text-gray-400">
+    <div class="custom-prose text-gray-600 dark:text-gray-300">
+        {{-- HERO --}}
         <x-filament::section>
-            <div class="space-y-4">
-                <h2 class="!mt-0">Welcome to the WhatsApp Platform Hub!</h2>
-                <p class="text-lg">
-                    This is your command center for creating and managing powerful, automated WhatsApp conversations. Think of this platform as a factory for building custom chatbots for different types of businesses.
-                </p>
-
-                <h3>What is this Platform?</h3>
-                <p>
-                    Imagine you want to create a WhatsApp bot for a restaurant to take orders, and another for a clinic to book appointments. Instead of building each one from scratch, this platform lets you create a reusable <strong>"Blueprint"</strong> for each business type. Then, you can launch new bots for specific businesses quickly and easily.
-                </p>
-
-                <h3>The Building Blocks</h3>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div class="space-y-2">
-                        <x-filament::icon icon="heroicon-o-clipboard-document-list" class="w-8 h-8 text-primary-500" />
-                        <h4>Service Types (The Blueprints)</h4>
-                        <p>A <code>Service Type</code> is a master template for a business category (e.g., "Food Delivery"). Here, you define the standard conversation flow and the kind of information to collect.</p>
+            <div class="hero rounded-xl p-6 md:p-7">
+                <div class="flex flex-col gap-4">
+                    <div class="flex flex-wrap items-center gap-2">
+                        <span class="pill">🏥 Clinic Operations</span>
+                        <span class="pill">📲 WhatsApp Booking Flow</span>
+                        <span class="pill">🧾 Appointments & Check-in</span>
                     </div>
-                    <div class="space-y-2">
-                        <x-filament::icon icon="heroicon-o-building-storefront" class="w-8 h-8 text-primary-500" />
-                        <h4>Providers (The Businesses)</h4>
-                        <p>A <code>Provider</code> is a specific business using the platform, like "Slice Pizza." Each Provider is based on a Service Type blueprint and gets its own customized chatbot.</p>
+
+                    <div>
+                        <h2 class="!mt-0 text-gray-900 dark:text-white">
+                            Welcome to the Clinic Booking Hub
+                        </h2>
+                        <p class="text-base md:text-lg">
+                            Manage your WhatsApp-driven clinic appointments: configure patient messages and commands,
+                            control availability, and run daily front-desk operations — from one place.
+                        </p>
                     </div>
-                    <div class="space-y-2">
-                        <x-filament::icon icon="heroicon-o-chat-bubble-left-right" class="w-8 h-8 text-primary-500" />
-                        <h4>Flows (The Conversations)</h4>
-                        <p>A <code>Flow</code> is the actual, step-by-step conversation a customer has on WhatsApp. When you add a new Provider, they get their own copy of a Flow to use and customize.</p>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div class="rounded-lg border border-gray-200 dark:border-gray-700 bg-white/70 dark:bg-gray-900/40 p-4">
+                            <div class="section-title">Front Desk</div>
+                            <div class="mt-1 text-sm">
+                                Check-in patients, assign rooms, and handle reschedules/cancellations quickly.
+                            </div>
+                        </div>
+                        <div class="rounded-lg border border-gray-200 dark:border-gray-700 bg-white/70 dark:bg-gray-900/40 p-4">
+                            <div class="section-title">Availability</div>
+                            <div class="mt-1 text-sm">
+                                Set clinic hours, time slots, lead time, and blackout dates per branch.
+                            </div>
+                        </div>
+                        <div class="rounded-lg border border-gray-200 dark:border-gray-700 bg-white/70 dark:bg-gray-900/40 p-4">
+                            <div class="section-title">WhatsApp System</div>
+                            <div class="mt-1 text-sm">
+                                Control templates, feature flags, sessions, and logs for debugging.
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="pt-2">
+                        <h3 class="text-gray-900 dark:text-white">Start Here</h3>
+                        <ol class="list-decimal space-y-2">
+                            <li>
+                                <strong>Define WhatsApp Commands:</strong>
+                                Go to
+                                <a href="{{ \App\Filament\Resources\WACommandResource::getUrl() }}"
+                                   class="text-primary-600 hover:underline">
+                                    Commands
+                                </a>
+                                to add keywords like <code>hi</code>, <code>start</code>, <code>reset</code> (EN/AR)
+                                and map their actions.
+                            </li>
+                            <li>
+                                <strong>Edit Patient-Facing Messages:</strong>
+                                Open
+                                <a href="{{ \App\Filament\Resources\WAMessageResource::getUrl() }}"
+                                   class="text-primary-600 hover:underline">
+                                    Message Catalog
+                                </a>
+                                and update prompts, errors, and confirmations (variables like
+                                <code>{date}</code>, <code>{time}</code>, <code>{clinic}</code>).
+                            </li>
+                            <li>
+                                <strong>Verify System Settings:</strong>
+                                In
+                                <a href="{{ \App\Filament\Resources\SystemSettingResource::getUrl() }}"
+                                   class="text-primary-600 hover:underline">
+                                    System Settings
+                                </a>
+                                confirm tokens, template names/locales, and feature flags (Flows toggle, fallbacks, session expiry).
+                            </li>
+                        </ol>
                     </div>
                 </div>
-
-                <h3>How It Works in 3 Steps</h3>
-                <ol class="list-decimal space-y-2">
-                    <li><strong>Create a Blueprint:</strong> Go to <a href="{{ \App\Filament\Resources\ServiceTypeResource::getUrl() }}" class="text-primary-600 hover:underline">Service Types</a> and create a new blueprint for a business category, like "Retail".</li>
-                    <li><strong>Onboard a Business:</strong> Go to <a href="{{ \App\Filament\Resources\ProviderResource::getUrl() }}" class="text-primary-600 hover:underline">Providers</a>, create a new business like "SuperMart", and assign it to the "Retail" Service Type. The system automatically gives SuperMart its own conversation Flow.</li>
-                    <li><strong>Go Live:</strong> When a customer messages SuperMart on WhatsApp using a specific keyword, the system uses its unique Flow to manage the conversation automatically.</li>
-                </ol>
             </div>
         </x-filament::section>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <a href="{{ \App\Filament\Resources\ServiceTypeResource::getUrl() }}" class="block p-6 bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 quick-link-card">
-                <h4 class="text-lg font-semibold text-gray-900 dark:text-white">Manage Service Types</h4>
-                <p class="mt-1 text-sm">Define the core business categories for the platform.</p>
-            </a>
-            <a href="{{ \App\Filament\Resources\ProviderResource::getUrl() }}" class="block p-6 bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 quick-link-card">
-                <h4 class="text-lg font-semibold text-gray-900 dark:text-white">Manage Providers</h4>
-                <p class="mt-1 text-sm">Onboard and configure the businesses using the service.</p>
-            </a>
-            <a href="{{ \App\Filament\Resources\FlowResource::getUrl() }}" class="block p-6 bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 quick-link-card">
-                <h4 class="text-lg font-semibold text-gray-900 dark:text-white">Build Flows</h4>
-                <p class="mt-1 text-sm">Create and edit the conversational flows for providers.</p>
-            </a>
+        <div class="mt-6">
+            <div class="flex items-center justify-between mb-3">
+                <div class="section-title">Quick Access</div>
+                <div class="text-xs text-gray-500 dark:text-gray-400">
+                    Tip: use search in each page for fast lookup.
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {{-- CONFIG & COPY --}}
+                <a href="{{ \App\Filament\Resources\WACommandResource::getUrl() }}"
+                   class="block p-6 bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 quick-link-card">
+                    <div class="card-title">
+                        <h4 class="text-lg font-semibold text-gray-900 dark:text-white">Commands</h4>
+                        <span class="kbd">WhatsApp</span>
+                    </div>
+                    <p class="mt-2 text-sm">Admin keywords (EN/AR) → actions (start, reset, menu, jump).</p>
+                </a>
+
+                <a href="{{ \App\Filament\Resources\WAMessageResource::getUrl() }}"
+                   class="block p-6 bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 quick-link-card">
+                    <div class="card-title">
+                        <h4 class="text-lg font-semibold text-gray-900 dark:text-white">Message Catalog</h4>
+                        <span class="kbd">Copy</span>
+                    </div>
+                    <p class="mt-2 text-sm">Patient-facing prompts, variables, and previews.</p>
+                </a>
+
+                <a href="{{ \App\Filament\Resources\SystemSettingResource::getUrl() }}"
+                   class="block p-6 bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 quick-link-card">
+                    <div class="card-title">
+                        <h4 class="text-lg font-semibold text-gray-900 dark:text-white">System Settings</h4>
+                        <span class="kbd">Config</span>
+                    </div>
+                    <p class="mt-2 text-sm">Feature flags, WABA config, template names/locales.</p>
+                </a>
+
+                {{-- OPERATIONS --}}
+                <a href="{{ \App\Filament\Resources\BookingResource::getUrl() }}"
+                   class="block p-6 bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 quick-link-card">
+                    <div class="card-title">
+                        <h4 class="text-lg font-semibold text-gray-900 dark:text-white">Appointments</h4>
+                        <span class="kbd">Ops</span>
+                    </div>
+                    <p class="mt-2 text-sm">Search, filter, and manage upcoming patient appointments.</p>
+                </a>
+
+                @if (class_exists(\App\Filament\Resources\WhatsappSessionResource::class))
+                    <a href="{{ \App\Filament\Resources\WhatsappSessionResource::getUrl() }}"
+                       class="block p-6 bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 quick-link-card">
+                        <div class="card-title">
+                            <h4 class="text-lg font-semibold text-gray-900 dark:text-white">Sessions</h4>
+                            <span class="kbd">State</span>
+                        </div>
+                        <p class="mt-2 text-sm">Inspect user flow state; reset if needed.</p>
+                    </a>
+                @endif
+
+                <a href="{{ \App\Filament\Resources\WAMessageLogResource::getUrl() }}"
+                   class="block p-6 bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 quick-link-card">
+                    <div class="card-title">
+                        <h4 class="text-lg font-semibold text-gray-900 dark:text-white">WhatsApp Logs</h4>
+                        <span class="kbd">Debug</span>
+                    </div>
+                    <p class="mt-2 text-sm">Payloads, idempotency, errors, and duplicates.</p>
+                </a>
+
+                {{-- AVAILABILITY & BRANCHES --}}
+                <a href="{{ \App\Filament\Resources\BranchAvailabilityRuleResource::getUrl() }}"
+                   class="block p-6 bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 quick-link-card">
+                    <div class="card-title">
+                        <h4 class="text-lg font-semibold text-gray-900 dark:text-white">Clinic Hours & Slots</h4>
+                        <span class="kbd">Hours</span>
+                    </div>
+                    <p class="mt-2 text-sm">Working hours, lead time, capacity per day.</p>
+                </a>
+
+                <a href="{{ \App\Filament\Resources\BranchBlackoutResource::getUrl() }}"
+                   class="block p-6 bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 quick-link-card">
+                    <div class="card-title">
+                        <h4 class="text-lg font-semibold text-gray-900 dark:text-white">Closures</h4>
+                        <span class="kbd">Dates</span>
+                    </div>
+                    <p class="mt-2 text-sm">Block specific dates per clinic/branch.</p>
+                </a>
+
+                <a href="{{ \App\Filament\Resources\BranchResource::getUrl() }}"
+                   class="block p-6 bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 quick-link-card">
+                    <div class="card-title">
+                        <h4 class="text-lg font-semibold text-gray-900 dark:text-white">Clinics / Branches</h4>
+                        <span class="kbd">Catalog</span>
+                    </div>
+                    <p class="mt-2 text-sm">Manage clinic info and availability toggles.</p>
+                </a>
+            </div>
+
+            <div class="mt-6 text-sm text-gray-500 dark:text-gray-400">
+                <div class="section-title mb-2">Daily Workflow</div>
+                <ul class="list-disc space-y-1">
+                    <li>Front desk opens <strong>Appointments</strong>, filters <code>today</code>, and prepares rooms.</li>
+                    <li>Use <strong>Clinic Check-in Scanner</strong> to scan patient QR and mark arrival.</li>
+                    <li>For unexpected closures, add a <strong>Closure</strong> date and reschedule affected patients.</li>
+                    <li>If WhatsApp flow acts weird, check <strong>Sessions</strong> and <strong>WhatsApp Logs</strong>.</li>
+                </ul>
+            </div>
         </div>
     </div>
 </x-filament-panels::page.simple>

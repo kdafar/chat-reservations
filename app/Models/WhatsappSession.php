@@ -11,6 +11,14 @@ class WhatsappSession extends Model
 {
     use HasFactory, UsesTenantConnection;
 
+    public const STATUS_ACTIVE = 'active';
+
+    public const STATUS_COMPLETED = 'completed';
+
+    public const STATUS_ABANDONED = 'abandoned';
+
+    public const STATUS_EXPIRED = 'expired';
+
     protected $table = 'whatsapp_sessions';
 
     protected $fillable = [

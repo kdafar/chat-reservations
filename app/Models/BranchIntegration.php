@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class BranchIntegration extends Model
 {
+    use \App\Models\Concerns\BelongsToBranchScope;
+
     protected $fillable = ['branch_id', 'provider', 'api_base_url', 'api_key', 'settings', 'enabled', 'partner_id'];
 
     protected $casts = ['settings' => 'array', 'enabled' => 'boolean'];

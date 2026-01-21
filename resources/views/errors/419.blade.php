@@ -1,19 +1,14 @@
-@extends('layouts.front')
-@section('title', __('error.419.title'))
-@section('content')
-<div class="min-h-[60vh] grid place-items-center px-4 sm:px-6 lg:px-8">
-  <div class="w-full max-w-xl text-center">
-    <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-orange-50 text-orange-600 ring-1 ring-orange-100 mx-auto">
-      <svg class="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path>
-      </svg>
-    </div>
-    <h1 class="mt-4 text-2xl font-bold text-gray-900">419 — {{ __('error.419.title') }}</h1>
-    <p class="mt-2 text-gray-600">{{ __('error.419.desc') }}</p>
-    <div class="mt-6 flex flex-wrap items-center justify-center gap-3">
-      <a href="{{ url()->current() }}" class="btn btn-primary">{{ __('error.actions.refresh') }}</a>
-      <a href="{{ route('home') }}" class="btn btn-outline">{{ __('error.actions.home') }}</a>
-    </div>
-  </div>
-</div>
+@extends('errors._layout')
+
+@section('title', 'Session Expired')
+@section('code', '419')
+@section('headline', 'Session expired')
+@section('message', 'Your session has expired or the security token is invalid. Please refresh the page and try again.')
+
+@section('icon')
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+    <path d="M12 8v4l2.5 1.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M21 12a9 9 0 1 1-2.64-6.36" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    <path d="M21 3v6h-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
 @endsection

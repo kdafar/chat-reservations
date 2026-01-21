@@ -19,65 +19,110 @@ use Illuminate\Support\Str;
 
 class PartnerResource extends Resource
 {
-    use Translatable; // <-- 2. Use the trait to make the resource translatable
+    use Translatable;
 
     protected static ?string $model = Partner::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-building-storefront';
 
-    protected static ?string $navigationGroup = 'Catalog';
+    // UI rename only
+    protected static ?string $navigationGroup = 'Clinic — Setup';
 
-    protected static ?int $navigationSort = 1;
+    // Optional (nice): rename sidebar label/title
+    protected static ?string $navigationLabel = 'Clinics';
+
+    protected static ?string $modelLabel = 'Clinic';
+
+    protected static ?string $pluralModelLabel = 'Clinics';
+
+    protected static ?int $navigationSort = 10;
 
     public static function form(Form $form): Form
     {
         return $form->schema([
-            Forms\Components\Section::make('Partner')
-                ->schema([
-                    // 3. Combined separate EN/AR fields into one translatable input
-                    Forms\Components\TextInput::make('name')
-                        ->label('Name')
-                        ->required()
-                        ->maxLength(255),
+            Forms\Components\Tabs::make('Clinic Details')
+                ->tabs([
+                    // Tab 1: Basic Info
+                    Forms\Components\Tabs\Tab::make('General Info')
+                        ->icon('heroicon-o-information-circle')
+                        ->schema([
+                            Forms\Components\TextInput::make('name')
+                                ->label('Clinic Name')
+                                ->required()
+                                ->maxLength(255),
 
-                    Forms\Components\TextInput::make('slug')
-                        ->required()
-                        ->unique(ignoreRecord: true)
-                        ->maxLength(255)
-                        ->live(onBlur: true)
-                        ->afterStateUpdated(fn ($set, $state) => $set('slug', Str::slug((string) $state))),
+                            Forms\Components\TextInput::make('slug')
+                                ->label('Clinic Code / Slug')
+                                ->required()
+                                ->unique(ignoreRecord: true)
+                                ->maxLength(255)
+                                ->live(onBlur: true)
+                                ->afterStateUpdated(fn ($set, $state) => $set('slug', Str::slug((string) $state)))
+                                ->helperText('Used in links/URLs. Auto-generated from clinic name.'),
 
-                    // 4. Removed duplicate TextInput for logo_path, kept FileUpload
-                    FileUpload::make('logo_path')
-                        ->label('Logo')
-                        ->disk('public')
-                        ->directory('partner-logos')
-                        ->image()
-                        ->imageEditor()
-                        ->columnSpanFull(),
+                            FileUpload::make('logo_path')
+                                ->label('Clinic Logo')
+                                ->disk('public')
+                                ->directory('partner-logos')
+                                ->image()
+                                ->imageEditor()
+                                ->columnSpanFull(),
 
-                    // 5. Removed duplicate is_active toggle
-                    Toggle::make('is_active')
-                        ->default(true),
-                ])->columns(2),
+                            Forms\Components\Section::make('Specialties')
+                                ->schema([
+                                    Forms\Components\Select::make('services')
+                                        ->label('Medical Services')
+                                        ->multiple()
+                                        ->relationship('services')
+                                        ->getOptionLabelFromRecordUsing(
+                                            fn (Service $record) => $record->getTranslation('name', app()->getLocale())
+                                        )
+                                        ->getSearchResultsUsing(function (string $search) {
+                                            $locale = app()->getLocale();
 
-            Forms\Components\Section::make('Services')
-                ->schema([
-                    // 6. Updated 'services' Select to use the robust getSearchResultsUsing pattern
-                    Forms\Components\Select::make('services')
-                        ->label('Service Types')
-                        ->multiple()
-                        ->relationship('services')
-                        ->getOptionLabelFromRecordUsing(fn (Service $record) => $record->getTranslation('name', app()->getLocale()))
-                        ->getSearchResultsUsing(function (string $search) {
-                            return Service::query()
-                                ->where('name->'.app()->getLocale(), 'like', "%{$search}%")
-                                ->limit(50)
-                                ->pluck('name->'.app()->getLocale(), 'id');
-                        })
-                        ->searchable()
-                        ->helperText('Select all service types this partner offers (e.g., Restaurant, Grocery, Pharmacy).'),
-                ]),
+                                            return Service::query()
+                                                ->where("name->{$locale}", 'like', "%{$search}%")
+                                                ->limit(50)
+                                                ->pluck("name->{$locale}", 'id')
+                                                ->toArray();
+                                        })
+                                        ->searchable()
+                                        ->preload()
+                                        ->helperText('Select the clinic specialties (e.g., Dental, Dermatology, Pediatrics).'),
+                                ]),
+
+                            Toggle::make('is_active')
+                                ->label('Active')
+                                ->default(true),
+                        ]),
+
+                    // Tab 2: Print & Legal Details (For Letterheads)
+                    Forms\Components\Tabs\Tab::make('Print & Legal')
+                        ->icon('heroicon-o-printer')
+                        ->schema([
+                            Forms\Components\Grid::make(2)
+                                ->schema([
+                                    Forms\Components\TextInput::make('website')
+                                        ->prefix('https://')
+                                        ->placeholder('www.myclinic.com'),
+
+                                    Forms\Components\TextInput::make('email')
+                                        ->email()
+                                        ->placeholder('info@myclinic.com'),
+
+                                    Forms\Components\TextInput::make('license_number')
+                                        ->label('MOH / Commercial License')
+                                        ->placeholder('Lic-12345'),
+                                ]),
+
+                            Forms\Components\Textarea::make('footer_text')
+                                ->label('Print Footer / Disclaimer')
+                                ->rows(3)
+                                ->placeholder('e.g. "We care for your health. For emergencies call 112."')
+                                ->helperText('This text will appear at the bottom of prescriptions and invoices.')
+                                ->columnSpanFull(),
+                        ]),
+                ])->columnSpanFull(),
         ]);
     }
 
@@ -85,20 +130,31 @@ class PartnerResource extends Resource
     {
         return $table
             ->columns([
-                ImageColumn::make('logo_path')->label('Logo')->disk('public')->circular(),
+                ImageColumn::make('logo_path')
+                    ->label('Logo')
+                    ->disk('public')
+                    ->circular(),
 
-                // 7. Updated 'name' column to display and search the current locale
                 Tables\Columns\TextColumn::make('name')
-                    ->label('Name')
+                    ->label('Clinic')
                     ->searchable(query: function (Builder $query, string $search): Builder {
-                        return $query->where('name->'.app()->getLocale(), 'like', "%{$search}%");
+                        $locale = app()->getLocale();
+
+                        return $query->where("name->{$locale}", 'like', "%{$search}%");
                     })
                     ->sortable(),
 
-                Tables\Columns\TextColumn::make('slug')->searchable()->sortable(),
+                Tables\Columns\TextColumn::make('license_number')
+                    ->label('License')
+                    ->toggleable(),
+
+                Tables\Columns\TextColumn::make('slug')
+                    ->label('Code')
+                    ->searchable()
+                    ->sortable(),
 
                 Tables\Columns\TextColumn::make('services_list')
-                    ->label('Services')
+                    ->label('Specialties')
                     ->getStateUsing(function (Partner $record) {
                         return $record->services
                             ->map(fn ($s) => $s->getTranslation('name', app()->getLocale()))
@@ -107,7 +163,9 @@ class PartnerResource extends Resource
                     ->limit(40)
                     ->wrap(),
 
-                Tables\Columns\IconColumn::make('is_active')->boolean(),
+                Tables\Columns\IconColumn::make('is_active')
+                    ->label('Active')
+                    ->boolean(),
 
                 Tables\Columns\TextColumn::make('branches_count')
                     ->counts('branches')
@@ -117,10 +175,12 @@ class PartnerResource extends Resource
             ->defaultSort('id', 'desc')
             ->filters([])
             ->actions([
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
+                Tables\Actions\EditAction::make()->label('Edit clinic'),
+                Tables\Actions\DeleteAction::make()->label('Delete clinic'),
             ])
-            ->bulkActions([Tables\Actions\DeleteBulkAction::make()]);
+            ->bulkActions([
+                Tables\Actions\DeleteBulkAction::make()->label('Delete selected'),
+            ]);
     }
 
     public static function getRelations(): array
@@ -130,7 +190,6 @@ class PartnerResource extends Resource
         ];
     }
 
-    // 8. Added the required method for the Translatable trait
     public static function getTranslatableLocales(): array
     {
         return ['en', 'ar'];

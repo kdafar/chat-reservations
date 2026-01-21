@@ -37,11 +37,41 @@ return [
 
     'whatsapp' => [
         'fake' => env('WHATSAPP_FAKE', true),
-        'verify_token'   => env('WHATSAPP_VERIFY_TOKEN'),
-        'app_secret'     => env('WHATSAPP_APP_SECRET'),
-        'access_token'   => env('WHATSAPP_ACCESS_TOKEN'),
-        'phone_id'       => env('WHATSAPP_PHONE_NUMBER_ID'),
-        'graph_version'  => env('WHATSAPP_GRAPH_VERSION','v20.0'),
+        'verify_token' => env('WHATSAPP_VERIFY_TOKEN'),
+        'app_secret' => env('WHATSAPP_APP_SECRET'),
+        'access_token' => env('WHATSAPP_API_TOKEN'),
+        'phone_id' => env('WHATSAPP_PHONE_NUMBER_ID'),
+        'graph_version' => env('META_GRAPH_VERSION', 'v24.0'),
+        'waba_id' => env('WHATSAPP_BUSINESS_ACCOUNT_ID'),
+        'templates' => [
+            'invite' => env('WHATSAPP_TEMPLATE_INVITE', 'barfres_invite'),
+            'confirmed' => env('WHATSAPP_TEMPLATE_CONFIRMED', 'barfres_confirmed'),
+        ],
+        'default_locale' => env('WA_DEFAULT_LOCALE', 'en'),
+        'flows' => [
+            'mode' => env('WA_FLOWS_MODE', 'published'),
+            'first_action' => env('WA_FLOWS_FIRST_ACTION', 'data_exchange'), // keep 'data_exchange'
+            'booking_id_en' => env('WA_FLOW_BOOKING_ID_EN'),
+            'booking_id_ar' => env('WA_FLOW_BOOKING_ID_AR'),
+            'cta' => env('WA_FLOWS_CTA_EN', 'Book now'),
+            'cta_ar' => env('WA_FLOWS_CTA_AR', 'احجز الآن'),
+            'private_key_path' => env('WA_FLOWS_PRIVATE_KEY_PATH', 'whatsapp-flows/private.pem'),
+            'private_key_passphrase' => env('WA_FLOWS_PRIVATE_KEY_PASSPHRASE'),
+            'validator_strict' => env('WA_FLOWS_VALIDATOR_STRICT', true),
+        ],
+        'templates' => [
+            // Template names (so you can change without code edits)
+            'welcome_name_en' => env('WA_TPL_WELCOME_EN', 'welcome'),
+            'welcome_name_ar' => env('WA_TPL_WELCOME_AR', 'welcome'), // if you later create an Arabic clone
+
+            // Language codes as used by the Cloud API
+            'welcome_lang_en' => env('WA_TPL_WELCOME_LANG_EN', 'en'),
+            'welcome_lang_ar' => env('WA_TPL_WELCOME_LANG_AR', 'ar'),
+            'cooldown_minutes' => env('WA_WELCOME_COOLDOWN_MIN', 60),
+        ],
+
+        // Fallback branch if session has no branch context
+        'default_branch_id' => env('BOOKING_DEFAULT_BRANCH_ID', 5),
     ],
 
 ];

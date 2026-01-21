@@ -3,24 +3,25 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Provider;
-use App\Services\WhatsAppMessageHandler;
+use App\Models\WAMessageLog;
+use App\Services\BookingFlowService;
+use App\Services\WhatsAppApiServiceFactory;
+use App\Services\WhatsAppSender;
+use App\Support\Settings as Sys;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Netflie\WhatsAppCloudApi\WebHook;
-use App\Services\BookingFlowService;
 
 class WhatsAppWebhookController extends Controller
 {
-
     public function handle(Request $request, BookingFlowService $bookingFlow)
     {
         $rid = (string) Str::uuid();
+
         $ctx = [
             'rid' => $rid,
-            'provider_id' => $provider->id,
-            'provider_slug' => $provider->slug,
             'method' => $request->method(),
             'ip' => $request->ip(),
         ];
@@ -30,44 +31,165 @@ class WhatsAppWebhookController extends Controller
         try {
             $webhook = new WebHook;
 
-            // === GET: Verification handshake (Meta calls this when you set the URL) ===
-            if ($request->isMethod('get')) {
-                $expectedToken = (string) config('services.whatsapp.verify_token');
-                // The SDK returns the challenge string on success, or throws on mismatch
-                $challenge = $webhook->verify($request->query->all(), $expectedToken);
+            // Tokens from admin settings first, then config fallback.
+            $verifyToken = (string) (Sys::get('whatsapp.verify_token') ?? config('services.whatsapp.verify_token', ''));
+            $appSecret = (string) (Sys::get('whatsapp.app_secret') ?? config('services.whatsapp.app_secret', ''));
 
+            // === GET: Meta verification handshake
+            if ($request->isMethod('get')) {
+                $challenge = $webhook->verify($request->query->all(), $verifyToken);
                 Log::info('WA webhook: verification OK (SDK)', $ctx);
 
-                return response($challenge, 200);
+                return response($challenge, 200); // Meta expects raw challenge
             }
 
-            // === POST: Incoming notifications ===
+            // === POST: Incoming notifications
             if ($request->isMethod('post')) {
-                // Optional but recommended: verify X-Hub-Signature-256 using your App Secret
-                $appSecret = (string) config('services.whatsapp.app_secret');
-                $sigHeader = (string) $request->header('X-Hub-Signature-256', '');
+                $payload = $request->json()->all() ?? [];
 
-                if ($appSecret !== '' && $sigHeader !== '') {
-                    $expected = 'sha256='.hash_hmac('sha256', $request->getContent(), $appSecret);
-                    if (! hash_equals($expected, $sigHeader)) {
+                // Optional: verify HMAC signature
+                $sig256 = (string) $request->header('X-Hub-Signature-256', '');
+                $sig = (string) $request->header('X-Hub-Signature', ''); // legacy
+
+                if ($appSecret !== '' && ($sig256 !== '' || $sig !== '')) {
+                    $raw = $request->getContent();
+
+                    $expected256 = 'sha256='.hash_hmac('sha256', $raw, $appSecret);
+                    $expected = 'sha1='.hash_hmac('sha1', $raw, $appSecret);
+
+                    $ok = false;
+                    if ($sig256 !== '') {
+                        $ok = hash_equals($expected256, $sig256);
+                    } elseif ($sig !== '') {
+                        $ok = hash_equals($expected, $sig);
+                    }
+
+                    if (! $ok) {
                         Log::warning('WA webhook: signature verification FAILED', $ctx + [
-                            'sig' => $this->maskHash($sigHeader),
+                            'sig256' => $this->maskHash($sig256),
+                            'sig' => $this->maskHash($sig),
                         ]);
 
                         return response('Invalid signature', 401);
                     }
                 }
 
-                // Use raw JSON payload for your existing handler
-                $payload = $request->json()->all();
                 $meta = $this->extractMeta($payload);
-
                 Log::info('WA webhook: POST received', $ctx + $meta);
 
-                // If you prefer, you can parse via SDK:
-                // $notifications = (new WebHook())->readAll($payload); // returns Notification[]
-                // foreach ($notifications as $n) { /* transform & forward to your handler */ }
+                // Idempotency on first message id.
+                $wamid = data_get($payload, 'entry.0.changes.0.value.messages.0.id');
+                $from = (string) (data_get($payload, 'entry.0.changes.0.value.messages.0.from') ?? '');
 
+                if ($wamid) {
+                    if (WAMessageLog::where('wa_message_id', $wamid)->exists()) {
+                        Log::info('WA webhook: duplicate wamid, skipping', $ctx + ['wamid' => $wamid]);
+
+                        return response()->json(['ok' => true]);
+                    }
+
+                    WAMessageLog::create([
+                        'wa_message_id' => $wamid,
+                        'phone' => $from,
+                        'payload' => $payload,
+                        'status' => 'processed',
+                    ]);
+                }
+
+                $value = $payload['entry'][0]['changes'][0]['value'] ?? [];
+                if (! empty($value['statuses'])) {
+                    Log::info('WA status', ['n' => count($value['statuses'])]);
+
+                    return response('ok', 200);
+                }
+                if (empty($value['messages'])) {
+                    return response('ok', 200);
+                }
+
+                /* ---------------- Rate limit / cooldown (admin-configurable) ---------------- */
+                $rlEnabled = (bool) (Sys::get('whatsapp.rate_limit.enabled') ?? true);
+                $winSecs = (int) (Sys::get('whatsapp.rate_limit.window_seconds') ?? 20);
+                $limit = (int) (Sys::get('whatsapp.rate_limit.limit') ?? 3);
+                $coolSecs = (int) (Sys::get('whatsapp.rate_limit.cooldown_seconds') ?? 30);
+                $msgEnTpl = (string) (Sys::get('whatsapp.rate_limit.message_en') ?? 'You’re sending messages too quickly. Please try again in {seconds}s.');
+                $msgArTpl = (string) (Sys::get('whatsapp.rate_limit.message_ar') ?? 'تم تقييد الرسائل مؤقتًا بسبب كثرة الإرسال. الرجاء المحاولة بعد {seconds} ثانية.');
+
+                if ($rlEnabled && $from !== '') {
+                    $lockKey = "wa:lock:{$from}";
+                    $countKey = "wa:rl:count:{$from}";
+                    $coolKey = "wa:rl:cool:{$from}";
+                    $untilKey = "wa:rl:until:{$from}";
+                    $noticeKey = "wa:rl:notice:{$from}";
+
+                    // Get an atomic lock for this user. Wait 10s max.
+                    $lock = Cache::lock($lockKey, 10);
+
+                    if ($lock->get()) { // Successfully acquired the lock
+                        try {
+                            // If on cooldown, notify (once) and stop.
+                            if (Cache::has($coolKey)) {
+                                $untilTs = (int) (Cache::get($untilKey) ?? (now()->timestamp + $coolSecs));
+                                $secsLeft = max(1, $untilTs - now()->timestamp);
+
+                                if (Cache::add($noticeKey, 1, now()->addSeconds($secsLeft))) {
+                                    $incomingText = (string) data_get($payload, 'entry.0.changes.0.value.messages.0.text.body', '');
+                                    $isAr = $this->looksArabic($incomingText);
+
+                                    $tmpl = $isAr ? $msgArTpl : $msgEnTpl;
+                                    $msg = str_replace('{seconds}', (string) $secsLeft, $tmpl);
+
+                                    $api = app(WhatsAppApiServiceFactory::class)->make();
+                                    (new WhatsAppSender($api))->sendTextMessage($from, $msg);
+                                    Log::info('WA rate-limit: cooling down user', $ctx + ['from' => $from, 'secs_left' => $secsLeft]);
+                                }
+
+                                return response()->json(['ok' => true, 'cooldown' => $secsLeft]);
+                            }
+
+                            // --- This is the new atomic logic ---
+                            // Get the current count from the cache.
+                            $count = (int) Cache::get($countKey, 0);
+                            $count++; // Increment our count
+
+                            // Check if we are over the limit
+                            if ($count > $limit) {
+                                $until = now()->addSeconds($coolSecs);
+                                Cache::put($coolKey, 1, $until); // Start cooldown
+                                Cache::put($untilKey, $until->timestamp, $until);
+                                Cache::forget($countKey); // Reset the counter
+
+                                $incomingText = (string) data_get($payload, 'entry.0.changes.0.value.messages.0.text.body', '');
+                                $isAr = $this->looksArabic($incomingText);
+
+                                $tmpl = $isAr ? $msgArTpl : $msgEnTpl;
+                                $msg = str_replace('{seconds}', (string) $coolSecs, $tmpl);
+
+                                $api = app(WhatsAppApiServiceFactory::class)->make();
+                                (new WhatsAppSender($api))->sendTextMessage($from, $msg);
+                                Log::info('WA rate-limit: user entered cooldown', $ctx + ['from' => $from, 'cooldown' => $coolSecs]);
+
+                                return response()->json(['ok' => true, 'cooldown' => $coolSecs]);
+                            }
+
+                            // Not over limit, so save the new count with the window expiry
+                            Cache::put($countKey, $count, now()->addSeconds($winSecs));
+                            // --- End of new logic ---
+
+                        } finally {
+                            $lock->release(); // Always release the lock
+                        }
+                    } else {
+                        // Could not get the lock.
+                        // This means another request is *already* being processed for this user.
+                        // This is fine, we can just log it and drop this (duplicate) request.
+                        Log::info('WA rate-limit: lock busy, dropping request', $ctx + ['from' => $from]);
+
+                        return response()->json(['ok' => true, 'status' => 'busy']);
+                    }
+                }
+                /* --------------------------------------------------------------------------- */
+
+                // Forward whole payload to the flow handler.
                 $bookingFlow->handle($payload);
 
                 Log::info('WA webhook: processed OK', $ctx);
@@ -88,6 +210,46 @@ class WhatsAppWebhookController extends Controller
         return response('Unsupported method', 405);
     }
 
+    /** Quick Arabic detector for message language pivot. */
+    private function looksArabic(?string $text): bool
+    {
+        if (! $text) {
+            return false;
+        }
+
+        return (bool) preg_match('/\p{Arabic}/u', $text);
+    }
+
+    /**
+     * Mask long HMAC signatures like "sha256=abcd...".
+     */
+    private function maskHash(?string $sig, int $keep = 8): ?string
+    {
+        if ($sig === null || $sig === '') {
+            return $sig;
+        }
+
+        if (Str::startsWith($sig, 'sha256=')) {
+            $hex = substr($sig, 7);
+            if (strlen($hex) <= $keep * 2) {
+                return 'sha256='.$hex;
+            }
+
+            return 'sha256='.substr($hex, 0, $keep).'…'.substr($hex, -$keep);
+        }
+
+        if (Str::startsWith($sig, 'sha1=')) {
+            $hex = substr($sig, 5);
+            if (strlen($hex) <= $keep * 2) {
+                return 'sha1='.$hex;
+            }
+
+            return 'sha1='.substr($hex, 0, $keep).'…'.substr($hex, -$keep);
+        }
+
+        return $this->mask($sig, 6, 6);
+    }
+
     /**
      * Mask a string, keeping head/tail visible.
      */
@@ -96,6 +258,7 @@ class WhatsAppWebhookController extends Controller
         if ($value === null) {
             return null;
         }
+
         $len = strlen($value);
         if ($len <= $head + $tail) {
             return str_repeat('*', $len);
@@ -107,26 +270,6 @@ class WhatsAppWebhookController extends Controller
     }
 
     /**
-     * Mask long HMAC signatures like "sha256=abcd...".
-     */
-    private function maskHash(?string $sig, int $keep = 8): ?string
-    {
-        if ($sig === null || $sig === '') {
-            return $sig;
-        }
-        if (! Str::startsWith($sig, 'sha256=')) {
-            return $this->mask($sig, 6, 6);
-        }
-
-        $hex = substr($sig, 7);
-        if (strlen($hex) <= $keep * 2) {
-            return 'sha256='.$hex;
-        }
-
-        return 'sha256='.substr($hex, 0, $keep).'…'.substr($hex, -$keep);
-    }
-
-    /**
      * Pull useful identifiers from the WA payload for logging.
      */
     private function extractMeta(array $p): array
@@ -134,20 +277,20 @@ class WhatsAppWebhookController extends Controller
         $entry = $p['entry'][0] ?? [];
         $change = $entry['changes'][0] ?? [];
         $value = $change['value'] ?? [];
-        $messages = $value['messages'] ?? null;
-        $statuses = $value['statuses'] ?? null;
+        $msgs = $value['messages'] ?? null;
+        $stats = $value['statuses'] ?? null;
         $meta = $value['metadata'] ?? [];
 
         return [
             'waba_id' => $entry['id'] ?? null,
             'phone_number_id' => $meta['phone_number_id'] ?? null,
             'display_phone' => $meta['display_phone_number'] ?? null,
-            'has_messages' => is_array($messages),
-            'has_statuses' => is_array($statuses),
-            'message_types' => $messages ? collect($messages)->pluck('type')->unique()->values()->all() : null,
-            'status_samples' => $statuses ? collect($statuses)->pluck('status')->unique()->values()->all() : null,
-            'conversation_origin' => $statuses[0]['conversation']['origin']['type'] ?? null,
-            'message_id_sample' => $messages[0]['id'] ?? ($statuses[0]['id'] ?? null),
+            'has_messages' => is_array($msgs),
+            'has_statuses' => is_array($stats),
+            'message_types' => $msgs ? collect($msgs)->pluck('type')->unique()->values()->all() : null,
+            'status_samples' => $stats ? collect($stats)->pluck('status')->unique()->values()->all() : null,
+            'conversation_origin' => data_get($stats, '0.conversation.origin.type'),
+            'message_id_sample' => data_get($msgs, '0.id') ?? data_get($stats, '0.id'),
         ];
     }
 }

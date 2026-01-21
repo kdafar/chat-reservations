@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class GatewayAccount extends Model
 {
+    use \App\Models\Concerns\BelongsToBranchScope;
+
     protected $fillable = [
         'gateway_id', 'owner_type', 'partner_id', 'branch_id', 'service_id', 'display_name', 'credentials', 'currency', 'is_active', 'is_default',
     ];

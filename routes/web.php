@@ -1,13 +1,18 @@
 <?php
 
-use App\Http\Controllers\Front\Account\AddressController;
-use App\Http\Controllers\Front\Account\ProfileController;
+use App\Http\Controllers\Admin\BulkInviteSamplesController;
+use App\Http\Controllers\Admin\VisitPrintController;
+use App\Http\Controllers\BookingCheckInController;
 // Route::get('/', function (Request $request) {
 //     $qs = $request->getQueryString();
 //     return redirect('/en' . ($qs ? ('?' . $qs) : ''), 302);
 // });
 
 // ----- FRONT CONTROLLERS -----
+use App\Http\Controllers\BookingPassController;
+use App\Http\Controllers\BookingQrController;
+use App\Http\Controllers\Front\Account\AddressController;
+use App\Http\Controllers\Front\Account\ProfileController;
 use App\Http\Controllers\Front\Auth\LoginController;
 use App\Http\Controllers\Front\Auth\LogoutController;
 use App\Http\Controllers\Front\Auth\RegisterController;
@@ -16,12 +21,15 @@ use App\Http\Controllers\Front\CartController;
 use App\Http\Controllers\Front\CartCouponController;
 use App\Http\Controllers\Front\CheckoutController;
 use App\Http\Controllers\Front\CheckoutStateController;
+use App\Http\Controllers\Front\ClinicBookingController;
 use App\Http\Controllers\Front\GeoController;
 use App\Http\Controllers\Front\HomeController;
 use App\Http\Controllers\Front\LocationController;
 use App\Http\Controllers\Front\OrderController;
 use App\Http\Controllers\Front\PaymentController;
 use App\Http\Controllers\Front\ServiceBrowseController;
+use App\Models\Booking;
+use App\Services\QrPassService;
 use Illuminate\Foundation\Auth\EmailVerificationRequest;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -34,12 +42,26 @@ Route::get('/language/{locale}', function (string $locale) {
     return back();
 })->name('language.switch');
 
+Route::get('/bookings/{code}', [BookingPassController::class, 'show'])->name('bookings.pass');
+Route::get('/qr/{token}.png', [BookingQrController::class, 'image'])->name('bookings.qr');
+Route::get('/c/{token}', [BookingCheckInController::class, 'fromLink'])->name('bookings.checkin.link');
+
+// PNG QR used by WhatsApp (must be public HTTPS)
+Route::get('/bookings/{code}/qr.png', function (string $code) {
+    $b = Booking::where('booking_code', $code)->firstOrFail();
+
+    return app(QrPassService::class)->qrPngResponse($b, 600); // 600px QR
+})->name('bookings.qr.png');
+
 // All front routes go through the default "web" stack.
 // Your SetLocaleFromSession middleware is appended to the web group in bootstrap/app.php
 
 // ---------- PUBLIC BROWSE (guest + auth) ----------
 Route::middleware(['web'])->group(function () {
-    Route::get('/', [HomeController::class, 'index'])->name('home');
+    // Route::get('/', [HomeController::class, 'index'])->name('home');
+    Route::get('/', function () {
+        return view('clinic.landing');
+    })->name('home');
     Route::get('/services/{service:slug}', [ServiceBrowseController::class, 'index'])->name('service.browse');
     Route::get('/services/{service:slug}/branches/{branch}', [BranchMenuController::class, 'show'])->name('branch.menu');
 
@@ -114,6 +136,30 @@ Route::middleware(['web', 'guest.front'])->group(function () {
     Route::post('/register', [RegisterController::class, 'store'])->name('register.store');
 });
 
+Route::group(['prefix' => 'clinic', 'middleware' => ['web']], function () {
+    // The Page
+    Route::get('/book', [ClinicBookingController::class, 'index'])->name('clinic.book');
+
+    // The API Endpoints (called by React)
+    Route::get('/api/partners', [ClinicBookingController::class, 'partners']);
+    Route::get('/api/branches', [ClinicBookingController::class, 'branches']);
+    Route::get('/api/doctors', [ClinicBookingController::class, 'doctors']);
+    Route::get('/api/slots', [ClinicBookingController::class, 'slots']);
+
+    // Actions
+    Route::post('/api/bookings', [ClinicBookingController::class, 'store']);
+    Route::post('/api/bookings/cancel', [ClinicBookingController::class, 'cancel']);
+
+    Route::get('/api/services', [ClinicBookingController::class, 'services']);
+    Route::get('/api/branches/index', [ClinicBookingController::class, 'branchesIndex']);
+    Route::get('/api/branches/{branch:slug}', [ClinicBookingController::class, 'branchShow']);
+    Route::get('/api/doctors/{doctor}', [ClinicBookingController::class, 'doctorShow']);
+});
+
+Route::get('/clinic', function () {
+    return view('clinic.landing');
+});
+
 // ---------- AUTH-ONLY (customer account pages) ----------
 Route::middleware(['web', 'ensure.customer'])->group(function () {
 
@@ -175,6 +221,14 @@ Route::middleware(['web', 'auth'])->group(function () {
     })->middleware(['throttle:6,1'])->name('verification.send');
 });
 
+Route::middleware(['web', 'auth'])->prefix('medical')->name('medical.')->group(function () {
+    Route::get('visits/{visit}/print/prescription', [VisitPrintController::class, 'prescription'])
+        ->name('visits.print.prescription');
+
+    Route::get('visits/{visit}/print/labs', [VisitPrintController::class, 'labs'])
+        ->name('visits.print.labs');
+});
+
 Route::prefix('api/geo')->middleware(['web'])->group(function () {
     Route::get('/states', [GeoController::class, 'states'])->name('geo.states');
     Route::get('/cities', [GeoController::class, 'cities'])->name('geo.cities');   // ?state_id=
@@ -190,3 +244,11 @@ Route::middleware(['web', 'auth', 'verified', App\Http\Middleware\PartnerContext
         return response()->download($path, 'menu-items-template.xlsx');
     })
     ->name('partner.import.template');
+
+Route::middleware(['web', 'auth'])->group(function () {
+    Route::get('/admin/campaigns/{campaign}/recipients/sample.csv', [BulkInviteSamplesController::class, 'csv'])
+        ->name('bulk-invite.sample.csv');
+
+    Route::get('/admin/campaigns/{campaign}/recipients/sample.xlsx', [BulkInviteSamplesController::class, 'xlsx'])
+        ->name('bulk-invite.sample.xlsx');
+});
