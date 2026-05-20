@@ -200,4 +200,28 @@ class VisitPackageService
             'qty_base' => (float) $qty,
         ])->values();
     }
+
+    public function requirementsForPackages(int $branchId, array $lines): array
+    {
+        if (! $this->enabled()) {
+            return [];
+        }
+
+        $normalized = $this->normalizeLines($lines);
+        if ($normalized->isEmpty()) {
+            return [];
+        }
+
+        $packages = ClinicPackage::query()
+            ->whereIn('id', $normalized->pluck('clinic_package_id')->all())
+            ->where('is_active', true)
+            ->with(['items'])
+            ->get()
+            ->keyBy('id');
+
+        // Optional: branch guard can be enforced here if you want.
+        $req = $this->buildRequirementsFromPackages($packages, $normalized);
+
+        return $req->values()->all();
+    }
 }

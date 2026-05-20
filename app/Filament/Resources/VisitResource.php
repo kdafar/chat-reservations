@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\VisitResource\Pages;
+use App\Models\Branch;
 use App\Models\Visit;
 use App\Services\Clinic\FollowUpService;
 use App\Services\Clinic\VisitCostingService;
@@ -51,7 +52,9 @@ class VisitResource extends Resource
                         ->searchable()
                         ->preload()
                         ->nullable()
-                        ->disabled(fn (string $operation) => $operation === 'edit')
+                        // FIX: Strict restriction on edit.
+                        // Staff cannot change the booking link once created. Only Admin can fix mistakes.
+                        ->disabled(fn (string $operation) => $operation === 'edit' && auth()->id() !== 1 && ! auth()->user()?->hasRole('admin'))
                         ->helperText('Usually created automatically on appointment check-in.'),
 
                     Forms\Components\Select::make('restaurant_table_id')
@@ -59,29 +62,34 @@ class VisitResource extends Resource
                         ->label('Room')
                         ->searchable()
                         ->preload()
-                        ->nullable(),
+                        ->nullable()
+                        ->disabled(fn (string $operation) => $operation === 'edit' && auth()->id() !== 1 && ! auth()->user()?->hasRole('admin')),
 
                     Forms\Components\Select::make('branch_id')
-                        ->relationship('branch', 'id')
+                        ->relationship('branch', 'id', modifyQueryUsing: fn (Builder $query) => $query->forUser(auth()->user()))
                         ->label('Branch')
                         ->getOptionLabelFromRecordUsing(fn ($record) => $record->localized_name ?? ('#'.$record->id))
                         ->searchable()
                         ->preload()
-                        ->required(),
+                        ->required()
+                        ->default(fn () => Branch::forUser(auth()->user())->count() === 1 ? Branch::forUser(auth()->user())->first()?->id : null)
+                        ->disabled(fn (string $operation) => $operation === 'edit' && auth()->id() !== 1 && ! auth()->user()?->hasRole('admin')),
 
                     Forms\Components\Select::make('patient_id')
                         ->relationship('patient', 'name')
                         ->label('Patient')
                         ->searchable()
                         ->preload()
-                        ->required(),
+                        ->required()
+                        ->disabled(fn (string $operation) => $operation === 'edit' && auth()->id() !== 1 && ! auth()->user()?->hasRole('admin')),
 
                     Forms\Components\Select::make('doctor_id')
                         ->relationship('doctor', 'name')
                         ->label('Doctor')
                         ->searchable()
                         ->preload()
-                        ->required(),
+                        ->required()
+                        ->disabled(fn (string $operation) => $operation === 'edit' && auth()->id() !== 1 && ! auth()->user()?->hasRole('admin')),
 
                     Forms\Components\Select::make('status')
                         ->label('Status')
@@ -96,6 +104,9 @@ class VisitResource extends Resource
                         ->default('created')
                         ->native(false)
                         ->required()
+                        // Status needs to be editable by staff to move workflow forward (e.g. In Progress -> Completed)
+                        // But we can lock it if it's already completed to prevent tampering
+                        ->disabled(fn (?Visit $record) => $record && in_array($record->status, ['completed', 'cancelled']) && auth()->id() !== 1)
                         ->afterStateUpdated(function ($state, ?Visit $record) {
                             if (! $record) {
                                 return;
@@ -180,32 +191,35 @@ class VisitResource extends Resource
                         ->maxLength(255)
                         ->nullable()
                         ->placeholder('web / whatsapp / call / walk_in / reception')
-                        ->helperText('Attribution only.'),
+                        ->helperText('Attribution only.')
+                        ->disabled(fn (string $operation) => $operation === 'edit' && auth()->id() !== 1),
 
                     Forms\Components\TextInput::make('booking_code')
                         ->label('Booking Code')
                         ->maxLength(255)
                         ->nullable()
-                        ->helperText('Snapshot from appointment (optional).'),
+                        ->helperText('Snapshot from appointment (optional).')
+                        ->disabled(fn (string $operation) => $operation === 'edit' && auth()->id() !== 1),
 
                     Forms\Components\DateTimePicker::make('checked_in_at')
                         ->label('Checked In At')
                         ->seconds(false)
-                        ->nullable(),
+                        ->nullable()
+                        ->disabled(fn (string $operation) => $operation === 'edit' && auth()->id() !== 1),
 
                     Forms\Components\DateTimePicker::make('queued_at')
                         ->label('Queued At')
                         ->seconds(false)
                         ->nullable()
-                        ->disabled()
-                        ->helperText('Set at check-in.'),
+                        ->disabled(), // Always disabled (system controlled)
+                    // ->helperText('Set at check-in.'),
 
                     Forms\Components\DateTimePicker::make('accepted_at')
                         ->label('Accepted At')
                         ->seconds(false)
                         ->nullable()
-                        ->disabled()
-                        ->helperText('Set when doctor accepts the patient.'),
+                        ->disabled(), // Always disabled (system controlled)
+                    // ->helperText('Set when doctor accepts the patient.'),
 
                     Forms\Components\Select::make('accepted_by_user_id')
                         ->label('Accepted By')
@@ -219,13 +233,14 @@ class VisitResource extends Resource
                         ->label('Service Started At')
                         ->seconds(false)
                         ->nullable()
-                        ->disabled()
-                        ->helperText('Set once when the doctor starts the consultation.'),
+                        ->disabled(),
+                    // ->helperText('Set once when the doctor starts the consultation.'),
 
                     Forms\Components\DateTimePicker::make('completed_at')
                         ->label('Completed At')
                         ->seconds(false)
-                        ->nullable(),
+                        ->nullable()
+                        ->disabled(fn (string $operation) => $operation === 'edit' && auth()->id() !== 1),
                 ])
                 ->collapsible(),
 
@@ -535,6 +550,20 @@ class VisitResource extends Resource
                 Tables\Filters\SelectFilter::make('doctor_id')
                     ->label('Doctor')
                     ->relationship('doctor', 'name'),
+
+                Tables\Filters\SelectFilter::make('branch_id')
+                    ->label('Clinic Branch')
+                    ->multiple()
+                    ->options(fn () => Branch::forUser(auth()->user())
+                        ->orderByRaw("JSON_UNQUOTE(JSON_EXTRACT(name, '$.\"en\"'))")
+                        ->get()
+                        ->pluck('localized_name', 'id')
+                    )
+                    ->default(function () {
+                        $availableIds = Branch::forUser(auth()->user())->pluck('id');
+
+                        return $availableIds->count() === 1 ? $availableIds->toArray() : [];
+                    }),
 
                 Tables\Filters\SelectFilter::make('status')
                     ->options([

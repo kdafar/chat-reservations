@@ -131,6 +131,13 @@ class Visit extends Model
         return $this->hasMany(VisitStockRequest::class);
     }
 
+    public function pendingStockRequest(): HasOne
+    {
+        return $this->hasOne(\App\Models\VisitStockRequest::class)
+            ->where('status', \App\Models\VisitStockRequest::STATUS_PENDING)
+            ->latestOfMany('id');
+    }
+
     public function activeStockRequest()
     {
         return $this->hasOne(VisitStockRequest::class)

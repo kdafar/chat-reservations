@@ -226,4 +226,9 @@ class Booking extends Model
     {
         return ! is_null($this->cancelled_at) || ! is_null($this->no_show_at);
     }
+
+    public function getPatientDisplayAttribute(): string
+    {
+        return (string) ($this->patient?->name ?? $this->contact?->name ?? 'Valued Patient');
+    }
 }

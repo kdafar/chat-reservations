@@ -10,6 +10,7 @@ use App\Models\VisitStockRequestLine;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class VisitStockRequestService
 {
@@ -20,12 +21,6 @@ class VisitStockRequestService
 
     /**
      * Create or update the active (pending) stock request for a visit.
-     *
-     * $requirements:
-     * [
-     *   ['clinic_item_id' => 1, 'qty_base' => 2.0],
-     *   ['clinic_item_id' => 2, 'qty_base' => 1.5],
-     * ]
      */
     public function createForVisit(
         Visit $visit,
@@ -42,9 +37,11 @@ class VisitStockRequestService
             return null;
         }
 
+        // [Legacy Architect] This now filters out Services automatically
         $normalized = $this->normalizeRequirements($requirements);
+
         if ($normalized->isEmpty()) {
-            return null;
+            return null; // Nothing stockable to request
         }
 
         return DB::transaction(function () use ($visit, $normalized, $requestedByUserId, $notes, $setVisitAwaitingStock) {
@@ -70,11 +67,9 @@ class VisitStockRequestService
                 if ($requestedByUserId > 0 && ! $req->requested_by_user_id) {
                     $req->requested_by_user_id = $requestedByUserId;
                 }
-
                 if ($notes !== null) {
                     $req->notes = $notes;
                 }
-
                 $req->save();
             }
 
@@ -109,17 +104,13 @@ class VisitStockRequestService
     }
 
     /**
-     * Fulfill request:
-     * - consume stock
-     * - upsert visit_items (unique: visit_id + clinic_item_id)
-     * - mark request fulfilled
-     * - resume visit status
+     * Fulfill request: consume stock (only if stockable) and upsert visit_items
      */
     public function fulfill(
         VisitStockRequest $request,
         int $fulfilledByUserId = 0,
         ?string $notes = null,
-        string $resumeStatus = 'awaiting_doctor', // or 'in_progress'
+        string $resumeStatus = 'awaiting_doctor',
     ): VisitStockRequest {
         if (! $this->enabled()) {
             return $request;
@@ -133,14 +124,13 @@ class VisitStockRequestService
                 ->findOrFail((int) $request->id);
 
             if (($req->status ?? null) !== VisitStockRequest::STATUS_PENDING) {
-                return $req; // idempotent
+                return $req;
             }
 
             /** @var Visit $visit */
             $visit = Visit::query()->lockForUpdate()->findOrFail((int) $req->visit_id);
 
             $branchId = (int) $req->branch_id;
-
             $stockSvc = app(ClinicStockService::class);
 
             foreach ($req->lines as $line) {
@@ -152,20 +142,27 @@ class VisitStockRequestService
                 /** @var ClinicItem|null $item */
                 $item = $line->clinicItem;
                 if (! $item) {
-                    throw new \RuntimeException('Clinic item not found for stock request line.');
+                    // Log warning but don't crash entire batch if item deleted
+                    Log::warning("Skipping missing item in request #{$req->id}", ['line_id' => $line->id]);
+
+                    continue;
                 }
 
-                // Consume (movement includes related morph -> request)
-                $stockSvc->consume(
-                    $branchId,
-                    $item,
-                    $qtyBase,
-                    $fulfilledByUserId,
-                    $notes ? ('Fulfill stock request: '.$notes) : 'Fulfill stock request',
-                    $req
-                );
+                // [Legacy Architect Fix]
+                // If item is NOT stockable (e.g. Service), do NOT try to consume stock.
+                // Just add it to the visit bill and continue.
+                if ($item->is_stockable) {
+                    $stockSvc->consume(
+                        $branchId,
+                        $item,
+                        $qtyBase,
+                        $fulfilledByUserId,
+                        $notes ? ('Fulfill stock request: '.$notes) : 'Fulfill stock request',
+                        $req
+                    );
+                }
 
-                // Upsert visit_items row (unique: visit_id+clinic_item_id)
+                // Always add to visit items (Bill/Usage record)
                 $this->upsertVisitItemFromFulfillment($visit, $item, $qtyBase);
             }
 
@@ -226,10 +223,6 @@ class VisitStockRequestService
         });
     }
 
-    /**
-     * Your visit_items has UNIQUE(visit_id, clinic_item_id).
-     * We therefore accumulate qty and recompute totals.
-     */
     protected function upsertVisitItemFromFulfillment(Visit $visit, ClinicItem $item, float $qtyToAdd): void
     {
         $visitId = (int) $visit->id;
@@ -251,56 +244,64 @@ class VisitStockRequestService
             $vi->visit_id = $visitId;
             $vi->clinic_item_id = $itemId;
             $vi->branch_id = (int) ($visit->branch_id ?? null);
-
-            // Snapshots from current defaults (first write wins)
             $vi->unit_cost_snapshot = (float) ($item->default_cost ?? 0);
             $vi->unit_price_snapshot = (float) ($item->default_price ?? 0);
-
             $vi->qty = 0;
             $vi->line_cost_total = 0;
             $vi->line_price_total = 0;
         } else {
-            // Ensure branch_id is set (nullable column)
             if (! $vi->branch_id) {
                 $vi->branch_id = (int) ($visit->branch_id ?? null);
-            }
-
-            // Preserve existing snapshots (audit stability)
-            if ((float) ($vi->unit_cost_snapshot ?? 0) <= 0) {
-                $vi->unit_cost_snapshot = (float) ($item->default_cost ?? 0);
-            }
-            if ((float) ($vi->unit_price_snapshot ?? 0) <= 0) {
-                $vi->unit_price_snapshot = (float) ($item->default_price ?? 0);
             }
         }
 
         $currentQty = (float) ($vi->qty ?? 0);
         $newQty = $currentQty + $qtyToAdd;
-
         $unitCost = (float) ($vi->unit_cost_snapshot ?? 0);
         $unitPrice = (float) ($vi->unit_price_snapshot ?? 0);
 
-        // qty is decimal(12,3) in DB; this is fine (DB will round).
         $vi->qty = $newQty;
-
         $vi->line_cost_total = $newQty * $unitCost;
         $vi->line_price_total = $newQty * $unitPrice;
-
         $vi->save();
     }
 
+    /**
+     * [Legacy Architect Fix]
+     * Normalize requirements AND filter out non-stockable items (Services).
+     * This prevents services from triggering stock alerts.
+     */
     protected function normalizeRequirements(array $requirements): Collection
     {
-        return collect($requirements)
+        // 1. Initial cleanup
+        $rows = collect($requirements)
             ->map(fn ($r) => [
                 'clinic_item_id' => (int) ($r['clinic_item_id'] ?? 0),
                 'qty_base' => (float) ($r['qty_base'] ?? 0),
             ])
-            ->filter(fn ($r) => $r['clinic_item_id'] > 0 && $r['qty_base'] > 0)
+            ->filter(fn ($r) => $r['clinic_item_id'] > 0 && $r['qty_base'] > 0);
+
+        if ($rows->isEmpty()) {
+            return collect();
+        }
+
+        // 2. Database Filter: Only keep IDs where is_stockable = 1
+        $requestedIds = $rows->pluck('clinic_item_id')->unique()->values()->all();
+
+        $stockableIds = \App\Models\ClinicItem::query()
+            ->whereIn('id', $requestedIds)
+            ->where('is_stockable', true) // <--- THIS IS THE FIX
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        // 3. Filter the rows to match valid stockable IDs
+        return $rows
+            ->filter(fn ($r) => in_array($r['clinic_item_id'], $stockableIds))
             ->groupBy('clinic_item_id')
-            ->map(fn ($rows, $itemId) => [
+            ->map(fn ($group, $itemId) => [
                 'clinic_item_id' => (int) $itemId,
-                'qty_base' => (float) $rows->sum(fn ($x) => (float) $x['qty_base']),
+                'qty_base' => (float) $group->sum('qty_base'),
             ])
             ->values();
     }
@@ -309,7 +310,6 @@ class VisitStockRequestService
     {
         $existing = trim($existing);
         $add = trim($add);
-
         if ($add === '') {
             return $existing;
         }
@@ -318,5 +318,85 @@ class VisitStockRequestService
         }
 
         return $existing."\n---\n".$add;
+    }
+
+    public function issueDirectlyIfInStock(
+        Visit $visit,
+        array $requirements,
+        int $userId = 0,
+        ?string $notes = null,
+        string $keepVisitStatus = 'in_progress',
+        ?string $trace = null,
+    ): bool {
+        if (! $this->enabled()) {
+            return false;
+        }
+
+        $visitId = (int) $visit->id;
+        if ($visitId <= 0) {
+            return false;
+        }
+
+        $trace = $trace ?: 'ISSUE-'.now()->format('YmdHis').'-'.substr(md5((string) microtime(true)), 0, 6);
+
+        // This will now return EMPTY if only services are present
+        $normalized = $this->normalizeRequirements($requirements);
+
+        if ($normalized->isEmpty()) {
+            Log::info('[VisitStockRequestService][issueDirectlyIfInStock] empty requirements (all services?)', [
+                'trace' => $trace,
+                'visit_id' => $visitId,
+            ]);
+
+            // If nothing needs stock, we return TRUE so the flow continues (Green).
+            return true;
+        }
+
+        return DB::transaction(function () use ($visitId, $normalized, $userId, $notes, $keepVisitStatus, $trace) {
+            /** @var Visit $freshVisit */
+            $freshVisit = Visit::query()->lockForUpdate()->findOrFail($visitId);
+
+            $branchId = (int) ($freshVisit->branch_id ?? 0);
+            $stockSvc = app(ClinicStockService::class);
+
+            $shortages = $stockSvc->shortagesForRequirements($branchId, $normalized->values()->all());
+
+            Log::info('[VisitStockRequestService][issueDirectlyIfInStock] check', [
+                'trace' => $trace,
+                'visit_id' => $visitId,
+                'req_count' => $normalized->count(),
+                'shortages_count' => count($shortages),
+            ]);
+
+            if (! empty($shortages)) {
+                return false;
+            }
+
+            foreach ($normalized as $line) {
+                $itemId = (int) $line['clinic_item_id'];
+                $qtyBase = (float) $line['qty_base'];
+
+                /** @var ClinicItem $item */
+                $item = ClinicItem::query()->findOrFail($itemId);
+
+                $stockSvc->consume(
+                    $branchId,
+                    $item,
+                    $qtyBase,
+                    $userId,
+                    $notes ? ('Direct issue: '.$notes) : 'Direct issue',
+                    null
+                );
+
+                $this->upsertVisitItemFromFulfillment($freshVisit, $item, $qtyBase);
+            }
+
+            if (! in_array(($freshVisit->status ?? null), ['completed', 'cancelled', 'no_show'], true)) {
+                $freshVisit->status = $keepVisitStatus;
+                $freshVisit->save();
+            }
+
+            return true;
+        });
     }
 }

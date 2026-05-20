@@ -13,7 +13,7 @@ class ClinicTopDoctors extends TableWidget
 {
     public ?array $filters = [];
 
-    protected static ?string $heading = 'Top Doctors (By Cut)';
+    protected static ?string $heading = 'Top Doctors (Today, By Cut)';
 
     protected static ?int $sort = 45;
 
@@ -26,21 +26,22 @@ class ClinicTopDoctors extends TableWidget
 
     protected function getTableQuery(): Builder
     {
-        [$from, $to, $branchId, $doctorId] = $this->resolvedFilters();
+        // Force today only (app timezone)
+        $today = now()
+            ->timezone(config('app.timezone', 'Asia/Kuwait'))
+            ->toDateString();
 
-        // Enforce branch scope for non-admin users, even when filter is empty.
+        // Keep filters only for branch/doctor scope
+        [, , $branchId, $doctorId] = $this->resolvedFilters();
+
         $branchId = $this->effectiveBranchId($branchId);
-
-        // Optional: enforce doctor scope for doctor users, even when filter is empty.
         $doctorId = $this->effectiveDoctorId($doctorId);
 
-        // Use Eloquent (scopes apply) but we still enforce branch/doctor at query-level
-        // because joins/aggregates can bypass expectations and UI filters may be empty.
         $q = DoctorCompensationLedger::query()
-            // NOTE: If your doctor_id points to doctors table not users, change this join.
-            ->join('users', 'users.id', '=', 'doctor_compensation_ledgers.doctor_id')
-            ->whereDate('doctor_compensation_ledgers.created_at', '>=', $from)
-            ->whereDate('doctor_compensation_ledgers.created_at', '<=', $to);
+            // Correct join chain: ledger.doctor_id -> doctors.id -> users.id
+            ->join('doctors', 'doctors.id', '=', 'doctor_compensation_ledgers.doctor_id')
+            ->join('users', 'users.id', '=', 'doctors.user_id')
+            ->whereDate('doctor_compensation_ledgers.created_at', '=', $today);
 
         // If branchId is -1, return empty safely (user has no branch assigned).
         if ($branchId === -1) {
@@ -50,7 +51,6 @@ class ClinicTopDoctors extends TableWidget
         }
 
         // If doctorId is -1 (doctor role but no doctor row), return empty.
-        // If doctorId is set, scope to that doctor.
         if ($doctorId === -1) {
             $q->whereRaw('1=0');
         } else {
@@ -83,6 +83,7 @@ class ClinicTopDoctors extends TableWidget
 
     protected function resolvedFilters(): array
     {
+        // Keep parsing for branch/doctor UI filters, but from/to are not used here anymore.
         $from = (string) ($this->filters['from'] ?? now()->startOfMonth()->toDateString());
         $to = (string) ($this->filters['to'] ?? now()->toDateString());
 
@@ -95,13 +96,6 @@ class ClinicTopDoctors extends TableWidget
         return [$from, $to, $branchId, $doctorId];
     }
 
-    /**
-     * For non-admin users, always scope to their assigned branch (branch_user).
-     * Returns:
-     *  - null  => no branch constraint (admin/super_admin or no user)
-     *  - int   => effective branch_id
-     *  - -1    => user has no branch assigned; forces empty results safely
-     */
     protected function effectiveBranchId(?int $requestedBranchId): ?int
     {
         $user = Filament::auth()->user() ?? auth()->user();
@@ -121,10 +115,6 @@ class ClinicTopDoctors extends TableWidget
         return $branchId > 0 ? $branchId : -1;
     }
 
-    /**
-     * If the current user is a doctor and no doctor filter is selected,
-     * force scope to their doctor_id.
-     */
     protected function effectiveDoctorId(?int $requestedDoctorId): ?int
     {
         if ($requestedDoctorId) {

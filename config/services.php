@@ -74,4 +74,8 @@ return [
         'default_branch_id' => env('BOOKING_DEFAULT_BRANCH_ID', 5),
     ],
 
+    'facebook' => [
+        'app_id' => env('WHATSAPP_APP_ID'),
+        'app_secret' => env('WHATSAPP_APP_SECRET'),
+    ],
 ];

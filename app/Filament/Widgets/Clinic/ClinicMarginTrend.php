@@ -13,7 +13,7 @@ class ClinicMarginTrend extends ApexChartWidget
 
     protected static ?string $chartId = 'clinicMarginTrend';
 
-    protected static ?string $heading = 'Margin Trend (Profit / Fees)';
+    protected static ?string $heading = 'Margin (Today)';
 
     protected static ?int $contentHeight = 280;
 
@@ -29,7 +29,13 @@ class ClinicMarginTrend extends ApexChartWidget
             ];
         }
 
-        [$from, $to, $branchId, $doctorId] = $this->resolvedFilters();
+        // Force "today" using app timezone
+        $today = now()
+            ->timezone(config('app.timezone', 'Asia/Kuwait'))
+            ->toDateString();
+
+        // Keep filters only for branch/doctor scope
+        [, , $branchId, $doctorId] = $this->resolvedFilters();
 
         // Enforce branch scope for non-admin users, even when filter is empty.
         $branchId = $this->effectiveBranchId($branchId);
@@ -39,13 +45,12 @@ class ClinicMarginTrend extends ApexChartWidget
 
         // Prevent cross-branch/user cache leakage.
         $userId = Filament::auth()->id() ?? auth()->id();
-        $cacheKey = 'margin_trend:'.md5(json_encode([$from, $to, $branchId, $doctorId, $userId]));
+        $cacheKey = 'margin_today:'.md5(json_encode([$today, $branchId, $doctorId, $userId]));
 
-        $rows = ClinicReportCache::remember($cacheKey, 60, function () use ($from, $to, $branchId, $doctorId) {
+        $row = ClinicReportCache::remember($cacheKey, 60, function () use ($today, $branchId, $doctorId) {
             $q = DB::table('visits')
                 ->whereNotNull('computed_at')
-                ->whereDate('computed_at', '>=', $from)
-                ->whereDate('computed_at', '<=', $to);
+                ->whereDate('computed_at', '=', $today);
 
             // If branchId is -1, return empty safely (user has no branch assigned).
             if ($branchId === -1) {
@@ -61,28 +66,20 @@ class ClinicMarginTrend extends ApexChartWidget
                 $q->when($doctorId, fn ($qq) => $qq->where('doctor_id', $doctorId));
             }
 
-            return $q->groupByRaw('DATE(computed_at)')
-                ->orderByRaw('DATE(computed_at)')
-                ->selectRaw('
-                    DATE(computed_at) as d,
+            return $q->selectRaw('
                     COALESCE(SUM(fees_total),0) as fees,
                     COALESCE(SUM(profit_total),0) as profit
                 ')
-                ->get();
+                ->first();
         });
 
-        $labels = $rows->pluck('d')->all();
+        $fees = (float) ($row->fees ?? 0);
+        $profit = (float) ($row->profit ?? 0);
 
-        $margins = $rows->map(function ($r) {
-            $fees = (float) ($r->fees ?? 0);
-            $profit = (float) ($r->profit ?? 0);
-
-            if ($fees <= 0) {
-                return 0.0;
-            }
-
-            return round(($profit / $fees) * 100, 3);
-        })->all();
+        $margin = 0.0;
+        if ($fees > 0) {
+            $margin = round(($profit / $fees) * 100, 3);
+        }
 
         return [
             'chart' => [
@@ -93,10 +90,10 @@ class ClinicMarginTrend extends ApexChartWidget
             'dataLabels' => ['enabled' => false],
             'stroke' => ['curve' => 'smooth', 'width' => 3],
             'series' => [
-                ['name' => 'Margin %', 'data' => $margins],
+                ['name' => 'Margin %', 'data' => [$margin]],
             ],
             'xaxis' => [
-                'categories' => $labels,
+                'categories' => ['Today'],
                 'labels' => ['style' => ['fontFamily' => 'inherit']],
             ],
             'yaxis' => [
@@ -112,6 +109,8 @@ class ClinicMarginTrend extends ApexChartWidget
 
     protected function resolvedFilters(): array
     {
+        // We keep parsing filters so branch/doctor filters still work,
+        // but from/to are irrelevant for this widget now.
         $from = (string) ($this->filters['from'] ?? now()->startOfMonth()->toDateString());
         $to = (string) ($this->filters['to'] ?? now()->toDateString());
 
@@ -124,13 +123,6 @@ class ClinicMarginTrend extends ApexChartWidget
         return [$from, $to, $branchId, $doctorId];
     }
 
-    /**
-     * For non-admin users, always scope to their assigned branch (branch_user).
-     * Returns:
-     *  - null  => no branch constraint (admin/super_admin or no user)
-     *  - int   => effective branch_id
-     *  - -1    => user has no branch assigned; forces empty results safely
-     */
     protected function effectiveBranchId(?int $requestedBranchId): ?int
     {
         $user = Filament::auth()->user() ?? auth()->user();
@@ -150,10 +142,6 @@ class ClinicMarginTrend extends ApexChartWidget
         return $branchId > 0 ? $branchId : -1;
     }
 
-    /**
-     * If the current user is a doctor and no doctor filter is selected,
-     * force scope to their doctor_id.
-     */
     protected function effectiveDoctorId(?int $requestedDoctorId): ?int
     {
         if ($requestedDoctorId) {

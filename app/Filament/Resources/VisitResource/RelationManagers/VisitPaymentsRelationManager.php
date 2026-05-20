@@ -2,9 +2,9 @@
 
 namespace App\Filament\Resources\VisitResource\RelationManagers;
 
-use App\Models\Visit; // Import Visit Model
+use App\Models\Visit;
 use App\Models\VisitPayment;
-use App\Services\Clinic\VisitCostingService; // Import the service
+use App\Services\Clinic\VisitCostingService;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
@@ -50,29 +50,71 @@ class VisitPaymentsRelationManager extends RelationManager
                             }
 
                             // Use the Service to ensure logic matches "Recompute Financials"
-                            // We calculate (Fees + Items) - (Already Paid)
                             try {
                                 return app(VisitCostingService::class)->getRemainingBalance($visit);
                             } catch (\Throwable $e) {
-                                // Fallback if service fails, prevents form crash
                                 return 0;
                             }
                         })
                         ->disabled() // "So the doctor don't lie" - User Request
-                        ->dehydrated() // CRITICAL: Ensures the disabled value is still saved to DB
+                        ->dehydrated() // CRITICAL: Ensures the disabled value is saved
                         ->helperText('Auto-calculated based on Doctor Fee + Items - Paid Amount.'),
                     // -----------------------------------------------------
 
+                    // FIX: Dynamic Payment Methods (Matches BookingResource logic)
                     Forms\Components\Select::make('method')
                         ->label('Method')
-                        ->options([
-                            'cash' => 'Cash',
-                            'knet' => 'KNET',
-                            'card' => 'Card',
-                            'transfer' => 'Bank Transfer',
-                            'link' => 'Payment Link',
-                            'insurance' => 'Insurance',
-                        ])
+                        ->options(function (RelationManager $livewire) {
+                            $visit = $livewire->getOwnerRecord();
+
+                            // 1. Standard Manual / POS Options (Always Available)
+                            $options = [
+                                'cash' => 'Cash',
+                                'knet' => 'KNET (POS)',
+                                'visa' => 'Credit Card (POS)',
+                                'link' => 'Payment Link (Manual)',
+                                'transfer' => 'Bank Transfer',
+                                'insurance' => 'Insurance',
+                            ];
+
+                            // 2. Fetch Dynamic Configurations
+                            if ($visit instanceof Visit && $visit->branch_id) {
+                                $branchId = $visit->branch_id;
+                                // Load partner via relation if possible, else query
+                                $partnerId = $visit->branch?->partner_id
+                                    ?? \App\Models\Branch::find($branchId)?->partner_id;
+
+                                // We search for System, Partner, or Branch accounts
+                                $accounts = \App\Models\GatewayAccount::query()
+                                    ->with('gateway')
+                                    ->where('is_active', true)
+                                    ->where(function ($q) use ($branchId, $partnerId) {
+                                        $q->where(function ($sq) use ($branchId) {
+                                            $sq->where('owner_type', 'branch')->where('branch_id', $branchId);
+                                        })
+                                            ->orWhere(function ($sq) use ($partnerId) {
+                                                if ($partnerId) {
+                                                    $sq->where('owner_type', 'partner')->where('partner_id', $partnerId);
+                                                }
+                                            })
+                                            ->orWhere('owner_type', 'system');
+                                    })
+                                    ->get();
+
+                                foreach ($accounts as $acc) {
+                                    $key = $acc->gateway?->driver ?? 'other';
+                                    // Don't duplicate keys we already hardcoded
+                                    if (in_array($key, ['cash', 'knet', 'visa', 'link'])) {
+                                        continue;
+                                    }
+
+                                    $label = $acc->display_name ?: ($acc->gateway?->name ?? ucfirst($key));
+                                    $options[$key] = $label;
+                                }
+                            }
+
+                            return $options;
+                        })
                         ->native(false)
                         ->required(),
 
@@ -88,16 +130,28 @@ class VisitPaymentsRelationManager extends RelationManager
                         ->default('paid')
                         ->required(),
 
+                    // NEW: Kind/Type Field (Required by user)
+                    Forms\Components\Select::make('kind')
+                        ->label('Type')
+                        ->options([
+                            'consultation' => 'Consultation',
+                            'services' => 'Services',
+                            'medicines' => 'Medicines',
+                            'other' => 'Other',
+                        ])
+                        ->default('consultation')
+                        ->required(),
+
                     Forms\Components\TextInput::make('reference_no')
                         ->label('Reference No.')
                         ->maxLength(191)
                         ->nullable()
-                        ->columnSpan(2),
+                        ->columnSpan(1),
 
                     Forms\Components\DateTimePicker::make('paid_at')
                         ->label('Paid At')
                         ->seconds(false)
-                        ->helperText('If empty, system will set it automatically when status is Paid.')
+                        ->helperText('If empty, system will set it automatically.')
                         ->nullable(),
                 ]),
         ]);
@@ -118,6 +172,11 @@ class VisitPaymentsRelationManager extends RelationManager
                     ->label('Method')
                     ->badge()
                     ->formatStateUsing(fn (?string $state) => $state ? strtoupper($state) : '-')
+                    ->sortable(),
+
+                Tables\Columns\TextColumn::make('kind')
+                    ->label('Type')
+                    ->formatStateUsing(fn (?string $state) => $state ? ucfirst($state) : '-')
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('status')
@@ -174,14 +233,35 @@ class VisitPaymentsRelationManager extends RelationManager
                     }),
             ])
             ->actions([
+                // FIX: View action is always visible so staff can see details even if editing is locked
+                Tables\Actions\ViewAction::make(),
+
+                // FIX: Add Print Action for Staff
+                Tables\Actions\Action::make('print_receipt')
+                    ->label('Print')
+                    ->icon('heroicon-o-printer')
+                    ->color('gray')
+                    ->url(function (VisitPayment $record) {
+                        // Ensure we have a booking to link to (Legacy safety)
+                        $bookingId = $record->visit->booking_id ?? null;
+                        if (! $bookingId) {
+                            return null;
+                        }
+
+                        return route('bookings.receipt.show', [
+                            'booking' => $bookingId,
+                            'payment_id' => $record->id,
+                        ]);
+                    })
+                    ->openUrlInNewTab()
+                    ->visible(fn (VisitPayment $record) => ($record->status ?? null) === 'paid' && ! empty($record->visit->booking_id)),
+
                 Tables\Actions\EditAction::make()
                     ->label('Edit')
+                    // FIX: Prevent editing online payments (link, myfatoorah, etc) to avoid corruption
+                    ->visible(fn (VisitPayment $record) => ! in_array($record->method, ['link', 'myfatoorah', 'tap', 'stripe']))
                     ->mutateFormDataUsing(function (array $data, VisitPayment $record): array {
-                        /**
-                         * Audit-safe behavior:
-                         * If it was already paid, do not auto-overwrite paid_at.
-                         * If switching to paid and paid_at is empty, set it.
-                         */
+                        // If switching to paid and paid_at is empty, set it.
                         if (($data['status'] ?? null) === 'paid' && empty($data['paid_at']) && empty($record->paid_at)) {
                             $data['paid_at'] = now();
                         }
@@ -200,60 +280,48 @@ class VisitPaymentsRelationManager extends RelationManager
                     ->label('Mark Refunded')
                     ->icon('heroicon-o-arrow-uturn-left')
                     ->color('info')
-                    ->visible(fn (VisitPayment $record) => ($record->status ?? null) === 'paid')
+                    // FIX: Restrict to Admin ID 1 ONLY
+                    ->visible(fn (VisitPayment $record) => auth()->id() === 1 && ($record->status ?? null) === 'paid')
                     ->requiresConfirmation()
                     ->action(function (VisitPayment $record) {
                         $record->update(['status' => 'refunded']);
-
-                        Notification::make()
-                            ->title('Payment marked as refunded')
-                            ->success()
-                            ->send();
+                        Notification::make()->title('Payment marked as refunded')->success()->send();
                     }),
 
                 Tables\Actions\Action::make('markVoid')
                     ->label('Void')
                     ->icon('heroicon-o-no-symbol')
                     ->color('gray')
-                    ->visible(fn (VisitPayment $record) => ($record->status ?? null) !== 'void')
+                    // FIX: Restrict to Admin ID 1 ONLY
+                    ->visible(fn (VisitPayment $record) => auth()->id() === 1 && ($record->status ?? null) !== 'void')
                     ->requiresConfirmation()
                     ->action(function (VisitPayment $record) {
                         $record->update(['status' => 'void']);
-
-                        Notification::make()
-                            ->title('Payment voided')
-                            ->success()
-                            ->send();
+                        Notification::make()->title('Payment voided')->success()->send();
                     }),
 
                 Tables\Actions\DeleteAction::make()
                     ->label('Delete')
+                    // FIX: Restrict to Admin ID 1 AND prevent deleting online payments
+                    ->visible(fn (VisitPayment $record) => auth()->id() === 1 && ! in_array($record->method, ['link', 'myfatoorah', 'tap', 'stripe']))
                     ->requiresConfirmation()
                     ->action(function (VisitPayment $record) {
-                        // Soft delete only
                         $record->delete();
-
-                        Notification::make()
-                            ->title('Payment removed (soft deleted)')
-                            ->success()
-                            ->send();
+                        Notification::make()->title('Payment removed (soft deleted)')->success()->send();
                     }),
             ])
             ->bulkActions([
                 Tables\Actions\BulkAction::make('bulkVoid')
                     ->label('Void selected')
                     ->icon('heroicon-o-no-symbol')
+                    // FIX: Restrict Bulk actions to Admin ID 1
+                    ->visible(fn () => auth()->id() === 1)
                     ->requiresConfirmation()
                     ->action(function ($records) {
                         foreach ($records as $record) {
-                            /** @var VisitPayment $record */
                             $record->update(['status' => 'void']);
                         }
-
-                        Notification::make()
-                            ->title('Selected payments voided')
-                            ->success()
-                            ->send();
+                        Notification::make()->title('Selected payments voided')->success()->send();
                     })
                     ->deselectRecordsAfterCompletion(),
             ])

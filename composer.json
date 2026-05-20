@@ -21,6 +21,7 @@
         "laravel/tinker": "^2.10.1",
         "leandrocfe/filament-apex-charts": "^3.0",
         "maatwebsite/excel": "^3.1",
+        "myfatoorah/library": "^2.2",
         "netflie/whatsapp-cloud-api": "^2.2",
         "phpseclib/phpseclib": "^3.0",
         "pxlrbt/filament-excel": "^2.5",

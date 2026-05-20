@@ -63,6 +63,7 @@ class AdminPanelProvider extends PanelProvider
                 \App\Filament\Resources\ReservationTermResource::class,
 
                 \App\Filament\Resources\PartnerResource::class,
+                \App\Filament\Resources\GatewayAccountResource::class,
 
                 // --- New Clinic Resources ---
                 \App\Filament\Resources\DoctorResource::class,
@@ -75,6 +76,7 @@ class AdminPanelProvider extends PanelProvider
                 \App\Filament\Resources\ClinicItemStockResource::class,
                 \App\Filament\Resources\ClinicStockMovementResource::class,
                 \App\Filament\Resources\VisitStockRequestResource::class,
+                \App\Filament\Resources\ClinicPackageResource::class,
             ])
             ->pages([
                 \App\Filament\Pages\AdminDashboardRoute::class,
@@ -91,7 +93,8 @@ class AdminPanelProvider extends PanelProvider
                 // \App\Filament\Pages\DailyBusinessReport::class,
                 \App\Filament\Pages\ExecutiveDashboard::class,
                 \App\Filament\Pages\WaitingPatients::class,
-                \App\Filament\Pages\NurseStation::class,
+                //\App\Filament\Pages\NurseStation::class,
+                \App\Filament\Pages\DailyReconciliationReport::class,
             ])
             ->widgets([
                 \App\Filament\Widgets\WhatsAppStatusWidget::class,

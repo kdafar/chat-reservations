@@ -26,15 +26,44 @@ class WhatsAppFlowEndpointController extends Controller
         $encKeyB64 = $request->input('encrypted_aes_key');
         $ivB64 = $request->input('initial_vector');
 
+        if (! $this->verifyMetaSignature($request)) {
+            Log::warning('Flow: invalid signature (likely other app/subscription)', [
+                'ip' => $request->ip(),
+                'ua' => $request->userAgent(),
+                'sig256' => $request->header('x-hub-signature-256'),
+            ]);
+
+            // ACK 200 to stop retries/noise
+            return response()->json(['data' => ['status' => 'active']], 200);
+        }
+
         if (! is_string($encDataB64) || ! is_string($encKeyB64) || ! is_string($ivB64)) {
             Log::warning('Flow: bad request json');
 
             return response('bad request', 400);
         }
 
-        $req = $this->crypto->decrypt($encDataB64, $encKeyB64, $ivB64);
+        try {
+            $req = $this->crypto->decrypt($encDataB64, $encKeyB64, $ivB64);
+        } catch (\Throwable $e) {
+            Log::warning('Flow: decrypt exception (ack 200 to stop retries)', [
+                'msg' => $e->getMessage(),
+                'ip' => $request->ip(),
+                'ua' => $request->userAgent(),
+                'len' => (int) $request->header('content-length', 0),
+                'sig256_present' => $request->hasHeader('x-hub-signature-256'),
+            ]);
+
+            return response()->json(['data' => ['status' => 'active']], 200);
+        }
+
         if (! $req) {
-            return response('decryption failed', 421);
+            Log::warning('Flow: decrypt returned null (ack 200 to stop retries)', [
+                'ip' => $request->ip(),
+                'ua' => $request->userAgent(),
+            ]);
+
+            return response()->json(['data' => ['status' => 'active']], 200);
         }
 
         // Logging
@@ -135,5 +164,25 @@ class WhatsAppFlowEndpointController extends Controller
         $out['show_times'] = isset($out['show_times']) ? (bool) $out['show_times'] : (count($time) > 0);
 
         return $out;
+    }
+
+    private function verifyMetaSignature(Request $request): bool
+    {
+        $sig = (string) $request->header('x-hub-signature-256', '');
+        if ($sig === '' || ! str_starts_with($sig, 'sha256=')) {
+            return false;
+        }
+
+        $secret = (string) config('services.facebook.app_secret'); // adjust if yours is different
+        if ($secret === '') {
+            Log::error('Flow: app secret missing for signature verification');
+
+            return false;
+        }
+
+        $raw = (string) $request->getContent();
+        $expected = 'sha256='.hash_hmac('sha256', $raw, $secret);
+
+        return hash_equals($expected, $sig);
     }
 }

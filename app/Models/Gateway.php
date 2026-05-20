@@ -44,4 +44,20 @@ class Gateway extends Model
 
         return null;
     }
+
+    public function label(?string $locale = null): string
+    {
+        $locale = $locale ?: app()->getLocale();
+
+        // Spatie translatable will return string when accessed via getTranslation
+        $name = $this->getTranslation('name', $locale) ?: $this->getTranslation('name', 'en');
+
+        return $name ?: ucfirst((string) $this->driver);
+    }
+
+    public function driverKey(): string
+    {
+        // single place to define how you want it used as a "method key"
+        return (string) $this->driver;
+    }
 }

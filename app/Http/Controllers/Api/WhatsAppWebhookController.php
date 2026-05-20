@@ -98,10 +98,53 @@ class WhatsAppWebhookController extends Controller
 
                 $value = $payload['entry'][0]['changes'][0]['value'] ?? [];
                 if (! empty($value['statuses'])) {
-                    Log::info('WA status', ['n' => count($value['statuses'])]);
+                    $statuses = (array) ($value['statuses'] ?? []);
+
+                    // Log count first
+                    Log::info('WA status', $ctx + ['n' => count($statuses)]);
+
+                    // Persist each status event (usually 1, but can be more)
+                    foreach ($statuses as $s) {
+                        $wamid = (string) ($s['id'] ?? '');
+                        $recipient = (string) ($s['recipient_id'] ?? '');
+                        $status = (string) ($s['status'] ?? 'status');
+
+                        // Keep your detailed log (what you already added)
+                        Log::info('WA status detail', $ctx + [
+                            'id' => $wamid ?: null,
+                            'status' => $status ?: null,
+                            'timestamp' => $s['timestamp'] ?? null,
+                            'recipient_id' => $recipient ?: null,
+                            'conversation' => $s['conversation'] ?? null,
+                            'pricing' => $s['pricing'] ?? null,
+                            'errors' => $s['errors'] ?? null,
+                        ]);
+
+                        if ($wamid === '') {
+                            continue;
+                        }
+
+                        // Upsert by wa_message_id (unique index exists)
+                        try {
+                            \App\Models\WAMessageLog::updateOrCreate(
+                                ['wa_message_id' => $wamid],
+                                [
+                                    'phone' => $recipient !== '' ? $recipient : 'unknown',
+                                    'payload' => $payload, // store last status payload (helps debugging)
+                                    'status' => $status !== '' ? $status : 'status',
+                                ]
+                            );
+                        } catch (\Throwable $e) {
+                            Log::warning('WA status: failed to persist', $ctx + [
+                                'id' => $wamid,
+                                'error' => $e->getMessage(),
+                            ]);
+                        }
+                    }
 
                     return response('ok', 200);
                 }
+
                 if (empty($value['messages'])) {
                     return response('ok', 200);
                 }

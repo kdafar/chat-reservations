@@ -11,13 +11,16 @@ use App\Models\Partner;
 use App\Models\Patient;
 use App\Models\RestaurantTable;
 use App\Models\Visit;
+use App\Models\VisitPayment;
 use App\Services\AvailabilityService;
 use App\Services\BookingService;
+use App\Services\Clinic\VisitCostingService;
 use Carbon\Carbon;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
+use Filament\Support\Exceptions\Halt;
 use Filament\Tables;
 use Filament\Tables\Actions\ActionGroup;
 use Filament\Tables\Enums\FiltersLayout;
@@ -365,15 +368,45 @@ class BookingResource extends Resource
                         ->searchable()
                         ->preload()
                         ->live()
-                        ->afterStateUpdated(function ($state, Forms\Set $set) {
-                            if ($state) {
-                                $contact = \App\Models\WhatsappContact::find($state);
-                                if ($contact) {
-                                    // Normalize MSISDN from contact
-                                    $raw = (string) $contact->msisdn;
-                                    $digitsOnly = preg_replace('/\D/', '', $raw);
-                                    $set('msisdn', $digitsOnly ?: $raw);
-                                }
+                        ->afterStateUpdated(function ($state, Forms\Set $set, Forms\Get $get) {
+                            // 1. Null Defense
+                            if (! $state) {
+                                return;
+                            }
+
+                            $contact = \App\Models\WhatsappContact::find($state);
+                            if (! $contact) {
+                                return;
+                            }
+
+                            // 2. Normalize MSISDN (The "Bridge")
+                            $raw = (string) $contact->msisdn;
+                            $digitsOnly = preg_replace('/\D/', '', $raw);
+                            $finalPhone = $digitsOnly ?: $raw;
+
+                            $set('msisdn', $finalPhone);
+
+                            // 3. Auto-Fill Patient (Safe Lookup)
+                            // If patient is already manually selected, do not overwrite to prevent frustration.
+                            if ($get('patient_id')) {
+                                return;
+                            }
+
+                            $partnerId = $get('partner_id');
+
+                            // Search for patient by phone
+                            $patient = \App\Models\Patient::query()
+                                ->when($partnerId && Schema::hasColumn('patients', 'partner_id'), fn ($q) => $q->where('partner_id', $partnerId))
+                                ->where(function ($q) use ($finalPhone, $digitsOnly) {
+                                    $q->where('phone', $finalPhone);
+                                    if ($digitsOnly) {
+                                        $q->orWhere('phone', 'LIKE', "%{$digitsOnly}");
+                                    }
+                                })
+                                ->first();
+
+                            if ($patient) {
+                                $set('patient_id', $patient->id);
                             }
                         })
                         ->columnSpan(1),
@@ -399,7 +432,11 @@ class BookingResource extends Resource
                                 ->mapWithKeys(fn ($p) => [$p->id => "{$p->name} ({$p->phone})"])
                                 ->toArray();
                         })
-                        ->getOptionLabelUsing(fn ($value) => optional(Patient::find($value), fn ($p) => "{$p->name} ({$p->phone})") ?? '—')
+                        ->getOptionLabelUsing(function ($value) {
+                            $p = $value ? Patient::find($value) : null;
+
+                            return $p ? "{$p->name} ({$p->phone})" : '—';
+                        })
                         ->live()
                         // Safe Create Option Form
                         ->createOptionForm(array_merge(
@@ -421,12 +458,37 @@ class BookingResource extends Resource
                             ] : []
                         ))
                         ->createOptionUsing(fn (array $data) => Patient::create($data)->id)
-                        ->afterStateUpdated(function ($state, Forms\Set $set) {
-                            if ($state) {
-                                $patient = Patient::find($state);
-                                if ($patient) {
-                                    $set('msisdn', $patient->phone);
-                                }
+                        ->afterStateUpdated(function ($state, Forms\Set $set, Forms\Get $get) {
+                            // 1. Null Defense
+                            if (! $state) {
+                                return;
+                            }
+
+                            $patient = Patient::find($state);
+                            if (! $patient) {
+                                return;
+                            }
+
+                            // 2. Normalize Phone (The "Bridge")
+                            $raw = (string) $patient->phone;
+                            $digitsOnly = preg_replace('/\D/', '', $raw);
+                            $finalPhone = $digitsOnly ?: $raw;
+
+                            $set('msisdn', $finalPhone);
+
+                            // 3. Auto-Fill WhatsApp Contact (Safe Lookup)
+                            // If contact is already selected, do not overwrite.
+                            if ($get('contact_id')) {
+                                return;
+                            }
+
+                            $contact = \App\Models\WhatsappContact::query()
+                                ->where('msisdn', $finalPhone)
+                                ->when($digitsOnly, fn ($q) => $q->orWhere('msisdn', 'LIKE', "%{$digitsOnly}"))
+                                ->first();
+
+                            if ($contact) {
+                                $set('contact_id', $contact->id);
                             }
                         })
                         ->required()
@@ -572,6 +634,7 @@ class BookingResource extends Resource
 
         return $table
             ->striped()
+            ->poll('10s')
             // ->persistFiltersInSession()
             ->deferFilters(false)
             ->filtersLayout(FiltersLayout::AboveContentCollapsible)
@@ -703,11 +766,17 @@ class BookingResource extends Resource
                 Tables\Filters\SelectFilter::make('branch_id')
                     ->label('Clinic Branch')
                     ->multiple()
-                                // Optimization: Use pluck directly
-                    ->options(fn () => Branch::query()
+                    ->options(fn () => Branch::forUser(auth()->user())
                         ->orderByRaw("JSON_UNQUOTE(JSON_EXTRACT(name, '$.\"en\"'))")
-                        ->get()->pluck('localized_name', 'id')
-                    ),
+                        ->get()
+                        ->pluck('localized_name', 'id')
+                    )
+                    ->default(function () {
+
+                        $availableIds = Branch::forUser(auth()->user())->pluck('id');
+
+                        return $availableIds->count() === 1 ? $availableIds->toArray() : [];
+                    }),
 
                 Tables\Filters\SelectFilter::make('status')
                     ->multiple()
@@ -824,7 +893,6 @@ class BookingResource extends Resource
 
                 Tables\Filters\Filter::make('no_show')
                     ->label('No-show (auto)')
-                                // FIX: Use explicit timezone for consistent reporting
                     ->query(fn (Builder $q) => $q->where('status', self::STATUS_CONFIRMED)
                         ->whereNull('checked_in_at')
                         ->whereNotNull('res_end')
@@ -836,7 +904,7 @@ class BookingResource extends Resource
 
                 Tables\Actions\EditAction::make()
                     ->label('Edit')
-                    ->visible(fn (Booking $r) => is_null($r->checked_in_at) && ! in_array($r->status, [self::STATUS_CANCELLED, self::STATUS_COMPLETED])),
+                    ->visible(fn (Booking $r) => is_null($r->checked_in_at) && ! self::isTerminal($r)),
 
                 ActionGroup::make([
                     Tables\Actions\Action::make('open_whatsapp')
@@ -1053,7 +1121,11 @@ class BookingResource extends Resource
                             $booking->refresh();
                             Notification::make()->title('Appointment rescheduled')->success()->send();
                         })
-                        ->visible(fn (Booking $r) => is_null($r->checked_in_at) && in_array($r->status, [BookingResource::STATUS_CONFIRMED, BookingResource::STATUS_PENDING])),
+                        ->visible(fn (Booking $r) => ! self::isCheckedIn($r)
+                            && ! self::isTerminal($r)
+                            && in_array($r->status, [self::STATUS_CONFIRMED, self::STATUS_PENDING], true)
+                            && (int) $r->branch_id > 0
+                        ),
 
                     Tables\Actions\Action::make('assign_room')
                         ->label(fn (Booking $r) => $r->table_id ? 'Change Room' : 'Assign Room')
@@ -1201,13 +1273,25 @@ class BookingResource extends Resource
                             $r->refresh();
                             Notification::make()->title('Room assigned')->success()->send();
                         })
-                        ->visible(fn (Booking $r) => ! in_array($r->status, [self::STATUS_COMPLETED, self::STATUS_CANCELLED])),
+                        ->visible(fn (Booking $r) => ! self::isTerminal($r)
+                            && ! self::isCheckedIn($r)
+                            && (int) $r->branch_id > 0
+                        ),
 
                     Tables\Actions\Action::make('resend')
                         ->label('Resend')
                         ->icon('heroicon-o-paper-airplane')
                         ->color('primary')
                         ->action(function (Booking $r) {
+
+                            // Normalize MSISDN (avoid formatted numbers breaking sends)
+                            $msisdn = preg_replace('/\D+/', '', (string) ($r->msisdn ?? ''));
+                            if (! $msisdn) {
+                                Notification::make()->title('No phone number')->danger()->send();
+
+                                return;
+                            }
+
                             app(\App\Services\QrPassService::class)->ensureToken($r);
                             $qrUrl = route('bookings.qr', ['token' => $r->qr_token]);
                             $passUrl = app(\App\Services\QrPassService::class)->passUrl($r);
@@ -1215,31 +1299,86 @@ class BookingResource extends Resource
                             $tz = config('app.timezone', 'Asia/Kuwait');
                             [$start, $end] = self::resolveSlot($r, $tz);
 
+                            // Template values
+                            $dateTpl = $start ? $start->isoFormat('ddd, D MMM YYYY') : '—'; // {{1}}
+                            $timeTpl = $start ? $start->format('H:i') : '—';               // {{2}}
+
+                            // Legacy caption values
                             $date = $start ? $start->isoFormat('ddd, D MMM') : '—';
                             $time = $start ? $start->format('h:i A').($end ? '–'.$end->format('h:i A') : '') : '—';
 
-                            $text = "Appointment Confirmed\nCode: {$r->booking_code}\nDate: {$date}\nTime: {$time}\n\nYour QR Pass:\n{$passUrl}";
+                            $code = (string) ($r->booking_code ?? '');
+                            $text = "Appointment Confirmed\nCode: {$code}\nDate: {$date}\nTime: {$time}\n\nYour QR Pass:\n{$passUrl}";
 
                             $wa = app(\App\Services\WhatsAppSender::class);
-                            try {
-                                $wa->sendImage($r->msisdn, $qrUrl, $text);
-                            } catch (\Throwable) {
-                                $wa->sendTextMessage($r->msisdn, $text);
+
+                            // Locale selection (safe fallback)
+                            $locale = app()->getLocale();
+                            $lang = in_array($locale, ['ar', 'en'], true) ? $locale : 'en';
+
+                            // Optional override to force a specific language (recommended to force 'en' utility if needed)
+                            $forcedLang = (string) config('services.whatsapp.confirm_lang', '');
+                            if ($forcedLang !== '' && in_array($forcedLang, ['ar', 'en'], true)) {
+                                $lang = $forcedLang;
                             }
 
-                            Notification::make()->title('Confirmation resent')->success()->send();
+                            $sent = false;
+
+                            // 1) Template first (prevents 131047)
+                            try {
+                                $sent = $wa->sendClinicConfirmedV3(
+                                    $msisdn,
+                                    $lang,
+                                    $qrUrl,
+                                    $dateTpl,
+                                    $timeTpl,
+                                    $code,
+                                    $passUrl
+                                );
+                            } catch (\Throwable) {
+                                $sent = false;
+                            }
+
+                            // 2) Fallback: legacy image+caption
+                            if (! $sent) {
+                                try {
+                                    $sent = $wa->sendImage($msisdn, $qrUrl, $text);
+                                } catch (\Throwable) {
+                                    $sent = false;
+                                }
+                            }
+
+                            // 3) Final fallback: plain text
+                            if (! $sent) {
+                                try {
+                                    $wa->sendTextMessage($msisdn, $text);
+                                    $sent = true;
+                                } catch (\Throwable) {
+                                    $sent = false;
+                                }
+                            }
+
+                            $note = Notification::make()->title($sent ? 'Confirmation resent' : 'Confirmation resend failed');
+                            $sent ? $note->success() : $note->danger();
+                            $note->send();
                         })
-                        ->visible(fn (Booking $r) => in_array($r->status, [self::STATUS_CONFIRMED]) && is_null($r->checked_in_at)),
+                        ->visible(fn (Booking $r) => ! self::isCheckedIn($r)
+                            && ! self::isTerminal($r)
+                            && $r->status === self::STATUS_CONFIRMED
+                            && filled($r->msisdn)
+                            && filled($r->booking_code)
+                        ),
 
                     Tables\Actions\Action::make('collect_consultation')
                         ->label('Collect Consultation')
                         ->icon('heroicon-o-banknotes')
                         ->color('primary')
-                        ->visible(fn (Booking $r) => $r->status === self::STATUS_CONFIRMED
-                            && is_null($r->checked_in_at)
-                            && (int) $r->patient_id > 0
-                            && (int) $r->doctor_id > 0
-                            && ! self::isConsultationPaidForBooking($r) // hide if already paid
+                        ->visible(fn (Booking $r) => ! self::isCheckedIn($r)
+                            && ! self::isTerminal($r)
+                            && $r->status === self::STATUS_CONFIRMED
+                            && self::hasCoreIds($r)
+                            && ! self::hasConsultationPaid($r)
+                            && self::consultationFeeAmountForDoctor((int) $r->doctor_id) > 0
                         )
                         ->form([
                             Forms\Components\TextInput::make('fee')
@@ -1248,125 +1387,166 @@ class BookingResource extends Resource
                                 ->dehydrated(false)
                                 ->default(fn (\App\Models\Booking $r) => number_format(self::consultationFeeAmountForDoctor((int) $r->doctor_id), 3)),
 
+                            // FIX: Added Manual POS Options + Dynamic Gateways
                             Forms\Components\Select::make('method')
                                 ->label('Payment method')
-                                ->options([
-                                    'cash' => 'Cash',
-                                    'knet' => 'KNET',
-                                    'visa' => 'Visa / Master',
-                                    'other' => 'Other',
-                                ])
-                                ->required(),
+                                ->live()
+                                ->options(fn (Booking $record) => \App\Models\GatewayAccount::paymentOptionsForBookingWithFallback($record))
+                                ->required()
+                                ->default(function (Booking $record) {
+                                    $opts = \App\Models\GatewayAccount::paymentOptionsForBookingWithFallback($record);
 
+                                    // Prefer knet when present, otherwise first option, otherwise fallback
+                                    if (array_key_exists('knet', $opts)) {
+                                        return 'knet';
+                                    }
+
+                                    $first = array_key_first($opts);
+
+                                    return $first ?: 'knet';
+                                }),
+
+                            // 2. Only show "Mark as Paid" for Manual/POS methods.
+                            // If "Link", it stays unpaid until the callback.
                             Forms\Components\Toggle::make('mark_paid')
                                 ->label('Mark as paid now')
-                                ->default(true),
+                                ->default(true)
+                                ->visible(fn (Forms\Get $get) => $get('method') !== 'link'),
 
                             Forms\Components\TextInput::make('reference_no')
-                                ->label('Reference / Receipt No (optional)')
+                                ->label('Reference / Receipt No')
                                 ->maxLength(64)
-                                ->nullable(),
+                                ->visible(fn (Forms\Get $get) => $get('method') !== 'link'),
                         ])
                         ->action(function (array $data, \App\Models\Booking $r) {
-                            $tz = config('app.timezone', 'Asia/Kuwait');
-                            $now = now($tz);
-
-                            // fee is NOT user-editable; always from doctor
                             $amount = self::consultationFeeAmountForDoctor((int) $r->doctor_id);
-
                             if ($amount <= 0) {
-                                Notification::make()
-                                    ->title('Consultation fee missing')
-                                    ->body('Doctor consultation fee is not set. Please set it in Doctor profile before collecting.')
-                                    ->danger()
-                                    ->persistent()
-                                    ->send();
+                                Notification::make()->title('Fee Missing')->body('Doctor has no consultation fee set.')->danger()->send();
 
                                 return;
                             }
 
                             try {
-                                DB::transaction(function () use ($data, $r, $now, $amount) {
-                                    $visit = self::ensureVisitForBooking($r, $now);
+                                DB::transaction(function () use ($data, $r, $amount) {
+                                    // 1. Ensure Visit Exists (Matches robust logic)
+                                    $visit = self::ensureVisitForBooking($r, now());
 
+                                    // 2. Add/Update Charge (Invoice is created regardless of payment method)
                                     $label = self::consultationLabel();
-
-                                    // Upsert consultation charge line (single source of truth for consultation)
-                                    $charge = \App\Models\VisitCharge::query()
-                                        ->where('visit_id', $visit->id)
-                                        ->where('label', $label)
-                                        ->first();
-
-                                    if ($charge) {
-                                        $charge->update([
+                                    \App\Models\VisitCharge::updateOrCreate(
+                                        ['visit_id' => $visit->id, 'label' => $label],
+                                        [
+                                            'branch_id' => (int) $visit->branch_id,
                                             'qty' => 1,
                                             'unit_price_snapshot' => $amount,
                                             'line_total' => $amount,
-                                            'added_by_user_id' => (int) (auth()->id() ?? 0),
-                                            'branch_id' => (int) $visit->branch_id,
-                                        ]);
-                                    } else {
-                                        \App\Models\VisitCharge::create([
-                                            'visit_id' => $visit->id,
-                                            'branch_id' => (int) $visit->branch_id,
-                                            'label' => $label,
-                                            'qty' => 1,
-                                            'unit_price_snapshot' => $amount,
-                                            'line_total' => $amount,
-                                            'added_by_user_id' => (int) (auth()->id() ?? 0),
-                                        ]);
-                                    }
+                                            'added_by_user_id' => auth()->id() ?? 0,
+                                        ]
+                                    );
 
-                                    // Optional payment record (IDEMPOTENT)
-                                    if ((bool) ($data['mark_paid'] ?? true)) {
-                                        $kind = \App\Models\VisitPayment::KIND_CONSULTATION ?? 'consultation';
+                                    // 3. Handle Payment Method
+                                    if ($data['method'] === 'link') {
+                                        // A. SEND LINK (Do NOT mark as paid yet)
 
-                                        // Lock row to prevent double-click / race condition duplicates
-                                        $payment = \App\Models\VisitPayment::query()
-                                            ->where('visit_id', $visit->id)
-                                            ->where('kind', $kind)
-                                            ->lockForUpdate()
+                                        // Find best Gateway Account (Logic reused from options)
+                                        $branchId = $r->branch_id;
+                                        $partnerId = $r->branch?->partner_id ?? \App\Models\Branch::find($branchId)?->partner_id;
+
+                                        $gatewayAccount = \App\Models\GatewayAccount::query()
+                                            ->withoutGlobalScopes() // IMPORTANT: allow system/partner rows even if branch scope exists
+                                            ->where('is_active', true)
+                                            ->whereHas('gateway', fn ($q) => $q->where('driver', 'myfatoorah'))
+                                            ->where(function ($q) use ($branchId, $partnerId) {
+                                                $q->where(function ($sq) use ($branchId) {
+                                                    $sq->where('owner_type', 'branch')->where('branch_id', $branchId);
+                                                });
+
+                                                if ($partnerId > 0) {
+                                                    $q->orWhere(function ($sq) use ($partnerId) {
+                                                        $sq->where('owner_type', 'partner')->where('partner_id', $partnerId);
+                                                    });
+                                                }
+
+                                                $q->orWhere('owner_type', 'system');
+                                            })
+                                            ->orderByRaw("FIELD(owner_type, 'branch', 'partner', 'system')")
+                                            ->orderByDesc('id')
                                             ->first();
 
-                                        $payload = [
-                                            'visit_id' => $visit->id,
-                                            'kind' => $kind,
+                                        if (! $gatewayAccount || empty(data_get($gatewayAccount->credentials, 'api_key'))) {
+                                            throw new \Exception('No valid MyFatoorah API key configured for this clinic (branch/partner/system).');
+                                        }
+
+                                        // Create Invoice
+                                        $mf = new \App\Services\Payment\MyFatoorahService($gatewayAccount->credentials);
+                                        $link = $mf->createInvoice([
                                             'amount' => $amount,
-                                            'method' => (string) ($data['method'] ?? 'cash'),
-                                            'status' => 'paid',
-                                            'reference_no' => $data['reference_no'] ?? null,
-                                            'collected_by_user_id' => (int) (auth()->id() ?? 0),
-                                            'paid_at' => $now,
+                                            'name' => $r->patient_display,
+                                            'phone' => $r->msisdn,
+                                            'ref_id' => 'BKG-'.$r->booking_code,
+                                            'account_id' => $gatewayAccount->id, // Important for callback
+                                        ]);
+
+                                        // Send WhatsApp
+                                        $wa = app(\App\Services\WhatsAppSender::class);
+
+                                        // Template Name: payment_request_utility (Create this in Meta Manager!)
+                                        // Variables: {{1}}=Name, {{2}}=Amount, {{3}}=Link
+                                        $templateName = 'payment_request_utility';
+                                        $lang = app()->getLocale(); // 'en' or 'ar'
+
+                                        // Structure parameters for the Body Component
+                                        $bodyParams = [
+                                            ['type' => 'text', 'text' => $r->patient_display ?? 'Valued Patient'],
+                                            ['type' => 'text', 'text' => $amount.' KD'],
+                                            ['type' => 'text', 'text' => $link],
                                         ];
 
-                                        if ($payment) {
-                                            // Update existing consultation payment (no duplicates)
-                                            // Keep existing reference_no if new one is empty
-                                            if (empty($payload['reference_no'])) {
-                                                $payload['reference_no'] = $payment->reference_no;
-                                            }
+                                        $wa->sendTemplate($r->msisdn, $templateName, $lang, $bodyParams);
 
-                                            $payment->update($payload);
-                                        } else {
-                                            \App\Models\VisitPayment::create($payload);
+                                    } elseif ((bool) ($data['mark_paid'] ?? true)) {
+                                        // B. MANUAL PAYMENT (Cash/KNET POS)
+
+                                        $kind = \App\Models\VisitPayment::KIND_CONSULTATION ?? 'consultation';
+                                        $exists = \App\Models\VisitPayment::where('visit_id', $visit->id)
+                                            ->where('kind', $kind)->exists();
+
+                                        if (! $exists) {
+                                            \App\Models\VisitPayment::create([
+                                                'visit_id' => $visit->id,
+                                                'kind' => $kind,
+                                                'amount' => $amount,
+                                                'method' => (string) ($data['method'] ?? 'cash'),
+                                                'status' => 'paid',
+                                                'reference_no' => $data['reference_no'] ?? null,
+                                                'collected_by_user_id' => auth()->id() ?? 0,
+                                                'paid_at' => now(),
+                                            ]);
                                         }
                                     }
-
-                                    // Refresh costing snapshot (you already rely on this for discharge)
-                                    app(\App\Services\Clinic\VisitCostingService::class)->compute($visit, (int) (auth()->id() ?? 0));
                                 });
 
-                                Notification::make()->title('Consultation recorded')->success()->send();
+                                if ($data['method'] === 'link') {
+                                    Notification::make()->title('Payment Link Sent')->body('The patient has received the link via WhatsApp.')->success()->send();
+                                } else {
+                                    Notification::make()->title('Consultation Recorded')->success()->send();
+                                }
+
                             } catch (\Throwable $e) {
                                 report($e);
-
-                                Notification::make()
-                                    ->title('Failed to record consultation')
-                                    ->body($e->getMessage())
-                                    ->danger()
-                                    ->send();
+                                Notification::make()->title('Error')->body($e->getMessage())->danger()->send();
                             }
                         }),
+
+                    Tables\Actions\Action::make('print_receipt')
+                        ->label('Print Receipt')
+                        ->icon('heroicon-o-printer')
+                        ->color('gray')
+                        ->url(fn (Booking $r) => route('bookings.receipt.show', $r->id))
+                        ->openUrlInNewTab()
+                        ->visible(fn (Booking $r) => self::hasConsultationPaid($r)
+                            && filled($r->booking_code)
+                        ),
 
                     Tables\Actions\Action::make('check_in')
                         ->label('Check-in')
@@ -1421,7 +1601,15 @@ class BookingResource extends Resource
                                 'Allowed window: '.$early->format('h:i A').' – '.$late->format('h:i A');
                         })
 
-                        ->visible(fn (Booking $r) => $r->status === self::STATUS_CONFIRMED && is_null($r->checked_in_at))
+                        ->visible(fn (Booking $r) => ! self::isCheckedIn($r)
+                            && ! self::isTerminal($r)
+                            && $r->status === self::STATUS_CONFIRMED
+                            && self::hasCoreIds($r)
+                            && self::hasVisit($r)
+                            && self::hasConsultationCharge($r)
+                            && self::hasConsultationPaid($r)
+                            && (int) $r->table_id > 0
+                        )
 
                         ->requiresConfirmation()
                         ->action(function (Booking $r) {
@@ -1494,11 +1682,15 @@ class BookingResource extends Resource
                             $early = $start->copy()->subMinutes($beforeMinutes);
                             $late = $start->copy()->addMinutes($afterMinutes);
 
+                            $windowText = $beforeMinutes === $afterMinutes
+                                ? '±'.$beforeMinutes.' minutes'
+                                : $beforeMinutes.' minutes before / '.$afterMinutes.' minutes after';
+
                             if ($now->lt($early) || $now->gt($late)) {
                                 Notification::make()
                                     ->title('Check-in Not Allowed')
                                     ->body(
-                                        'Check-in is allowed only within '.$windowMinutes." minutes before/after the appointment.\n".
+                                        'Check-in is allowed only within '.$windowText." of the appointment.\n".
                                         'Appointment: '.$start->format('Y-m-d h:i A')."\n".
                                         'Allowed window: '.$early->format('h:i A').' – '.$late->format('h:i A')
                                     )
@@ -1573,9 +1765,9 @@ class BookingResource extends Resource
                                             throw new \RuntimeException('Room not found.');
                                         }
 
-                                        if (($table->status ?? null) !== 'available') {
-                                            throw new \RuntimeException("Room {$table->name} is not available.");
-                                        }
+                                        // if (($table->status ?? null) !== 'available') {
+                                        //     throw new \RuntimeException("Room {$table->name} is not available.");
+                                        // }
 
                                         $table->update(['status' => 'occupied']);
                                     }
@@ -1633,16 +1825,144 @@ class BookingResource extends Resource
                                 ->success()
                                 ->send();
                         }),
+                    Tables\Actions\Action::make('collect_visit_payment')
+                        ->label('Collect Payment')
+                        ->icon('heroicon-o-banknotes')
+                        ->color('warning')
+                        ->modalHeading('Collect Payment')
+                        ->modalDescription('Record a payment for this visit without leaving this page.')
+                        ->modalSubmitActionLabel('Save Payment')
+                        ->form([
+                            Forms\Components\TextInput::make('amount')
+                                ->label('Amount')
+                                ->numeric()
+                                ->step('0.001')
+                                ->required()
+                                ->default(function (Booking $r) {
+                                    $visit = Visit::query()->where('booking_id', $r->id)->with('payments')->first();
+                                    if (! $visit) {
+                                        return 0;
+                                    }
+
+                                    try {
+                                        return app(VisitCostingService::class)->getRemainingBalance($visit);
+                                    } catch (\Throwable) {
+                                        return 0;
+                                    }
+                                }),
+
+                            Forms\Components\Select::make('method')
+                                ->label('Method')
+                                ->native(false)
+                                ->required()
+                                ->options(fn (Booking $r) => \App\Models\GatewayAccount::paymentOptionsForBookingWithFallback($r))
+                                ->default(function (Booking $r) {
+                                    $opts = \App\Models\GatewayAccount::paymentOptionsForBookingWithFallback($r);
+                                    if (array_key_exists('knet', $opts)) {
+                                        return 'knet';
+                                    }
+
+                                    return array_key_first($opts) ?: 'cash';
+                                }),
+
+                            Forms\Components\Select::make('kind')
+                                ->label('Type')
+                                ->native(false)
+                                ->required()
+                                ->options([
+                                    'consultation' => 'Consultation',
+                                    'services' => 'Services',
+                                    'medicines' => 'Medicines',
+                                    'other' => 'Other',
+                                ])
+                                ->default('consultation'),
+
+                            Forms\Components\TextInput::make('reference_no')
+                                ->label('Reference / Receipt No')
+                                ->maxLength(191),
+
+                            Forms\Components\Toggle::make('mark_paid')
+                                ->label('Mark as paid now')
+                                ->default(true)
+                                ->visible(fn (Forms\Get $get) => $get('method') !== 'link'),
+
+                            Forms\Components\DateTimePicker::make('paid_at')
+                                ->label('Paid At')
+                                ->seconds(false)
+                                ->visible(fn (Forms\Get $get) => (bool) $get('mark_paid'))
+                                ->nullable(),
+                        ])
+                        ->action(function (array $data, Booking $r) {
+
+                            DB::transaction(function () use ($data, $r) {
+
+                                // Ensure visit exists (safe default)
+                                $visit = Visit::firstOrCreate(
+                                    ['booking_id' => $r->id],
+                                    [
+                                        'patient_id' => $r->patient_id,
+                                        'doctor_id' => $r->doctor_id,
+                                        'branch_id' => $r->branch_id,
+                                        'restaurant_table_id' => $r->table_id,
+                                        'source' => $r->source,
+                                        'booking_code' => $r->booking_code,
+                                        'status' => Visit::STATUS_CREATED ?? 'created',
+                                    ]
+                                );
+
+                                // Keep the same “disabled amount saved” behavior as your RelationManager
+                                $status = ($data['method'] ?? null) === 'link'
+                                    ? 'pending'
+                                    : (($data['mark_paid'] ?? true) ? 'paid' : 'pending');
+
+                                VisitPayment::create([
+                                    'visit_id' => (int) $visit->id,
+                                    'kind' => (string) ($data['kind'] ?? 'consultation'),
+                                    'amount' => (float) ($data['amount'] ?? 0),
+                                    'method' => (string) ($data['method'] ?? 'cash'),
+                                    'status' => $status,
+                                    'reference_no' => $data['reference_no'] ?? null,
+                                    'collected_by_user_id' => (int) (auth()->id() ?? 0) ?: null,
+                                    'paid_at' => $status === 'paid'
+                                        ? ($data['paid_at'] ?? now())
+                                        : null,
+                                ]);
+
+                                // Recompute snapshot totals so discharge sees latest
+                                if (config('clinic.visit_financials_enabled', false)) {
+                                    app(VisitCostingService::class)->compute($visit, (int) (auth()->id() ?? 0));
+                                }
+                            });
+
+                            Notification::make()
+                                ->title('Payment recorded')
+                                ->success()
+                                ->send();
+                        })
+                        ->visible(fn (Booking $r) => ! self::isTerminal($r)
+                            && self::hasVisit($r)
+                            && self::visitIsOpen($r)
+                            && self::isCheckedIn($r)
+                        ),
 
                     Tables\Actions\Action::make('discharge')
                         ->label('Discharge')
                         ->icon('heroicon-o-arrow-right-circle')
                         ->color('danger') // Changed to danger to indicate point of no return
-                        ->visible(fn (Booking $r) => ! is_null($r->checked_in_at) && $r->status !== self::STATUS_COMPLETED)
+                        ->visible(fn (Booking $r) => self::isCheckedIn($r)
+                            && ! self::isTerminal($r)
+                            && self::hasVisit($r)
+                            && self::hasConsultationPaid($r)
+                            && self::visitIsOpen($r)
+                            && (
+                                ! config('clinic.visit_financials_enabled', false)
+                                || self::visitIsFullyPaidForBooking($r)
+                            )
+                        )
                         ->requiresConfirmation()
                         ->modalHeading('Discharge Patient')
                         ->modalDescription('Are you sure? This will verify payments and close the visit.')
-                        ->action(function (Booking $r) {
+                        ->action(function (\Filament\Tables\Actions\Action $action, Booking $r) {
 
                             // A. Financial Guard -----------------------------------------
                             $visit = Visit::where('booking_id', $r->id)->first();
@@ -1659,7 +1979,10 @@ class BookingResource extends Resource
                                     // 3. Calculate Balance
                                     // Null Defense: Default to 0.0 if column is null
                                     $totalCost = (float) ($visit->fees_total ?? 0);
-                                    $totalPaid = (float) $visit->payments->sum('amount');
+                                    $totalPaid = (float) \App\Models\VisitPayment::query()
+                                        ->where('visit_id', $visit->id)
+                                        ->where('status', 'paid')
+                                        ->sum('amount');
                                     $balance = $totalCost - $totalPaid;
 
                                     // 4. Strict Check (Floating point tolerance)
@@ -1671,15 +1994,22 @@ class BookingResource extends Resource
                                             ->persistent() // Force user to dismiss
                                             ->send();
 
-                                        $this->halt(); // Stop execution immediately
+                                        $action->halt(); // Stop execution immediately
 
                                         return;
                                     }
 
+                                } catch (Halt $e) {
+                                    // IMPORTANT: let Filament handle it (do not convert it to "System Error")
+                                    throw $e;
                                 } catch (\Throwable $e) {
-                                    // Fail Safe: If costing service crashes, do not allow discharge blindly
                                     report($e);
-                                    Notification::make()->title('System Error')->body('Could not verify financials. Check logs.')->danger()->send();
+
+                                    Notification::make()
+                                        ->title('System Error')
+                                        ->body('Could not verify financials. Check logs.')
+                                        ->danger()
+                                        ->send();
 
                                     return;
                                 }
@@ -1724,10 +2054,11 @@ class BookingResource extends Resource
                         ->label('No-show')
                         ->icon('heroicon-o-exclamation-triangle')
                         ->color('danger')
-                        ->visible(fn (Booking $r) => $r->status === self::STATUS_CONFIRMED &&
-                            is_null($r->checked_in_at) &&
-                            $r->res_end &&
-                            $r->res_end->isPast()
+                        ->visible(fn (Booking $r) => ! self::isTerminal($r)
+                            && $r->status === self::STATUS_CONFIRMED
+                            && ! self::isCheckedIn($r)
+                            && $r->res_end
+                            && $r->res_end->isPast()
                         )
                         ->requiresConfirmation()
                         ->action(function (Booking $r) {
@@ -1762,7 +2093,9 @@ class BookingResource extends Resource
                         ->label('Cancel')
                         ->icon('heroicon-o-x-circle')
                         ->color('danger')
-                        ->visible(fn (Booking $r) => is_null($r->checked_in_at) && ! in_array($r->status, [self::STATUS_CANCELLED, self::STATUS_COMPLETED]))
+                        ->visible(fn (Booking $r) => ! self::isCheckedIn($r)
+                            && ! self::isTerminal($r)
+                        )
                         ->requiresConfirmation()
                         ->action(function (Booking $r) {
                             if ($r->checked_in_at) {
@@ -1788,7 +2121,7 @@ class BookingResource extends Resource
                             .'?activeRelationManager=0&scrollTo=relations';
                         })
                         ->openUrlInNewTab()
-                        ->visible(fn (Booking $r) => Visit::query()->where('booking_id', $r->id)->exists()),
+                        ->visible(fn (Booking $r) => self::hasVisit($r) && self::visitIsOpen($r)),
 
                     Tables\Actions\Action::make('visit_payments')
                         ->label('Visit: Payments')
@@ -1803,7 +2136,7 @@ class BookingResource extends Resource
                             .'?activeRelationManager=1&scrollTo=relations';
                         })
                         ->openUrlInNewTab()
-                        ->visible(fn (Booking $r) => Visit::query()->where('booking_id', $r->id)->exists()),
+                        ->visible(fn (Booking $r) => self::hasVisit($r) && self::visitIsOpen($r)),
 
                     Tables\Actions\Action::make('visit_followups')
                         ->label('Visit: Follow-ups')
@@ -1818,7 +2151,7 @@ class BookingResource extends Resource
                             .'?activeRelationManager=2&scrollTo=relations';
                         })
                         ->openUrlInNewTab()
-                        ->visible(fn (Booking $r) => Visit::query()->where('booking_id', $r->id)->exists()),
+                        ->visible(fn (Booking $r) => self::hasVisit($r) && self::visitIsOpen($r)),
                 ])
                     ->label('More')
                     ->icon('heroicon-m-ellipsis-vertical')
@@ -1832,28 +2165,118 @@ class BookingResource extends Resource
                         ->icon('heroicon-o-paper-airplane')
                         ->color('primary')
                         ->action(function ($records) {
+
                             $tz = config('app.timezone', 'Asia/Kuwait');
+
+                            $wa = app(\App\Services\WhatsAppSender::class);
+                            $qrPass = app(\App\Services\QrPassService::class);
+
+                            // Locale selection once
+                            $locale = app()->getLocale();
+                            $lang = in_array($locale, ['ar', 'en'], true) ? $locale : 'en';
+                            $forcedLang = (string) config('services.whatsapp.confirm_lang', '');
+                            if ($forcedLang !== '' && in_array($forcedLang, ['ar', 'en'], true)) {
+                                $lang = $forcedLang;
+                            }
+
+                            $sentCount = 0;
+                            $skippedCount = 0;
+                            $failedCount = 0;
+
                             foreach ($records as $r) {
+                                /** @var \App\Models\Booking $r */
                                 if ($r->status !== self::STATUS_CONFIRMED || ! is_null($r->checked_in_at)) {
+                                    $skippedCount++;
+
                                     continue;
                                 }
-                                app(\App\Services\QrPassService::class)->ensureToken($r);
-                                $qrUrl = route('bookings.qr', ['token' => $r->qr_token]);
-                                $passUrl = app(\App\Services\QrPassService::class)->passUrl($r);
-                                [$start, $end] = self::resolveSlot($r, $tz);
-                                $date = $start ? $start->isoFormat('ddd, D MMM') : '—';
-                                $time = $start ? $start->format('h:i A').($end ? '–'.$end->format('h:i A') : '') : '—';
-                                $text = "Appointment Confirmed\nCode: {$r->booking_code}\nDate: {$date}\nTime: {$time}\n\nYour QR Pass:\n{$passUrl}";
-                                $wa = app(\App\Services\WhatsAppSender::class);
+
+                                $msisdn = preg_replace('/\D+/', '', (string) ($r->msisdn ?? ''));
+                                if (! $msisdn) {
+                                    $skippedCount++;
+
+                                    continue;
+                                }
+
                                 try {
-                                    $wa->sendImage($r->msisdn, $qrUrl, $text);
+                                    $qrPass->ensureToken($r);
+
+                                    $qrUrl = route('bookings.qr', ['token' => $r->qr_token]);
+                                    $passUrl = $qrPass->passUrl($r);
+
+                                    [$start, $end] = self::resolveSlot($r, $tz);
+
+                                    $dateTpl = $start ? $start->isoFormat('ddd, D MMM YYYY') : '—';
+                                    $timeTpl = $start ? $start->format('H:i') : '—';
+
+                                    $date = $start ? $start->isoFormat('ddd, D MMM') : '—';
+                                    $time = $start ? $start->format('h:i A').($end ? '–'.$end->format('h:i A') : '') : '—';
+
+                                    $code = (string) ($r->booking_code ?? '');
+                                    $text = "Appointment Confirmed\nCode: {$code}\nDate: {$date}\nTime: {$time}\n\nYour QR Pass:\n{$passUrl}";
+
+                                    $sent = false;
+
+                                    // Template first
+                                    try {
+                                        $sent = $wa->sendClinicConfirmedV3(
+                                            $msisdn,
+                                            $lang,
+                                            $qrUrl,
+                                            $dateTpl,
+                                            $timeTpl,
+                                            $code,
+                                            $passUrl
+                                        );
+                                    } catch (\Throwable) {
+                                        $sent = false;
+                                    }
+
+                                    // Fallback: image
+                                    if (! $sent) {
+                                        try {
+                                            $sent = $wa->sendImage($msisdn, $qrUrl, $text);
+                                        } catch (\Throwable) {
+                                            $sent = false;
+                                        }
+                                    }
+
+                                    // Final fallback: text
+                                    if (! $sent) {
+                                        try {
+                                            $wa->sendTextMessage($msisdn, $text);
+                                            $sent = true;
+                                        } catch (\Throwable) {
+                                            $sent = false;
+                                        }
+                                    }
+
+                                    if ($sent) {
+                                        $sentCount++;
+                                    } else {
+                                        $failedCount++;
+                                    }
+
                                 } catch (\Throwable) {
-                                    $wa->sendTextMessage($r->msisdn, $text);
+                                    $failedCount++;
+
+                                    continue;
                                 }
                             }
-                            Notification::make()->title('Confirmations sent')->success()->send();
-                        }),
 
+                            $title = "Confirmations processed: sent {$sentCount}";
+                            if ($skippedCount > 0) {
+                                $title .= ", skipped {$skippedCount}";
+                            }
+                            if ($failedCount > 0) {
+                                $title .= ", failed {$failedCount}";
+                            }
+
+                            Notification::make()
+                                ->title($title)
+                                ->success()
+                                ->send();
+                        }),
                     Tables\Actions\BulkAction::make('bulk_cancel')
                         ->label('Cancel selected')
                         ->icon('heroicon-o-x-circle')
@@ -2026,6 +2449,94 @@ class BookingResource extends Resource
     protected static function consultationLabel(): string
     {
         return 'Consultation Fee';
+    }
+
+    private static function isTerminal(Booking $r): bool
+    {
+        return in_array($r->status, [self::STATUS_COMPLETED, self::STATUS_CANCELLED], true);
+    }
+
+    private static function isCheckedIn(Booking $r): bool
+    {
+        return ! is_null($r->checked_in_at);
+    }
+
+    private static function hasCoreIds(Booking $r): bool
+    {
+        return (int) $r->patient_id > 0 && (int) $r->doctor_id > 0 && (int) $r->branch_id > 0;
+    }
+
+    private static function visitIdForBooking(Booking $r): ?int
+    {
+        $id = Visit::query()->where('booking_id', $r->id)->value('id');
+
+        return $id ? (int) $id : null;
+    }
+
+    private static function hasVisit(Booking $r): bool
+    {
+        return self::visitIdForBooking($r) !== null;
+    }
+
+    private static function visitIsOpen(Booking $r): bool
+    {
+        $visit = Visit::query()->select('status', 'completed_at')->where('booking_id', $r->id)->first();
+        if (! $visit) {
+            return false;
+        }
+
+        $status = (string) ($visit->status ?? '');
+
+        return ! in_array($status, ['completed', 'no_show', 'cancelled'], true) && is_null($visit->completed_at);
+    }
+
+    private static function hasConsultationCharge(Booking $r): bool
+    {
+        $visitId = self::visitIdForBooking($r);
+        if (! $visitId) {
+            return false;
+        }
+
+        return \App\Models\VisitCharge::query()
+            ->where('visit_id', $visitId)
+            ->where('label', self::consultationLabel())
+            ->exists();
+    }
+
+    private static function hasConsultationPaid(Booking $r): bool
+    {
+        return self::isConsultationPaidForBooking($r); // keep your existing logic
+    }
+
+    private static function visitBalanceForBooking(Booking $r): ?float
+    {
+        $visit = Visit::query()
+            ->where('booking_id', $r->id)
+            ->withSum(['payments as paid_sum' => function ($q) {
+                $q->where('status', 'paid');
+            }], 'amount')
+            ->first(['id', 'fees_total', 'discount_total']);
+
+        if (! $visit) {
+            return null;
+        }
+
+        $total = (float) ($visit->fees_total ?? 0.0); // snapshot total
+        $paid = (float) ($visit->paid_sum ?? 0.0);
+
+        return $total - $paid;
+    }
+
+    private static function visitIsFullyPaidForBooking(Booking $r, float $tolerance = 0.005): bool
+    {
+        $balance = self::visitBalanceForBooking($r);
+
+        // If we can’t determine, be conservative: hide discharge
+        if ($balance === null) {
+            return false;
+        }
+
+        return $balance <= $tolerance;
     }
 
     public static function getPages(): array

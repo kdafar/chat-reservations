@@ -231,4 +231,45 @@ class WhatsAppSender
     {
         return ! isset($json['error']);
     }
+
+    /* ---------------------------------------------------------------
+ | Templates (Clinic)
+ |---------------------------------------------------------------*/
+    public function sendClinicConfirmedV3(
+        string $to,
+        string $langCode,
+        string $qrImageUrl,
+        string $dateText,
+        string $timeText,
+        string $reference,
+        string $linkUrl
+    ): bool {
+        // WhatsApp expects 'en' or 'ar' in your templates list
+        $langCode = in_array($langCode, ['en', 'ar'], true) ? $langCode : 'en';
+
+        // HEADER: IMAGE
+        $headerParams = [
+            [
+                'type' => 'image',
+                'image' => ['link' => $qrImageUrl],
+            ],
+        ];
+
+        // BODY: positional {{1}}..{{4}}
+        $bodyParams = [
+            ['type' => 'text', 'text' => (string) $dateText],
+            ['type' => 'text', 'text' => (string) $timeText],
+            ['type' => 'text', 'text' => (string) $reference],
+            ['type' => 'text', 'text' => (string) $linkUrl],
+        ];
+
+        return $this->sendTemplateAdvanced(
+            $to,
+            'clinic_confirmed_v3',
+            $langCode,
+            $headerParams,
+            $bodyParams,
+            []
+        );
+    }
 }

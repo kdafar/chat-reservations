@@ -43,7 +43,8 @@ return [
         Role::class => 'roles',
         Permission::class => 'permissions',
         \App\Models\VisitStockRequest::class => 'visit_stock_request',
-
+        \App\Models\GatewayAccount::class => 'gateway_account',
+        \App\Models\ClinicPackage::class => 'clinic_packages',
     ],
 
     /**

@@ -65,9 +65,17 @@ class FlowCrypto
 
             return FlowRequest::fromArray($arr, $aesKey, $iv);
 
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
+            Log::warning('[FlowCrypto] decrypt failed', [
+                'err' => $e->getMessage(),
+                'key_path' => $this->keyPath,
+                'key_md5' => $keyChecksum,
+                'encKey_b64_len' => strlen($encKeyB64),
+                'iv_b64_len' => strlen($ivB64),
+                'blob_b64_len' => strlen($encDataB64),
+            ]);
 
-            throw $e;
+            return null;
         }
     }
 

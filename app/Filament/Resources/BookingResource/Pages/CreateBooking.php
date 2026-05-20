@@ -80,6 +80,11 @@ class CreateBooking extends CreateRecord
             $end = $end->timezone($tz);
         }
 
+        // Template-friendly values
+        $dateTpl = $start ? $start->isoFormat('ddd, D MMM YYYY') : '—'; // {{1}}
+        $timeTpl = $start ? $start->format('H:i') : '—';               // {{2}}
+
+        // Legacy caption values
         $date = $start ? $start->isoFormat('ddd, D MMM') : '—';
         $time = $start
             ? $start->format('h:i A').($end ? '–'.$end->format('h:i A') : '')
@@ -90,14 +95,55 @@ class CreateBooking extends CreateRecord
 
         $wa = app(\App\Services\WhatsAppSender::class);
 
+        // Locale selection (safe fallback)
+        $locale = app()->getLocale();
+        $lang = in_array($locale, ['ar', 'en'], true) ? $locale : 'en';
+
+        // Optional override to force a specific language (e.g. force 'en' utility template)
+        $forcedLang = (string) config('services.whatsapp.confirm_lang', '');
+        if ($forcedLang !== '' && in_array($forcedLang, ['ar', 'en'], true)) {
+            $lang = $forcedLang;
+        }
+
+        $sent = false;
+
+        // 1) Template first (works outside 24h window; prevents WA error 131047)
         try {
-            $wa->sendImage($msisdn, $qrUrl, $text);
+            // Requires add-only method WhatsAppSender::sendClinicConfirmedV3()
+            $sent = $wa->sendClinicConfirmedV3(
+                $msisdn,
+                $lang,
+                $qrUrl,    // header image (dynamic QR)
+                $dateTpl,  // {{1}}
+                $timeTpl,  // {{2}}
+                $code,     // {{3}}
+                $passUrl   // {{4}}
+            );
         } catch (\Throwable) {
-            $wa->sendTextMessage($msisdn, $text);
+            $sent = false;
+        }
+
+        // 2) Fallback: legacy image+caption (may fail outside 24h)
+        if (! $sent) {
+            try {
+                $sent = $wa->sendImage($msisdn, $qrUrl, $text);
+            } catch (\Throwable) {
+                $sent = false;
+            }
+        }
+
+        // 3) Final fallback: plain text
+        if (! $sent) {
+            try {
+                $wa->sendTextMessage($msisdn, $text);
+                $sent = true;
+            } catch (\Throwable) {
+                $sent = false;
+            }
         }
 
         Notification::make()
-            ->title('WhatsApp confirmation sent')
+            ->title($sent ? 'WhatsApp confirmation sent' : 'WhatsApp confirmation failed')
             ->success()
             ->send();
     }

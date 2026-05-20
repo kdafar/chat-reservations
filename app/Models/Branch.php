@@ -325,4 +325,42 @@ class Branch extends Model
 
         return $arr[$locale] ?? $arr['en'] ?? $arr['ar'] ?? (is_string($this->name) ? $this->name : 'Branch #'.$this->id);
     }
+
+    /**
+     * SAFE SCOPE: Filters Branches based on User Access.
+     *  Usage: Branch::forUser(auth()->user())->get();
+     */
+    public function scopeForUser(\Illuminate\Database\Eloquent\Builder $query, ?\App\Models\User $user = null): \Illuminate\Database\Eloquent\Builder
+    {
+        $user = $user ?? auth()->user();
+
+        // 1. Guard: No user? Return query as-is or empty depending on your preference.
+        // Usually safe to return query, but if strictly secured, use whereRaw('1=0').
+        if (! $user) {
+            return $query;
+        }
+
+        // 2. Guard: Admin Bypass
+        if (method_exists($user, 'hasRole') && $user->hasRole('admin')) {
+            return $query;
+        }
+
+        // 3. Get Logic
+        return $query->where(function ($q) use ($user) {
+            // A. Direct Access (Staff assigned to specific branch)
+            $q->whereIn('id', \Illuminate\Support\Facades\DB::table('branch_user')
+                ->where('user_id', $user->id)
+                ->pluck('branch_id')
+            );
+
+            // B. Manager Access (User manages the Parent Clinic -> sees all branches)
+            $managedPartnerIds = \Illuminate\Support\Facades\DB::table('partner_user')
+                ->where('user_id', $user->id)
+                ->pluck('partner_id');
+
+            if ($managedPartnerIds->isNotEmpty()) {
+                $q->orWhereIn('partner_id', $managedPartnerIds);
+            }
+        });
+    }
 }

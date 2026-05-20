@@ -13,7 +13,7 @@ class ClinicDoctorCutTrend extends ApexChartWidget
 
     protected static ?string $chartId = 'clinicDoctorCutTrend';
 
-    protected static ?string $heading = 'Doctor Cut Trend (Ledger Snapshot)';
+    protected static ?string $heading = 'Doctor Cut (Today)';
 
     protected static ?int $contentHeight = 280;
 
@@ -29,22 +29,20 @@ class ClinicDoctorCutTrend extends ApexChartWidget
             ];
         }
 
-        [$from, $to, $branchId, $doctorId] = $this->resolvedFilters();
+        // Force "today" (use app timezone)
+        $today = now()->timezone(config('app.timezone', 'Asia/Kuwait'))->toDateString();
 
-        // Force branch scope for non-admin users even if UI filter is empty.
+        // Keep existing scoping logic
+        [, , $branchId, $doctorId] = $this->resolvedFilters();
         $branchId = $this->effectiveBranchId($branchId);
-
-        // Optional: also force doctor scope if current user is a doctor and filter is empty.
         $doctorId = $this->effectiveDoctorId($doctorId);
 
-        // Cache key must include effective scope + user (prevents cross-branch cache leakage).
         $userId = Filament::auth()->id() ?? auth()->id();
-        $cacheKey = 'doctor_cut_trend:'.md5(json_encode([$from, $to, $branchId, $doctorId, $userId]));
+        $cacheKey = 'doctor_cut_today:'.md5(json_encode([$today, $branchId, $doctorId, $userId]));
 
-        $rows = ClinicReportCache::remember($cacheKey, 60, function () use ($from, $to, $branchId, $doctorId) {
+        $cut = ClinicReportCache::remember($cacheKey, 60, function () use ($today, $branchId, $doctorId) {
             $q = DB::table('doctor_compensation_ledgers')
-                ->whereDate('created_at', '>=', $from)
-                ->whereDate('created_at', '<=', $to);
+                ->whereDate('created_at', '=', $today);
 
             // If branchId is -1, return empty safely.
             if ($branchId === -1) {
@@ -55,14 +53,8 @@ class ClinicDoctorCutTrend extends ApexChartWidget
 
             $q->when($doctorId, fn ($qq) => $qq->where('doctor_id', $doctorId));
 
-            return $q->groupByRaw('DATE(created_at)')
-                ->orderByRaw('DATE(created_at)')
-                ->selectRaw('DATE(created_at) as d, COALESCE(SUM(doctor_cut_amount),0) as cut')
-                ->get();
+            return (float) ($q->sum('doctor_cut_amount') ?? 0);
         });
-
-        $labels = $rows->pluck('d')->all();
-        $data = $rows->pluck('cut')->map(fn ($v) => (float) $v)->all();
 
         return [
             'chart' => [
@@ -78,10 +70,10 @@ class ClinicDoctorCutTrend extends ApexChartWidget
             ],
             'dataLabels' => ['enabled' => false],
             'series' => [
-                ['name' => 'Doctor Cut', 'data' => $data],
+                ['name' => 'Doctor Cut', 'data' => [(float) $cut]],
             ],
             'xaxis' => [
-                'categories' => $labels,
+                'categories' => ['Today'],
                 'labels' => ['style' => ['fontFamily' => 'inherit']],
             ],
             'yaxis' => [
@@ -97,6 +89,8 @@ class ClinicDoctorCutTrend extends ApexChartWidget
 
     protected function resolvedFilters(): array
     {
+        // We keep parsing filters so branch/doctor filters still work,
+        // but "from/to" are irrelevant for this widget now.
         $from = (string) ($this->filters['from'] ?? now()->startOfMonth()->toDateString());
         $to = (string) ($this->filters['to'] ?? now()->toDateString());
 
@@ -109,13 +103,6 @@ class ClinicDoctorCutTrend extends ApexChartWidget
         return [$from, $to, $branchId, $doctorId];
     }
 
-    /**
-     * For non-admin users, always scope to their assigned branch (branch_user).
-     * Returns:
-     *  - null  => no branch constraint (admin/super_admin or no user)
-     *  - int   => effective branch_id
-     *  - -1    => user has no branch assigned; forces empty results safely
-     */
     protected function effectiveBranchId(?int $requestedBranchId): ?int
     {
         $user = Filament::auth()->user() ?? auth()->user();
@@ -125,7 +112,6 @@ class ClinicDoctorCutTrend extends ApexChartWidget
         }
 
         if (method_exists($user, 'hasRole') && $user->hasRole(['admin', 'super_admin'])) {
-            // Admin can see all branches, and can optionally filter.
             return $requestedBranchId;
         }
 
@@ -136,10 +122,6 @@ class ClinicDoctorCutTrend extends ApexChartWidget
         return $branchId > 0 ? $branchId : -1;
     }
 
-    /**
-     * If the current user is a doctor and no doctor filter is selected,
-     * force scope to their doctor_id.
-     */
     protected function effectiveDoctorId(?int $requestedDoctorId): ?int
     {
         if ($requestedDoctorId) {

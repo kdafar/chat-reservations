@@ -1,6 +1,7 @@
 <?php
 
 use App\Console\Commands\PlatformVerify;
+use Filament\Support\Exceptions\Halt;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -27,7 +28,9 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->appendToGroup('web', \App\Http\Middleware\SetLocaleFromSession::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        $exceptions->dontReport([
+            Halt::class,
+        ]);
     })
     ->withEvents(discover: [
         app_path('Listeners'),
@@ -46,6 +49,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command('booking:cleanup-holds')->everyMinute();
         $schedule->command('wa:sessions:expire')->everyFifteenMinutes();
         $schedule->command('tables:free-stuck --hours=6')->dailyAt('03:00');
+        $schedule->command('telescope:prune')->dailyAt('00:00');
         $schedule->command('queue:work --queue=campaigns,default --sleep=1 --max-time=55 --stop-when-empty')
             ->everyMinute()
             ->withoutOverlapping();

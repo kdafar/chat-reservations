@@ -11,6 +11,7 @@ use App\Http\Controllers\BookingCheckInController;
 // ----- FRONT CONTROLLERS -----
 use App\Http\Controllers\BookingPassController;
 use App\Http\Controllers\BookingQrController;
+use App\Http\Controllers\BookingReceiptController;
 use App\Http\Controllers\Front\Account\AddressController;
 use App\Http\Controllers\Front\Account\ProfileController;
 use App\Http\Controllers\Front\Auth\LoginController;
@@ -28,6 +29,7 @@ use App\Http\Controllers\Front\LocationController;
 use App\Http\Controllers\Front\OrderController;
 use App\Http\Controllers\Front\PaymentController;
 use App\Http\Controllers\Front\ServiceBrowseController;
+use App\Http\Controllers\PaymentCallbackController;
 use App\Models\Booking;
 use App\Services\QrPassService;
 use Illuminate\Foundation\Auth\EmailVerificationRequest;
@@ -127,6 +129,15 @@ Route::middleware(['web'])->group(function () {
     Route::get('/payments/success', [PaymentController::class, 'success'])->name('payment.success');
     Route::get('/payments/error', [PaymentController::class, 'error'])->name('payment.error');
 });
+
+Route::prefix('bookings/payment')->name('bookings.payment.')->group(function () {
+    Route::get('/finalize', [PaymentCallbackController::class, 'finalize'])->name('finalize');
+    Route::get('/failed', [PaymentCallbackController::class, 'failed'])->name('failed');
+});
+
+Route::get('/bookings/{booking}/receipt', [BookingReceiptController::class, 'show'])
+    ->name('bookings.receipt.show')
+    ->middleware('auth');
 
 // ---------- AUTH (guest-only pages) ----------
 Route::middleware(['web', 'guest.front'])->group(function () {

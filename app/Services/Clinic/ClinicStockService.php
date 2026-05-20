@@ -152,4 +152,47 @@ class ClinicStockService
             ->lockForUpdate()
             ->firstOrFail();
     }
+
+    public function availableBase(int $branchId, int $clinicItemId): float
+    {
+        $row = \App\Models\ClinicItemStock::query()
+            ->where('branch_id', $branchId)
+            ->where('clinic_item_id', $clinicItemId)
+            ->first();
+
+        return (float) ($row?->qty_on_hand_base ?? 0);
+    }
+
+    /**
+     * Returns an array of shortages:
+     * [
+     *   ['clinic_item_id' => 12, 'required' => 2.5, 'available' => 1.0, 'missing' => 1.5],
+     * ]
+     */
+    public function shortagesForRequirements(int $branchId, array $requirements): array
+    {
+        $shortages = [];
+
+        foreach ($requirements as $r) {
+            $itemId = (int) ($r['clinic_item_id'] ?? 0);
+            $req = (float) ($r['qty_base'] ?? 0);
+
+            if ($itemId <= 0 || $req <= 0) {
+                continue;
+            }
+
+            $avail = $this->availableBase($branchId, $itemId);
+
+            if ($avail + 1e-9 < $req) {
+                $shortages[] = [
+                    'clinic_item_id' => $itemId,
+                    'required' => $req,
+                    'available' => $avail,
+                    'missing' => max(0.0, $req - $avail),
+                ];
+            }
+        }
+
+        return $shortages;
+    }
 }

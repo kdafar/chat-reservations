@@ -97,7 +97,7 @@ class VisitCostingService
     /**
      * Helper to get the remaining balance due for a visit.
      * used by the Payment Form.
-     * * PRESERVED FOR COMPATIBILITY with VisitPaymentsRelationManager
+     *  PRESERVED FOR COMPATIBILITY with VisitPaymentsRelationManager
      */
     public function getRemainingBalance(Visit $visit): float
     {

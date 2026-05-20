@@ -13,3 +13,5 @@
 @source "../views/vendor/filament/**/*.blade.php";
 @source "../js/**/*.js";
 @source "../js/**/*.ts";
+
+[x-cloak] { display: none !important; }
