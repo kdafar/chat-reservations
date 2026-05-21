@@ -20,22 +20,38 @@ class ClinicItemResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-archive-box';
 
-    protected static ?string $navigationGroup = 'Clinic — Setup';
-
-    protected static ?string $modelLabel = 'Clinic Item';
-
-    protected static ?string $pluralModelLabel = 'Clinic Items';
+    protected static ?string $navigationGroup = null;
 
     protected static ?int $navigationSort = 30;
+
+    public static function getNavigationGroup(): ?string
+    {
+        return __('common.nav.clinic_setup');
+    }
+
+    public static function getNavigationLabel(): string
+    {
+        return __('resources.clinic_item.nav_label');
+    }
+
+    public static function getModelLabel(): string
+    {
+        return __('resources.clinic_item.label');
+    }
+
+    public static function getPluralModelLabel(): string
+    {
+        return __('resources.clinic_item.label_plural');
+    }
 
     public static function form(Form $form): Form
     {
         return $form->schema([
-            Forms\Components\Section::make('Item Details')
+            Forms\Components\Section::make(__('clinic_inventory.clinic_item.sections.item_details'))
                 ->columns(3)
                 ->schema([
                     Forms\Components\Select::make('branch_id')
-                        ->label('Branch')
+                        ->label(__('clinic_inventory.clinic_item.fields.branch'))
                         ->options(fn () => Branch::query()
                             ->orderBy('id')
                             ->get()
@@ -45,13 +61,13 @@ class ClinicItemResource extends Resource
                         ->searchable()
                         ->preload()
                         ->nullable()
-                        ->helperText('Leave empty for a shared item usable in all branches.'),
+                        ->helperText(__('clinic_inventory.clinic_item.helpers.branch')),
 
                     Forms\Components\Select::make('type')
-                        ->label('Type')
+                        ->label(__('clinic_inventory.clinic_item.fields.type'))
                         ->options([
-                            'consumable' => 'Consumable',
-                            'service' => 'Service',
+                            'consumable' => __('clinic_inventory.clinic_item.types.consumable'),
+                            'service' => __('clinic_inventory.clinic_item.types.service'),
                         ])
                         ->native(false)
                         ->required()
@@ -70,90 +86,90 @@ class ClinicItemResource extends Resource
                         }),
 
                     Forms\Components\Toggle::make('is_active')
-                        ->label('Active')
+                        ->label(__('clinic_inventory.clinic_item.fields.active'))
                         ->default(true),
 
                     Forms\Components\TextInput::make('name.en')
-                        ->label('Name (EN)')
+                        ->label(__('clinic_inventory.clinic_item.fields.name_en'))
                         ->required()
                         ->maxLength(191),
 
                     Forms\Components\TextInput::make('name.ar')
-                        ->label('Name (AR)')
+                        ->label(__('clinic_inventory.clinic_item.fields.name_ar'))
                         ->required()
                         ->maxLength(191),
                 ]),
 
-            Forms\Components\Section::make('Inventory & Units')
-                ->description('Configure how this item is stocked and consumed.')
+            Forms\Components\Section::make(__('clinic_inventory.clinic_item.sections.inventory_units'))
+                ->description(__('clinic_inventory.clinic_item.sections.inventory_units_description'))
                 ->collapsible()
                 ->hidden(fn (Get $get) => $get('type') !== 'consumable')
                 ->columns(3)
                 ->schema([
                     Forms\Components\Toggle::make('is_stockable')
-                        ->label('Track Stock')
-                        ->helperText('Enable strict inventory tracking for this consumable.')
+                        ->label(__('clinic_inventory.clinic_item.fields.track_stock'))
+                        ->helperText(__('clinic_inventory.clinic_item.helpers.track_stock'))
                         ->default(false)
                         ->live()
                         ->columnSpanFull(),
 
                     Forms\Components\TextInput::make('stock_unit')
-                        ->label('Stock Unit')
-                        ->placeholder('e.g. Box, Vial')
-                        ->helperText('How you buy it from suppliers.')
+                        ->label(__('clinic_inventory.clinic_item.fields.stock_unit'))
+                        ->placeholder(__('clinic_inventory.clinic_item.placeholders.stock_unit'))
+                        ->helperText(__('clinic_inventory.clinic_item.helpers.stock_unit'))
                         ->required(fn (Get $get) => (bool) $get('is_stockable'))
                         ->maxLength(50)
                         ->disabled(fn (Get $get) => ! (bool) $get('is_stockable')),
 
                     Forms\Components\TextInput::make('usage_unit')
-                        ->label('Usage Unit (Base)')
-                        ->placeholder('e.g. Tablet, ml, Unit')
-                        ->helperText('Doctors consume this unit. Cost/price are per this unit.')
+                        ->label(__('clinic_inventory.clinic_item.fields.usage_unit'))
+                        ->placeholder(__('clinic_inventory.clinic_item.placeholders.usage_unit'))
+                        ->helperText(__('clinic_inventory.clinic_item.helpers.usage_unit'))
                         ->required(fn (Get $get) => (bool) $get('is_stockable'))
                         ->maxLength(50)
                         ->disabled(fn (Get $get) => ! (bool) $get('is_stockable')),
 
                     Forms\Components\TextInput::make('conversion_factor')
-                        ->label('Conversion Factor')
+                        ->label(__('clinic_inventory.clinic_item.fields.conversion_factor'))
                         ->numeric()
                         ->step(0.0001)
-                        ->helperText('How many Usage Units in 1 Stock Unit? (e.g. 1 Box = 50 Tablets)')
+                        ->helperText(__('clinic_inventory.clinic_item.helpers.conversion_factor'))
                         ->required(fn (Get $get) => (bool) $get('is_stockable'))
                         ->minValue(0.0001)
                         ->disabled(fn (Get $get) => ! (bool) $get('is_stockable')),
 
                     Forms\Components\TextInput::make('consume_step')
-                        ->label('Consumption Step')
+                        ->label(__('clinic_inventory.clinic_item.fields.consume_step'))
                         ->numeric()
                         ->step(0.0001)
                         ->default(1)
                         ->minValue(0.0001)
-                        ->helperText('Recommended increment step for usage (e.g. 0.5 for ml).')
+                        ->helperText(__('clinic_inventory.clinic_item.helpers.consume_step'))
                         ->disabled(fn (Get $get) => ! (bool) $get('is_stockable')),
 
                     Forms\Components\Toggle::make('is_billable')
-                        ->label('Billable to Patient')
+                        ->label(__('clinic_inventory.clinic_item.fields.is_billable'))
                         ->default(true),
                 ]),
 
-            Forms\Components\Section::make('Pricing (Per Usage Unit)')
+            Forms\Components\Section::make(__('clinic_inventory.clinic_item.sections.pricing'))
                 ->columns(2)
                 ->schema([
                     Forms\Components\TextInput::make('default_cost')
-                        ->label('Default Cost')
+                        ->label(__('clinic_inventory.clinic_item.fields.default_cost'))
                         ->numeric()
                         ->step('0.001')
                         ->default(0)
                         ->required()
-                        ->helperText('Cost per Usage Unit (e.g. cost per ml / unit).'),
+                        ->helperText(__('clinic_inventory.clinic_item.helpers.default_cost')),
 
                     Forms\Components\TextInput::make('default_price')
-                        ->label('Default Price')
+                        ->label(__('clinic_inventory.clinic_item.fields.default_price'))
                         ->numeric()
                         ->step('0.001')
                         ->default(0)
                         ->required()
-                        ->helperText('Price per Usage Unit.'),
+                        ->helperText(__('clinic_inventory.clinic_item.helpers.default_price')),
                 ])
                 ->collapsible(),
         ]);
@@ -166,10 +182,10 @@ class ClinicItemResource extends Resource
                 Tables\Columns\TextColumn::make('id')->label('#')->sortable(),
 
                 Tables\Columns\TextColumn::make('branch_id')
-                    ->label('Branch')
+                    ->label(__('clinic_inventory.clinic_item.fields.branch'))
                     ->formatStateUsing(function ($state) {
                         if (! $state) {
-                            return 'Shared';
+                            return __('clinic_inventory.clinic_item.shared');
                         }
                         $b = Branch::query()->find($state);
 
@@ -178,29 +194,32 @@ class ClinicItemResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('name')
-                    ->label('Name')
+                    ->label(__('clinic_inventory.clinic_item.fields.name'))
                     ->formatStateUsing(fn ($state, ClinicItem $r) => $r->localized_name)
                     ->searchable(),
 
-                Tables\Columns\TextColumn::make('type')->badge(),
+                Tables\Columns\TextColumn::make('type')
+                    ->label(__('clinic_inventory.clinic_item.fields.type'))
+                    ->formatStateUsing(fn (string $state): string => $state ? __('clinic_inventory.clinic_item.types.'.$state) : '')
+                    ->badge(),
 
                 Tables\Columns\IconColumn::make('is_stockable')
-                    ->label('Stock?')
+                    ->label(__('clinic_inventory.clinic_item.fields.stock_q'))
                     ->boolean()
                     ->toggleable(),
 
                 Tables\Columns\TextColumn::make('usage_unit')
-                    ->label('Unit')
+                    ->label(__('clinic_inventory.clinic_item.fields.unit'))
                     ->toggleable(isToggledHiddenByDefault: true),
 
-                Tables\Columns\TextColumn::make('default_cost')->label('Cost')->numeric(3),
-                Tables\Columns\TextColumn::make('default_price')->label('Price')->numeric(3),
+                Tables\Columns\TextColumn::make('default_cost')->label(__('clinic_inventory.clinic_item.fields.cost'))->numeric(3),
+                Tables\Columns\TextColumn::make('default_price')->label(__('clinic_inventory.clinic_item.fields.price'))->numeric(3),
 
-                Tables\Columns\IconColumn::make('is_active')->label('Active')->boolean(),
+                Tables\Columns\IconColumn::make('is_active')->label(__('clinic_inventory.clinic_item.fields.active'))->boolean(),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('branch_id')
-                    ->label('Branch')
+                    ->label(__('clinic_inventory.clinic_item.fields.branch'))
                     ->options(fn () => Branch::query()
                         ->orderBy('id')
                         ->get()
@@ -209,10 +228,14 @@ class ClinicItemResource extends Resource
                     ),
 
                 Tables\Filters\SelectFilter::make('type')
-                    ->options(['consumable' => 'Consumable', 'service' => 'Service']),
+                    ->label(__('clinic_inventory.clinic_item.fields.type'))
+                    ->options([
+                        'consumable' => __('clinic_inventory.clinic_item.types.consumable'),
+                        'service' => __('clinic_inventory.clinic_item.types.service'),
+                    ]),
 
                 Tables\Filters\TernaryFilter::make('is_stockable')
-                    ->label('Stockable'),
+                    ->label(__('clinic_inventory.clinic_item.filter_stockable')),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
@@ -220,6 +243,9 @@ class ClinicItemResource extends Resource
             ->bulkActions([
                 Tables\Actions\DeleteBulkAction::make(),
             ])
+            ->emptyStateHeading(__('resources.clinic_item.empty_heading'))
+            ->emptyStateDescription(__('resources.clinic_item.empty_description'))
+            ->emptyStateIcon('heroicon-o-beaker')
             ->defaultSort('id', 'desc');
     }
 

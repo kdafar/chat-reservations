@@ -19,45 +19,61 @@ class ClinicPackageResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-gift';
 
-    protected static ?string $navigationGroup = 'Clinic — Setup';
-
-    protected static ?string $modelLabel = 'Package';
-
-    protected static ?string $pluralModelLabel = 'Packages';
+    protected static ?string $navigationGroup = null;
 
     protected static ?int $navigationSort = 40;
+
+    public static function getNavigationGroup(): ?string
+    {
+        return __('common.nav.clinic_setup');
+    }
+
+    public static function getNavigationLabel(): string
+    {
+        return __('resources.clinic_package.nav_label');
+    }
+
+    public static function getModelLabel(): string
+    {
+        return __('resources.clinic_package.label');
+    }
+
+    public static function getPluralModelLabel(): string
+    {
+        return __('resources.clinic_package.label_plural');
+    }
 
     public static function form(Form $form): Form
     {
         return $form->schema([
-            Forms\Components\Section::make('Package')
+            Forms\Components\Section::make(__('clinic_inventory.clinic_package.sections.package'))
                 ->columns(2)
                 ->schema([
                     Forms\Components\Select::make('branch_id')
-                        ->label('Branch')
+                        ->label(__('clinic_inventory.clinic_package.fields.branch'))
                         ->nullable()
                         ->options(fn () => Branch::query()->orderBy('id')->get()
                             ->mapWithKeys(fn ($b) => [$b->id => ($b->localized_name ?? ('#'.$b->id))])
                             ->all()
                         )
-                        ->helperText('Leave empty to make it global (available for all branches).'),
+                        ->helperText(__('clinic_inventory.clinic_package.helpers.branch')),
 
                     Forms\Components\Toggle::make('is_active')
-                        ->label('Active')
+                        ->label(__('clinic_inventory.clinic_package.fields.active'))
                         ->default(true),
 
                     Forms\Components\TextInput::make('name.en')
-                        ->label('Name (EN)')
+                        ->label(__('clinic_inventory.clinic_package.fields.name_en'))
                         ->required()
                         ->maxLength(191),
 
                     Forms\Components\TextInput::make('name.ar')
-                        ->label('Name (AR)')
+                        ->label(__('clinic_inventory.clinic_package.fields.name_ar'))
                         ->required()
                         ->maxLength(191),
 
                     Forms\Components\TextInput::make('default_price')
-                        ->label('Default Price')
+                        ->label(__('clinic_inventory.clinic_package.fields.default_price'))
                         ->numeric()
                         ->step('0.001')
                         ->minValue(0)
@@ -65,8 +81,8 @@ class ClinicPackageResource extends Resource
                         ->required(),
                 ]),
 
-            Forms\Components\Section::make('Package Items')
-                ->description('Define required clinic items (base qty). These are used to build the stock request when doctor selects the package.')
+            Forms\Components\Section::make(__('clinic_inventory.clinic_package.sections.package_items'))
+                ->description(__('clinic_inventory.clinic_package.sections.package_items_description'))
                 ->schema([
                     Forms\Components\Repeater::make('items')
                         ->relationship('items')
@@ -74,7 +90,7 @@ class ClinicPackageResource extends Resource
                         ->columns(3)
                         ->schema([
                             Forms\Components\Select::make('clinic_item_id')
-                                ->label('Clinic Item')
+                                ->label(__('clinic_inventory.clinic_package.fields.clinic_item'))
                                 ->required()
                                 ->searchable()
                                 ->preload()
@@ -87,19 +103,19 @@ class ClinicPackageResource extends Resource
                                 ),
 
                             Forms\Components\TextInput::make('qty_base')
-                                ->label('Qty (Base)')
+                                ->label(__('clinic_inventory.clinic_package.fields.qty_base'))
                                 ->numeric()
                                 ->step('0.0001')
                                 ->minValue(0.0001)
                                 ->required(),
 
                             Forms\Components\Toggle::make('is_consumable')
-                                ->label('Consumable')
+                                ->label(__('clinic_inventory.clinic_package.fields.consumable'))
                                 ->default(true)
-                                ->helperText('If false, it is “non-consumable” and can be informational only.'),
+                                ->helperText(__('clinic_inventory.clinic_package.helpers.consumable')),
                         ])
                         ->minItems(0)
-                        ->addActionLabel('Add item'),
+                        ->addActionLabel(__('clinic_inventory.clinic_package.actions.add_item')),
                 ]),
         ]);
     }
@@ -111,40 +127,40 @@ class ClinicPackageResource extends Resource
                 Tables\Columns\TextColumn::make('id')->label('#')->sortable(),
 
                 Tables\Columns\TextColumn::make('branch_id')
-                    ->label('Branch')
+                    ->label(__('clinic_inventory.clinic_package.fields.branch'))
                     ->formatStateUsing(fn ($state) => $state
                         ? (Branch::query()->find($state)?->localized_name ?? ('#'.$state))
-                        : 'Global'
+                        : __('clinic_inventory.clinic_package.global')
                     )
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('localized_name')
-                    ->label('Name')
+                    ->label(__('clinic_inventory.clinic_package.fields.name'))
                     ->searchable(),
 
                 Tables\Columns\IconColumn::make('is_active')
-                    ->label('Active')
+                    ->label(__('clinic_inventory.clinic_package.fields.active'))
                     ->boolean(),
 
                 Tables\Columns\TextColumn::make('default_price')
-                    ->label('Price')
+                    ->label(__('clinic_inventory.clinic_package.fields.price'))
                     ->numeric(3)
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('items_count')
                     ->counts('items')
-                    ->label('Items')
+                    ->label(__('clinic_inventory.clinic_package.fields.items'))
                     ->sortable(),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('branch_id')
-                    ->label('Branch')
+                    ->label(__('clinic_inventory.clinic_package.fields.branch'))
                     ->options(fn () => Branch::query()->orderBy('id')->get()
                         ->mapWithKeys(fn ($b) => [$b->id => ($b->localized_name ?? ('#'.$b->id))])
                         ->all()
                     ),
 
-                Tables\Filters\TernaryFilter::make('is_active')->label('Active'),
+                Tables\Filters\TernaryFilter::make('is_active')->label(__('clinic_inventory.clinic_package.fields.active')),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),

@@ -23,32 +23,54 @@ class BranchAvailabilityRuleResource extends Resource
     protected static ?string $navigationIcon = 'heroicon-o-clock';
 
     // UI rename only
-    protected static ?string $navigationGroup = 'Clinic — Scheduling';
+    protected static ?string $navigationGroup = null;
 
-    protected static ?string $navigationLabel = 'Appointment Schedule';
-
-    protected static ?string $modelLabel = 'Schedule Rule';
-
-    protected static ?string $pluralModelLabel = 'Schedule Rules';
+    protected static ?string $navigationLabel = null;
 
     protected static ?string $slug = 'branch-availability';
 
     protected static ?int $navigationSort = 10;
 
+    public static function getNavigationGroup(): ?string
+    {
+        return __('common.nav.clinic_scheduling');
+    }
+
+    public static function getNavigationLabel(): string
+    {
+        return __('resources.branch_availability_rule.nav_label');
+    }
+
+    public static function getModelLabel(): string
+    {
+        return __('resources.branch_availability_rule.label');
+    }
+
+    public static function getPluralModelLabel(): string
+    {
+        return __('resources.branch_availability_rule.label_plural');
+    }
+
     public static function form(Form $form): Form
     {
         $days = [
-            0 => 'Sun', 1 => 'Mon', 2 => 'Tue', 3 => 'Wed', 4 => 'Thu', 5 => 'Fri', 6 => 'Sat',
+            0 => __('clinic_misc.branch_availability_rule.days.sun'),
+            1 => __('clinic_misc.branch_availability_rule.days.mon'),
+            2 => __('clinic_misc.branch_availability_rule.days.tue'),
+            3 => __('clinic_misc.branch_availability_rule.days.wed'),
+            4 => __('clinic_misc.branch_availability_rule.days.thu'),
+            5 => __('clinic_misc.branch_availability_rule.days.fri'),
+            6 => __('clinic_misc.branch_availability_rule.days.sat'),
         ];
 
         return $form->schema([
-            Forms\Components\Section::make('Clinic working hours')
-                ->description('Define appointment availability for each clinic branch by day.')
+            Forms\Components\Section::make(__('clinic_misc.branch_availability_rule.section_hours'))
+                ->description(__('clinic_misc.branch_availability_rule.section_hours_desc'))
                 ->columns(3)
                 ->schema([
                     // NEW: Partner Selection to filter Branches
                     Forms\Components\Select::make('partner_id')
-                        ->label('Clinic (Partner)')
+                        ->label(__('clinic_misc.branch_availability_rule.partner'))
                         ->options(Partner::all()->pluck('name', 'id'))
                         ->searchable()
                         ->preload()
@@ -58,7 +80,7 @@ class BranchAvailabilityRuleResource extends Resource
                         ->default(fn ($record) => $record?->branch?->partner_id),
 
                     Forms\Components\Select::make('branch_id')
-                        ->label('Clinic Branch')
+                        ->label(__('clinic_misc.branch_availability_rule.branch'))
                         ->required()
                         ->searchable()
                         ->preload()
@@ -75,33 +97,33 @@ class BranchAvailabilityRuleResource extends Resource
                         ->getOptionLabelFromRecordUsing(fn (Branch $b) => $b->localized_name),
 
                     Forms\Components\Select::make('day_of_week')
-                        ->label('Day of week')->required()
+                        ->label(__('clinic_misc.branch_availability_rule.day_of_week'))->required()
                         ->options($days)->native(false),
 
                     Forms\Components\Toggle::make('is_open')
-                        ->label('Clinic open on this day?')
+                        ->label(__('clinic_misc.branch_availability_rule.is_open'))
                         ->default(true),
 
                     Forms\Components\TimePicker::make('open_at')
-                        ->label('Opens at')->seconds(false)
+                        ->label(__('clinic_misc.branch_availability_rule.open_at'))->seconds(false)
                         ->required(fn (Get $get) => (bool) $get('is_open'))
                         ->visible(fn (Get $get) => (bool) $get('is_open')),
 
                     Forms\Components\TimePicker::make('close_at')
-                        ->label('Closes at')->seconds(false)
-                        ->helperText('If closing time is earlier than opening time, the schedule spans past midnight.')
+                        ->label(__('clinic_misc.branch_availability_rule.close_at'))->seconds(false)
+                        ->helperText(__('clinic_misc.branch_availability_rule.close_at_help'))
                         ->required(fn (Get $get) => (bool) $get('is_open'))
                         ->visible(fn (Get $get) => (bool) $get('is_open')),
 
                     Forms\Components\TextInput::make('slot_length_minutes')
-                        ->label('Appointment duration')->suffix('min')
+                        ->label(__('clinic_misc.branch_availability_rule.slot_length_minutes'))->suffix('min')
                         ->required()
                         ->integer()
                         ->minValue(15)->step(15)
                         ->default(90),
 
                     Forms\Components\TextInput::make('slot_step_minutes')
-                        ->label('Time slot interval')->suffix('min')
+                        ->label(__('clinic_misc.branch_availability_rule.slot_step_minutes'))->suffix('min')
                         ->required()
                         ->integer()
                         ->minValue(5)->step(5)
@@ -113,45 +135,45 @@ class BranchAvailabilityRuleResource extends Resource
                             return function (string $attribute, $value, \Closure $fail) use ($len) {
                                 $step = (int) $value;
                                 if ($len > 0 && $step > 0 && $len % $step !== 0) {
-                                    $fail('Time slot interval should divide the appointment duration evenly.');
+                                    $fail(__('clinic_misc.branch_availability_rule.slot_step_validation'));
                                 }
                             };
                         }),
 
                     Forms\Components\TextInput::make('max_party_size')
-                        ->label('Max patients per booking')->numeric()->minValue(1)->maxValue(20)
+                        ->label(__('clinic_misc.branch_availability_rule.max_party_size'))->numeric()->minValue(1)->maxValue(20)
                         ->default(6)->required(),
 
                     Forms\Components\TextInput::make('lead_time_minutes')
-                        ->label('Minimum notice')->numeric()->minValue(0)->suffix('min')
+                        ->label(__('clinic_misc.branch_availability_rule.lead_time_minutes'))->numeric()->minValue(0)->suffix('min')
                         ->default(60)->required(),
 
                     Forms\Components\KeyValue::make('capacity_map')
-                        ->label('Capacity mapping (patients → concurrent bookings)')
-                        ->keyLabel('Patients')
-                        ->valueLabel('Concurrent bookings')
-                        ->addButtonLabel('Add mapping')
+                        ->label(__('clinic_misc.branch_availability_rule.capacity_map'))
+                        ->keyLabel(__('clinic_misc.branch_availability_rule.capacity_map_key'))
+                        ->valueLabel(__('clinic_misc.branch_availability_rule.capacity_map_value'))
+                        ->addButtonLabel(__('clinic_misc.branch_availability_rule.capacity_map_add'))
                         ->reorderable()
-                        ->helperText('Example: 1→10, 2→6, 4→3'),
+                        ->helperText(__('clinic_misc.branch_availability_rule.capacity_map_help')),
 
                     Forms\Components\CheckboxList::make('apply_to_days')
-                        ->label('Also apply to these days')
+                        ->label(__('clinic_misc.branch_availability_rule.apply_to_days'))
                         ->options($days)
                         ->columns(3)
-                        ->helperText('Saves this exact schedule for all selected days in the same clinic branch.')
+                        ->helperText(__('clinic_misc.branch_availability_rule.apply_to_days_help'))
                         ->dehydrated(false)
                         ->visible(fn ($livewire) => $livewire instanceof \App\Filament\Resources\BranchAvailabilityRuleResource\Pages\CreateBranchAvailabilityRule),
                 ]),
 
-            Forms\Components\Section::make('Booking UI (Images)')
-                ->description('Optional images shown in the booking flow (per patient count and time selection).')
+            Forms\Components\Section::make(__('clinic_misc.branch_availability_rule.section_ui_images'))
+                ->description(__('clinic_misc.branch_availability_rule.section_ui_images_desc'))
                 ->collapsible()
                 ->collapsed() //  default collapsed
                 ->columns(12)
                 ->schema([
                     //  helper toggle (not stored)
                     Forms\Components\Toggle::make('ui_images_enabled')
-                        ->label('Enable booking UI images')
+                        ->label(__('clinic_misc.branch_availability_rule.enable_ui_images'))
                         ->dehydrated(false)
                         ->default(function ($record) {
                             $party = $record?->ui_party_images;
@@ -163,9 +185,9 @@ class BranchAvailabilityRuleResource extends Resource
 
                     // ───────── PARTY IMAGES (per size) ─────────
                     Forms\Components\Repeater::make('ui_party_images')
-                        ->label('Patient count images')
+                        ->label(__('clinic_misc.branch_availability_rule.party_images'))
                         ->columns(12)
-                        ->addActionLabel('Add patient image')
+                        ->addActionLabel(__('clinic_misc.branch_availability_rule.add_party_image'))
                         ->visible(fn (Get $get) => (bool) $get('ui_images_enabled')) //  optional
                         // ... keep your existing afterStateHydrated + schema ...
                         ->mutateDehydratedStateUsing(function (?array $state) {
@@ -210,7 +232,7 @@ class BranchAvailabilityRuleResource extends Resource
                     // ───────── TIME IMAGE (single) ─────────
                     Forms\Components\Group::make([
                         Forms\Components\FileUpload::make('time_src_file')
-                            ->label('Time selection image (upload)')
+                            ->label(__('clinic_misc.branch_availability_rule.time_image_upload'))
                             ->disk('public')
                             ->directory('wa/ui/time')
                             ->image()->imageEditor()
@@ -284,7 +306,7 @@ class BranchAvailabilityRuleResource extends Resource
                             }),
 
                         Forms\Components\Textarea::make('ui_time_image.src')
-                            ->label('Time image Base64 (paste)')
+                            ->label(__('clinic_misc.branch_availability_rule.time_image_base64'))
                             ->rows(3)
                             ->afterStateUpdated(function ($state, Set $set, Get $get) {
                                 if (is_string($state) && str_starts_with($state, 'data:image')) {
@@ -297,12 +319,12 @@ class BranchAvailabilityRuleResource extends Resource
                         Forms\Components\Select::make('ui_time_image.scale_type')
                             ->options(['contain' => 'contain', 'cover' => 'cover'])
                             ->default('contain')
-                            ->label('Time image scale type'),
+                            ->label(__('clinic_misc.branch_availability_rule.time_image_scale')),
 
-                        Forms\Components\TextInput::make('ui_time_image.width')->numeric()->label('Width'),
-                        Forms\Components\TextInput::make('ui_time_image.height')->numeric()->label('Height'),
-                        Forms\Components\TextInput::make('ui_time_image.aspect_ratio')->numeric()->label('Aspect ratio'),
-                        Forms\Components\TextInput::make('ui_time_image.alt_text')->label('Alt text'),
+                        Forms\Components\TextInput::make('ui_time_image.width')->numeric()->label(__('clinic_misc.branch_availability_rule.width')),
+                        Forms\Components\TextInput::make('ui_time_image.height')->numeric()->label(__('clinic_misc.branch_availability_rule.height')),
+                        Forms\Components\TextInput::make('ui_time_image.aspect_ratio')->numeric()->label(__('clinic_misc.branch_availability_rule.aspect_ratio')),
+                        Forms\Components\TextInput::make('ui_time_image.alt_text')->label(__('clinic_misc.branch_availability_rule.alt_text')),
                     ])->columns(6)->columnSpan(12),
                 ]),
         ]);
@@ -310,75 +332,83 @@ class BranchAvailabilityRuleResource extends Resource
 
     public static function table(Table $table): Table
     {
-        $days = [0 => 'Sun', 1 => 'Mon', 2 => 'Tue', 3 => 'Wed', 4 => 'Thu', 5 => 'Fri', 6 => 'Sat'];
+        $days = [
+            0 => __('clinic_misc.branch_availability_rule.days.sun'),
+            1 => __('clinic_misc.branch_availability_rule.days.mon'),
+            2 => __('clinic_misc.branch_availability_rule.days.tue'),
+            3 => __('clinic_misc.branch_availability_rule.days.wed'),
+            4 => __('clinic_misc.branch_availability_rule.days.thu'),
+            5 => __('clinic_misc.branch_availability_rule.days.fri'),
+            6 => __('clinic_misc.branch_availability_rule.days.sat'),
+        ];
 
         return $table
             ->defaultSort('branch_id')
             ->columns([
                 Tables\Columns\TextColumn::make('branch_id')
-                    ->label('Clinic Branch')
+                    ->label(__('clinic_misc.branch_availability_rule.branch'))
                     ->formatStateUsing(fn ($state, $record) => $record->branch?->localized_name)
                     ->sortable()
                     ->searchable(),
 
                 Tables\Columns\TextColumn::make('day_of_week')
-                    ->label('Day')
+                    ->label(__('clinic_misc.branch_availability_rule.day'))
                     ->formatStateUsing(fn (mixed $state) => $days[$state] ?? $state)
                     ->sortable(),
 
-                Tables\Columns\IconColumn::make('is_open')->label('Open?')->boolean()->sortable(),
-                Tables\Columns\TextColumn::make('open_at')->label('Opens')->time('H:i')->placeholder('-')->sortable(),
-                Tables\Columns\TextColumn::make('close_at')->label('Closes')->time('H:i')->placeholder('-')->sortable(),
+                Tables\Columns\IconColumn::make('is_open')->label(__('clinic_misc.branch_availability_rule.open'))->boolean()->sortable(),
+                Tables\Columns\TextColumn::make('open_at')->label(__('clinic_misc.branch_availability_rule.opens'))->time('H:i')->placeholder('-')->sortable(),
+                Tables\Columns\TextColumn::make('close_at')->label(__('clinic_misc.branch_availability_rule.closes'))->time('H:i')->placeholder('-')->sortable(),
 
                 Tables\Columns\TextColumn::make('slot_length_minutes')
-                    ->label('Appointment duration')
+                    ->label(__('clinic_misc.branch_availability_rule.slot_length_minutes'))
                     ->formatStateUsing(fn (mixed $state): string => $state !== null ? $state.' min' : '—')
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('slot_step_minutes')
-                    ->label('Slot interval')
+                    ->label(__('clinic_misc.branch_availability_rule.slot_interval'))
                     ->formatStateUsing(fn (mixed $state): string => $state !== null ? $state.' min' : '—')
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('lead_time_minutes')
-                    ->label('Min notice')
+                    ->label(__('clinic_misc.branch_availability_rule.min_notice'))
                     ->formatStateUsing(fn (mixed $state): string => $state !== null ? $state.' min' : '—')
                     ->sortable(),
 
-                Tables\Columns\TextColumn::make('max_party_size')->label('Max patients')->sortable(),
-                Tables\Columns\TextColumn::make('updated_at')->since()->label('Updated'),
+                Tables\Columns\TextColumn::make('max_party_size')->label(__('clinic_misc.branch_availability_rule.max_patients'))->sortable(),
+                Tables\Columns\TextColumn::make('updated_at')->since()->label(__('clinic_misc.branch_availability_rule.updated')),
             ])
             ->filters([
-                Tables\Filters\SelectFilter::make('branch_id')->label('Clinic Branch')
+                Tables\Filters\SelectFilter::make('branch_id')->label(__('clinic_misc.branch_availability_rule.branch'))
                     ->options(fn () => Branch::query()
                         ->orderByRaw("JSON_UNQUOTE(JSON_EXTRACT(name, '$.\"en\"'))")
                         ->get()->mapWithKeys(fn ($b) => [$b->id => $b->localized_name])->toArray()
                     ),
 
-                Tables\Filters\SelectFilter::make('day_of_week')->label('Day')->options($days),
+                Tables\Filters\SelectFilter::make('day_of_week')->label(__('clinic_misc.branch_availability_rule.day'))->options($days),
 
                 Tables\Filters\TernaryFilter::make('is_open')
-                    ->label('Clinic open?')
-                    ->trueLabel('Open')
-                    ->falseLabel('Closed'),
+                    ->label(__('clinic_misc.branch_availability_rule.clinic_open'))
+                    ->trueLabel(__('clinic_misc.branch_availability_rule.open_label'))
+                    ->falseLabel(__('clinic_misc.branch_availability_rule.closed_label')),
             ])
             ->actions([
-                Tables\Actions\EditAction::make()->label('Edit'),
+                Tables\Actions\EditAction::make()->label(__('common.actions.edit')),
 
                 Tables\Actions\Action::make('copyToDays')
-                    ->label('Copy schedule to days')
+                    ->label(__('clinic_misc.branch_availability_rule.copy_to_days'))
                     ->icon('heroicon-o-clipboard-document')
-                    ->modalHeading('Copy schedule to other days')
+                    ->modalHeading(__('clinic_misc.branch_availability_rule.copy_to_days_modal'))
                     ->form([
                         Forms\Components\CheckboxList::make('days')
-                            ->label('Target days')
+                            ->label(__('clinic_misc.branch_availability_rule.target_days'))
                             ->options($days)
                             ->columns(3)
                             ->required()
-                            ->helperText('Copies all schedule fields to the selected days for the same clinic branch.'),
+                            ->helperText(__('clinic_misc.branch_availability_rule.target_days_help')),
 
                         Forms\Components\Toggle::make('include_images')
-                            ->label('Also copy booking UI images (patients & time)')
+                            ->label(__('clinic_misc.branch_availability_rule.include_images'))
                             ->default(true),
                     ])
                     ->action(function (BranchAvailabilityRule $record, array $data) {
@@ -410,30 +440,30 @@ class BranchAvailabilityRuleResource extends Resource
                             );
                         }
                     })
-                    ->successNotificationTitle('Copied to selected days'),
+                    ->successNotificationTitle(__('clinic_misc.branch_availability_rule.copied_notif')),
 
                 Tables\Actions\Action::make('applyImagesToDays')
-                    ->label('Apply booking images…')
+                    ->label(__('clinic_misc.branch_availability_rule.apply_images_action'))
                     ->icon('heroicon-o-photo')
-                    ->modalHeading('Apply patient/time images to other days')
+                    ->modalHeading(__('clinic_misc.branch_availability_rule.apply_images_modal'))
                     ->form([
                         Forms\Components\Radio::make('scope')
-                            ->label('Where to apply?')
+                            ->label(__('clinic_misc.branch_availability_rule.scope_label'))
                             ->options([
-                                'all' => 'All 7 days (this clinic branch)',
-                                'choose' => 'Pick specific days',
+                                'all' => __('clinic_misc.branch_availability_rule.scope_all'),
+                                'choose' => __('clinic_misc.branch_availability_rule.scope_choose'),
                             ])
                             ->default('all')
                             ->inline(),
 
                         Forms\Components\CheckboxList::make('days')
-                            ->label('Target days')
+                            ->label(__('clinic_misc.branch_availability_rule.target_days'))
                             ->options($days)
                             ->columns(3)
                             ->visible(fn (Get $get) => $get('scope') === 'choose'),
 
                         Forms\Components\Toggle::make('include_self')
-                            ->label('Also apply to this day')
+                            ->label(__('clinic_misc.branch_availability_rule.include_self'))
                             ->default(false),
                     ])
                     ->action(function (BranchAvailabilityRule $record, array $data) {
@@ -462,24 +492,24 @@ class BranchAvailabilityRuleResource extends Resource
                             );
                         }
                     })
-                    ->successNotificationTitle('Images applied'),
+                    ->successNotificationTitle(__('clinic_misc.branch_availability_rule.images_applied_notif')),
 
-                Tables\Actions\DeleteAction::make()->label('Delete'),
+                Tables\Actions\DeleteAction::make()->label(__('common.actions.delete')),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\BulkAction::make('bulkCopyToDays')
-                        ->label('Copy first selected schedule → days')
+                        ->label(__('clinic_misc.branch_availability_rule.bulk_copy'))
                         ->icon('heroicon-o-clipboard-document-check')
                         ->form([
                             Forms\Components\CheckboxList::make('days')
-                                ->label('Target days')
+                                ->label(__('clinic_misc.branch_availability_rule.target_days'))
                                 ->options($days)
                                 ->columns(3)
                                 ->required(),
 
                             Forms\Components\Toggle::make('include_images')
-                                ->label('Also copy booking UI images (patients & time)')
+                                ->label(__('clinic_misc.branch_availability_rule.include_images'))
                                 ->default(true),
                         ])
                         ->action(function ($records, array $data) {
@@ -516,9 +546,9 @@ class BranchAvailabilityRuleResource extends Resource
                                 );
                             }
                         })
-                        ->successNotificationTitle('Copied to selected days'),
+                        ->successNotificationTitle(__('clinic_misc.branch_availability_rule.copied_notif')),
 
-                    Tables\Actions\DeleteBulkAction::make()->label('Delete selected'),
+                    Tables\Actions\DeleteBulkAction::make()->label(__('clinic_misc.branch_availability_rule.delete_selected')),
                 ]),
             ]);
     }

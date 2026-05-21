@@ -21,6 +21,10 @@ class Visit extends Model
 
     public const STATUS_IN_PROGRESS = 'in_progress';
 
+    public const STATUS_AWAITING_STOCK = 'awaiting_stock';
+
+    public const STATUS_AWAITING_PAYMENT = 'awaiting_payment';
+
     public const STATUS_COMPLETED = 'completed';
 
     public const STATUS_CANCELLED = 'cancelled';
@@ -40,12 +44,37 @@ class Visit extends Model
         'discount_total' => 'decimal:3',
         'items_cost_total' => 'decimal:3',
         'items_price_total' => 'decimal:3',
+        'packages_price_total' => 'decimal:3',
         'profit_total' => 'decimal:3',
         'computed_at' => 'datetime',
         'service_started_at' => 'datetime',
         'accepted_at' => 'datetime',
         'queued_at' => 'datetime',
     ];
+
+    /**
+     * Auto-capture timestamp side-effects on status transitions, regardless of
+     * the code path used (Filament form, ->update(), ->save(), seeders).
+     * Replaces the Filament-only afterStateUpdated hook in VisitResource.
+     */
+    protected static function booted(): void
+    {
+        static::saving(function (self $visit) {
+            if (! $visit->isDirty('status')) {
+                return;
+            }
+
+            $newStatus = $visit->status;
+
+            if ($newStatus === self::STATUS_IN_PROGRESS && empty($visit->service_started_at)) {
+                $visit->service_started_at = now();
+            }
+
+            if ($newStatus === self::STATUS_COMPLETED && empty($visit->completed_at)) {
+                $visit->completed_at = now();
+            }
+        });
+    }
 
     public function patient(): BelongsTo
     {
@@ -115,10 +144,15 @@ class Visit extends Model
         return $this->payments->where('status', 'paid')->sum('amount');
     }
 
-    // 4. Safe Accessor for Balance Due
+    // 4. Safe Accessor for Balance Due — full bill, not just fees.
     public function getBalanceDueAttribute(): float
     {
-        return $this->fees_total - $this->total_paid;
+        $billed = (float) ($this->fees_total ?? 0)
+            + (float) ($this->packages_price_total ?? 0)
+            + (float) ($this->items_price_total ?? 0)
+            - (float) ($this->discount_total ?? 0);
+
+        return $billed - (float) $this->total_paid;
     }
 
     public function acceptedBy()

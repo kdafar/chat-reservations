@@ -16,6 +16,8 @@ class VisitStockRequestLine extends Model
         'visit_stock_request_id' => 'integer',
         'clinic_item_id' => 'integer',
         'qty_base' => 'decimal:4',
+        'unit_cost_snapshot' => 'decimal:3',
+        'unit_price_snapshot' => 'decimal:3',
     ];
 
     public function request(): BelongsTo

@@ -37,28 +37,30 @@ class VisitPaymentsRelationManager extends RelationManager
                         ->numeric()
                         ->step('0.001')
                         ->required()
-                        // -----------------------------------------------------
-                        // LEGACY UPDATE: Smart Calculation & Lock
-                        // -----------------------------------------------------
+                        ->minValue(0.001)
+                        ->rule('gt:0')
                         ->default(function (RelationManager $livewire) {
-                            /** @var Visit $visit */
                             $visit = $livewire->getOwnerRecord();
-
-                            // Defensive: If no visit found, return 0
-                            if (! $visit) {
-                                return 0;
+                            if (! $visit instanceof Visit) {
+                                return null;
                             }
 
-                            // Use the Service to ensure logic matches "Recompute Financials"
                             try {
-                                return app(VisitCostingService::class)->getRemainingBalance($visit);
+                                $bal = app(VisitCostingService::class)->getRemainingBalance($visit);
+
+                                return $bal > 0 ? $bal : null;
                             } catch (\Throwable $e) {
-                                return 0;
+                                // Don't silently default to 0 — that would create a 0 KD
+                                // payment that "looks paid". Let the field be empty so
+                                // required+gt:0 force the user to enter the real amount.
+                                report($e);
+
+                                return null;
                             }
                         })
                         ->disabled() // "So the doctor don't lie" - User Request
-                        ->dehydrated() // CRITICAL: Ensures the disabled value is saved
-                        ->helperText('Auto-calculated based on Doctor Fee + Items - Paid Amount.'),
+                        ->dehydrated()
+                        ->helperText('Auto-calculated as fees + packages + items − discount − already paid.'),
                     // -----------------------------------------------------
 
                     // FIX: Dynamic Payment Methods (Matches BookingResource logic)
@@ -225,7 +227,16 @@ class VisitPaymentsRelationManager extends RelationManager
 
                         return $data;
                     })
-                    ->after(function () {
+                    ->after(function (RelationManager $livewire) {
+                        // Sync visit snapshot + doctor comp ledger after the new
+                        // payment row is in the DB. Matches the other Collect
+                        // Payment actions (#27 drift fix).
+                        $visit = $livewire->getOwnerRecord();
+                        if ($visit instanceof Visit) {
+                            app(VisitCostingService::class)
+                                ->compute($visit, (int) (auth()->id() ?? 0));
+                        }
+
                         Notification::make()
                             ->title('Payment recorded')
                             ->success()
@@ -281,11 +292,20 @@ class VisitPaymentsRelationManager extends RelationManager
                     ->icon('heroicon-o-arrow-uturn-left')
                     ->color('info')
                     // FIX: Restrict to Admin ID 1 ONLY
-                    ->visible(fn (VisitPayment $record) => auth()->id() === 1 && ($record->status ?? null) === 'paid')
+                    ->visible(fn (VisitPayment $record) => (auth()->user()?->hasRole(['admin', 'super_admin']) ?? false) && ($record->status ?? null) === 'paid')
                     ->requiresConfirmation()
                     ->action(function (VisitPayment $record) {
-                        $record->update(['status' => 'refunded']);
-                        Notification::make()->title('Payment marked as refunded')->success()->send();
+                        \Illuminate\Support\Facades\DB::transaction(function () use ($record) {
+                            $record->update(['status' => 'refunded']);
+
+                            // Recompute the visit's financial snapshot so fees_total/profit_total
+                            // and the doctor compensation ledger reflect the new paid total.
+                            if ($record->visit) {
+                                app(VisitCostingService::class)
+                                    ->compute($record->visit, (int) (auth()->id() ?? 0));
+                            }
+                        });
+                        Notification::make()->title('Payment refunded, visit recomputed')->success()->send();
                     }),
 
                 Tables\Actions\Action::make('markVoid')
@@ -293,17 +313,24 @@ class VisitPaymentsRelationManager extends RelationManager
                     ->icon('heroicon-o-no-symbol')
                     ->color('gray')
                     // FIX: Restrict to Admin ID 1 ONLY
-                    ->visible(fn (VisitPayment $record) => auth()->id() === 1 && ($record->status ?? null) !== 'void')
+                    ->visible(fn (VisitPayment $record) => (auth()->user()?->hasRole(['admin', 'super_admin']) ?? false) && ($record->status ?? null) !== 'void')
                     ->requiresConfirmation()
                     ->action(function (VisitPayment $record) {
-                        $record->update(['status' => 'void']);
-                        Notification::make()->title('Payment voided')->success()->send();
+                        \Illuminate\Support\Facades\DB::transaction(function () use ($record) {
+                            $record->update(['status' => 'void']);
+
+                            if ($record->visit) {
+                                app(VisitCostingService::class)
+                                    ->compute($record->visit, (int) (auth()->id() ?? 0));
+                            }
+                        });
+                        Notification::make()->title('Payment voided, visit recomputed')->success()->send();
                     }),
 
                 Tables\Actions\DeleteAction::make()
                     ->label('Delete')
                     // FIX: Restrict to Admin ID 1 AND prevent deleting online payments
-                    ->visible(fn (VisitPayment $record) => auth()->id() === 1 && ! in_array($record->method, ['link', 'myfatoorah', 'tap', 'stripe']))
+                    ->visible(fn (VisitPayment $record) => (auth()->user()?->hasRole(['admin', 'super_admin']) ?? false) && ! in_array($record->method, ['link', 'myfatoorah', 'tap', 'stripe']))
                     ->requiresConfirmation()
                     ->action(function (VisitPayment $record) {
                         $record->delete();
@@ -315,13 +342,27 @@ class VisitPaymentsRelationManager extends RelationManager
                     ->label('Void selected')
                     ->icon('heroicon-o-no-symbol')
                     // FIX: Restrict Bulk actions to Admin ID 1
-                    ->visible(fn () => auth()->id() === 1)
+                    ->visible(fn () => auth()->user()?->hasRole(['admin', 'super_admin']) ?? false)
                     ->requiresConfirmation()
                     ->action(function ($records) {
-                        foreach ($records as $record) {
-                            $record->update(['status' => 'void']);
-                        }
-                        Notification::make()->title('Selected payments voided')->success()->send();
+                        \Illuminate\Support\Facades\DB::transaction(function () use ($records) {
+                            $visitIds = [];
+                            foreach ($records as $record) {
+                                $record->update(['status' => 'void']);
+                                if ($record->visit_id) {
+                                    $visitIds[(int) $record->visit_id] = true;
+                                }
+                            }
+                            // Recompute each affected visit once, not per-payment.
+                            foreach (array_keys($visitIds) as $vid) {
+                                $visit = \App\Models\Visit::find($vid);
+                                if ($visit) {
+                                    app(VisitCostingService::class)
+                                        ->compute($visit, (int) (auth()->id() ?? 0));
+                                }
+                            }
+                        });
+                        Notification::make()->title('Selected payments voided, visits recomputed')->success()->send();
                     })
                     ->deselectRecordsAfterCompletion(),
             ])

@@ -2,23 +2,41 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Concerns\HasHelpAction;
 use App\Services\CheckInService;
 use Filament\Pages\Page;
 use Illuminate\Validation\ValidationException;
 
 class CheckInScanner extends Page
 {
+    use HasHelpAction;
+
     protected static ?string $navigationIcon = 'heroicon-o-qr-code';
 
     // UI rename only
-    protected static ?string $navigationGroup = 'Clinic — Tools';
+    protected static ?string $navigationGroup = null;
 
     protected static ?int $navigationSort = 10;
 
-    protected static ?string $title = 'Clinic Check-in Scanner';
+    protected static ?string $title = null;
 
     // We’ll render via a custom blade
     protected static string $view = 'filament.pages.check-in-scanner';
+
+    public static function getNavigationGroup(): ?string
+    {
+        return __('common.nav.clinic_tools');
+    }
+
+    public static function getNavigationLabel(): string
+    {
+        return __('pages.check_in_scanner.nav_label');
+    }
+
+    public function getTitle(): string|\Illuminate\Contracts\Support\Htmlable
+    {
+        return __('pages.check_in_scanner.title');
+    }
 
     // Livewire state
     public ?array $result = null;
@@ -30,6 +48,20 @@ class CheckInScanner extends Page
     public static function canAccess(): bool
     {
         return auth()->user()->can('view_check-in-scanner');
+    }
+
+    protected function getHeaderActions(): array
+    {
+        return $this->withHelp([]);
+    }
+
+    protected function helpContent(): array
+    {
+        return [
+            ['heading' => __('help.pages.check_in_scanner.what.heading'), 'body' => __('help.pages.check_in_scanner.what.body')],
+            ['heading' => __('help.pages.check_in_scanner.how.heading'), 'items' => (array) trans('help.pages.check_in_scanner.how.items')],
+            ['heading' => __('help.pages.check_in_scanner.faq.heading'), 'items' => (array) trans('help.pages.check_in_scanner.faq.items')],
+        ];
     }
 
     /**

@@ -44,6 +44,22 @@ Route::get('/language/{locale}', function (string $locale) {
     return back();
 })->name('language.switch');
 
+// Admin/Filament locale switcher: persists to authenticated user's
+// preferred_locale column AND updates the session, then returns the user
+// to wherever they came from.
+Route::get('/locale/switch', function (\Illuminate\Http\Request $request) {
+    $lang = $request->query('lang');
+    abort_unless(in_array($lang, ['ar', 'en'], true), 404);
+
+    session(['locale' => $lang]);
+
+    if ($user = $request->user()) {
+        $user->forceFill(['preferred_locale' => $lang])->save();
+    }
+
+    return redirect($request->headers->get('referer') ?? '/admin');
+})->middleware('web')->name('locale.switch');
+
 Route::get('/bookings/{code}', [BookingPassController::class, 'show'])->name('bookings.pass');
 Route::get('/qr/{token}.png', [BookingQrController::class, 'image'])->name('bookings.qr');
 Route::get('/c/{token}', [BookingCheckInController::class, 'fromLink'])->name('bookings.checkin.link');

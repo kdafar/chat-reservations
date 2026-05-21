@@ -11,7 +11,9 @@ class ClinicStockService
 {
     public function enabled(): bool
     {
-        return (bool) config('clinic.inventory_enabled', false);
+        // Default matches config/clinic.php (true). The second arg only kicks in
+        // if the key is missing entirely.
+        return (bool) config('clinic.inventory_enabled', true);
     }
 
     /**

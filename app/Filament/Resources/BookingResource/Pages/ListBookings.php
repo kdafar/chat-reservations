@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\BookingResource\Pages;
 
+use App\Filament\Concerns\HasHelpAction;
 use App\Filament\Resources\BookingResource;
 use Filament\Actions;
 use Filament\Resources\Pages\ListRecords;
@@ -9,14 +10,25 @@ use Illuminate\Database\Eloquent\Builder;
 
 class ListBookings extends ListRecords
 {
+    use HasHelpAction;
+
     protected static string $resource = BookingResource::class;
 
     protected ?string $maxContentWidth = 'full';
 
     protected function getHeaderActions(): array
     {
-        return [
+        return $this->withHelp([
             Actions\CreateAction::make(),
+        ]);
+    }
+
+    protected function helpContent(): array
+    {
+        return [
+            ['heading' => __('help.pages.list_bookings.what.heading'), 'body' => __('help.pages.list_bookings.what.body')],
+            ['heading' => __('help.pages.list_bookings.how.heading'), 'items' => (array) trans('help.pages.list_bookings.how.items')],
+            ['heading' => __('help.pages.list_bookings.faq.heading'), 'items' => (array) trans('help.pages.list_bookings.faq.items')],
         ];
     }
 

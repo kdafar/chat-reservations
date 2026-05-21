@@ -85,10 +85,33 @@ class UserResource extends Resource
             ->filters([])
             ->actions([
                 Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
+                Tables\Actions\DeleteAction::make()
+                    ->before(function (Tables\Actions\DeleteAction $action, User $record) {
+                        if ($record->doctorProfile()->exists()) {
+                            \Filament\Notifications\Notification::make()
+                                ->title(__('user_resource.delete_blocked.title'))
+                                ->body(__('user_resource.delete_blocked.body'))
+                                ->danger()
+                                ->persistent()
+                                ->send();
+                            $action->cancel();
+                        }
+                    }),
             ])
             ->bulkActions([
-                Tables\Actions\DeleteBulkAction::make(),
+                Tables\Actions\DeleteBulkAction::make()
+                    ->before(function (Tables\Actions\DeleteBulkAction $action, \Illuminate\Database\Eloquent\Collection $records) {
+                        $linked = $records->filter(fn (User $u) => $u->doctorProfile()->exists());
+                        if ($linked->isNotEmpty()) {
+                            \Filament\Notifications\Notification::make()
+                                ->title(__('user_resource.delete_blocked.title'))
+                                ->body(__('user_resource.delete_blocked.bulk_body', ['count' => $linked->count()]))
+                                ->danger()
+                                ->persistent()
+                                ->send();
+                            $action->cancel();
+                        }
+                    }),
             ]);
     }
 

@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Concerns\HasHelpAction;
 use App\Models\Booking;
 use App\Models\Doctor;
 use App\Models\DoctorCompensationLedger;
@@ -18,16 +19,32 @@ use Illuminate\Support\Facades\Auth;
 class DailyBusinessReport extends Page
 {
     use HasFiltersForm;
+    use HasHelpAction;
 
     protected static ?string $navigationIcon = 'heroicon-o-document-chart-bar';
 
-    protected static ?string $navigationLabel = 'Daily Intelligence';
+    protected static ?string $navigationLabel = null;
 
-    protected static ?string $title = 'Daily Operational Report';
+    protected static ?string $title = null;
 
-    protected static ?string $navigationGroup = 'Reports';
+    protected static ?string $navigationGroup = null;
 
     protected static string $view = 'filament.pages.daily-business-report';
+
+    public static function getNavigationGroup(): ?string
+    {
+        return __('common.nav.clinic_reports');
+    }
+
+    public static function getNavigationLabel(): string
+    {
+        return __('pages.daily_business_report.nav_label');
+    }
+
+    public function getTitle(): string|\Illuminate\Contracts\Support\Htmlable
+    {
+        return __('pages.daily_business_report.title');
+    }
 
     public $reportData = [];
 
@@ -35,6 +52,20 @@ class DailyBusinessReport extends Page
     {
         // Default to today if no filter
         $this->updateReport();
+    }
+
+    protected function getHeaderActions(): array
+    {
+        return $this->withHelp([]);
+    }
+
+    protected function helpContent(): array
+    {
+        return [
+            ['heading' => __('help.pages.daily_business_report.what.heading'), 'body' => __('help.pages.daily_business_report.what.body')],
+            ['heading' => __('help.pages.daily_business_report.how.heading'), 'items' => (array) trans('help.pages.daily_business_report.how.items')],
+            ['heading' => __('help.pages.daily_business_report.faq.heading'), 'items' => (array) trans('help.pages.daily_business_report.faq.items')],
+        ];
     }
 
     public function filtersForm(Form $form): Form
@@ -97,8 +128,11 @@ class DailyBusinessReport extends Page
 
         if ($isOwner) {
             // Owners see EVERYTHING
-            // We structure this for a "Waterfall Chart" (Revenue -> Costs -> Profit)
-            $revenue = Visit::whereDate('checked_in_at', $date)->sum('fees_total');
+            // We structure this for a "Waterfall Chart" (Revenue -> Costs -> Profit).
+            // Full revenue = fees + packages + items − discount.
+            $revenue = (float) Visit::whereDate('checked_in_at', $date)
+                ->selectRaw('SUM(COALESCE(fees_total,0) + COALESCE(packages_price_total,0) + COALESCE(items_price_total,0) - COALESCE(discount_total,0)) as r')
+                ->value('r');
             $cogs = Visit::whereDate('checked_in_at', $date)->sum('items_cost_total');
             $doctorShare = DoctorCompensationLedger::whereDate('created_at', $date)->sum('doctor_cut_amount');
 

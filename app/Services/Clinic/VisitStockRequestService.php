@@ -73,24 +73,53 @@ class VisitStockRequestService
                 $req->save();
             }
 
+            // Snapshot the items' current cost/price into each line at request
+            // time. If the admin changes item prices between request and
+            // fulfillment, the patient's invoice will still reflect what was
+            // agreed at request time.
+            $itemIds = $normalized->pluck('clinic_item_id')->map(fn ($v) => (int) $v)->all();
+            $itemsMap = ClinicItem::query()
+                ->whereIn('id', $itemIds)
+                ->get(['id', 'default_cost', 'default_price'])
+                ->keyBy('id');
+
+            // MERGE semantics: each call adds to the pending request. Doctor
+            // adds package A, then B before fulfilling A — both go into the
+            // same pending request, both get consumed at "Stock Arrived".
+            //
+            // Previously this method REPLACED existing lines and DELETED any
+            // not in the new requirements set — which silently lost package
+            // A's items when package B was added afterwards.
             foreach ($normalized as $line) {
-                VisitStockRequestLine::query()->updateOrCreate(
-                    [
+                $itemId = (int) $line['clinic_item_id'];
+                $item = $itemsMap->get($itemId);
+                $addQty = (float) $line['qty_base'];
+
+                $existing = VisitStockRequestLine::query()
+                    ->where('visit_stock_request_id', (int) $req->id)
+                    ->where('clinic_item_id', $itemId)
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($existing) {
+                    // Increment qty; keep the original price snapshot — we
+                    // already promised that price to the patient.
+                    $existing->forceFill([
+                        'qty_base' => (float) $existing->qty_base + $addQty,
+                    ])->save();
+                } else {
+                    VisitStockRequestLine::create([
                         'visit_stock_request_id' => (int) $req->id,
-                        'clinic_item_id' => (int) $line['clinic_item_id'],
-                    ],
-                    [
-                        'qty_base' => (float) $line['qty_base'],
-                    ]
-                );
+                        'clinic_item_id' => $itemId,
+                        'qty_base' => $addQty,
+                        'unit_cost_snapshot' => (float) ($item->default_cost ?? 0),
+                        'unit_price_snapshot' => (float) ($item->default_price ?? 0),
+                    ]);
+                }
             }
 
-            $keepItemIds = $normalized->pluck('clinic_item_id')->map(fn ($v) => (int) $v)->all();
-
-            VisitStockRequestLine::query()
-                ->where('visit_stock_request_id', (int) $req->id)
-                ->whereNotIn('clinic_item_id', $keepItemIds)
-                ->delete();
+            // NO destructive delete of lines outside the new requirements set.
+            // That logic was removed because it corrupted multi-package flows.
 
             if ($setVisitAwaitingStock) {
                 if (! in_array(($freshVisit->status ?? null), ['completed', 'cancelled', 'no_show'], true)) {
@@ -162,8 +191,16 @@ class VisitStockRequestService
                     );
                 }
 
-                // Always add to visit items (Bill/Usage record)
-                $this->upsertVisitItemFromFulfillment($visit, $item, $qtyBase);
+                // Always add to visit items (Bill/Usage record).
+                // Use the line's price snapshot when present so admin price changes
+                // between request and fulfillment don't bleed into the patient bill.
+                $this->upsertVisitItemFromFulfillment(
+                    $visit,
+                    $item,
+                    $qtyBase,
+                    $line->unit_cost_snapshot !== null ? (float) $line->unit_cost_snapshot : null,
+                    $line->unit_price_snapshot !== null ? (float) $line->unit_price_snapshot : null,
+                );
             }
 
             $now = Carbon::now(config('app.timezone', 'Asia/Kuwait'));
@@ -223,8 +260,20 @@ class VisitStockRequestService
         });
     }
 
-    protected function upsertVisitItemFromFulfillment(Visit $visit, ClinicItem $item, float $qtyToAdd): void
-    {
+    /**
+     * Upsert a VisitItem from a fulfillment event.
+     *
+     * The caller may pass an explicit cost/price snapshot — used when fulfilling
+     * a VisitStockRequest, so prices locked at request time are honored.
+     * When the overrides are null we fall back to the item's current default_*.
+     */
+    protected function upsertVisitItemFromFulfillment(
+        Visit $visit,
+        ClinicItem $item,
+        float $qtyToAdd,
+        ?float $unitCostOverride = null,
+        ?float $unitPriceOverride = null,
+    ): void {
         $visitId = (int) $visit->id;
         $itemId = (int) $item->id;
 
@@ -244,8 +293,8 @@ class VisitStockRequestService
             $vi->visit_id = $visitId;
             $vi->clinic_item_id = $itemId;
             $vi->branch_id = (int) ($visit->branch_id ?? null);
-            $vi->unit_cost_snapshot = (float) ($item->default_cost ?? 0);
-            $vi->unit_price_snapshot = (float) ($item->default_price ?? 0);
+            $vi->unit_cost_snapshot = (float) ($unitCostOverride ?? $item->default_cost ?? 0);
+            $vi->unit_price_snapshot = (float) ($unitPriceOverride ?? $item->default_price ?? 0);
             $vi->qty = 0;
             $vi->line_cost_total = 0;
             $vi->line_price_total = 0;
@@ -318,6 +367,48 @@ class VisitStockRequestService
         }
 
         return $existing."\n---\n".$add;
+    }
+
+    /**
+     * One-shot orchestrator: try to issue stock immediately; otherwise create
+     * a pending VisitStockRequest. Always exactly one stock-affecting action,
+     * so callers can't accidentally double-consume.
+     *
+     * @return array{mode: string, request_id: int}
+     */
+    public function issueOrRequestForVisit(
+        Visit $visit,
+        array $requirements,
+        int $userId = 0,
+        ?string $notes = null,
+        ?string $trace = null,
+    ): array {
+        if (! $this->enabled()) {
+            return ['mode' => 'disabled', 'request_id' => 0];
+        }
+
+        // Keep the visit's current operating status when issuing directly so
+        // we don't bump an awaiting_doctor visit into in_progress prematurely.
+        $keepStatus = in_array(($visit->status ?? null), ['awaiting_doctor', 'in_progress'], true)
+            ? (string) $visit->status
+            : 'awaiting_doctor';
+
+        $issued = $this->issueDirectlyIfInStock(
+            $visit,
+            $requirements,
+            $userId,
+            $notes,
+            $keepStatus,
+            $trace
+        );
+
+        if ($issued) {
+            return ['mode' => 'issued', 'request_id' => 0];
+        }
+
+        $req = $this->createForVisit($visit, $requirements, $userId, $notes, true);
+
+        return ['mode' => 'request', 'request_id' => (int) ($req?->id ?? 0)];
     }
 
     public function issueDirectlyIfInStock(

@@ -4,5 +4,5 @@ namespace App\Policies\Clinic;
 
 class ClinicItemStockPolicy extends BaseClinicFilamentPolicy
 {
-    protected static string $resourceKey = 'clinic_item _stock';
+    protected static string $resourceKey = 'clinic_item_stocks';
 }

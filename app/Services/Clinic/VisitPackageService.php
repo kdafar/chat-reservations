@@ -201,6 +201,97 @@ class VisitPackageService
         ])->values();
     }
 
+    /**
+     * Apply packages WITHOUT touching inventory or stock requests.
+     * Only writes the visit_packages pricing snapshot. The caller is then
+     * responsible for deciding whether to consume stock immediately or
+     * create a VisitStockRequest based on availability.
+     *
+     * This separation prevents the double-consume bug where applyPackages()
+     * created a pending stock request AND a caller would then also consume
+     * directly — decrementing stock twice once "Stock Arrived" was clicked.
+     */
+    public function applyPackagesOnly(
+        Visit $visit,
+        array $lines,
+        int $performedByUserId = 0,
+        ?string $notes = null,
+        ?string $trace = null,
+    ): void {
+        if (! $this->enabled()) {
+            return;
+        }
+
+        $visitId = (int) $visit->id;
+        if ($visitId <= 0) {
+            return;
+        }
+
+        $normalized = $this->normalizeLines($lines);
+        if ($normalized->isEmpty()) {
+            return;
+        }
+
+        DB::transaction(function () use ($visitId, $normalized, $performedByUserId) {
+            /** @var Visit $freshVisit */
+            $freshVisit = Visit::query()->lockForUpdate()->findOrFail($visitId);
+            $branchId = (int) ($freshVisit->branch_id ?? 0);
+
+            $packages = ClinicPackage::query()
+                ->whereIn('id', $normalized->pluck('clinic_package_id')->all())
+                ->where('is_active', true)
+                ->get()
+                ->keyBy('id');
+
+            foreach ($normalized as $ln) {
+                $pkgId = (int) $ln['clinic_package_id'];
+                $qty = (float) $ln['qty'];
+
+                /** @var ClinicPackage|null $pkg */
+                $pkg = $packages->get($pkgId);
+                if (! $pkg) {
+                    continue;
+                }
+
+                if ($pkg->branch_id && $branchId > 0 && (int) $pkg->branch_id !== $branchId) {
+                    continue;
+                }
+
+                $unit = (float) ($pkg->default_price ?? 0);
+
+                $vp = VisitPackage::query()->lockForUpdate()
+                    ->where('visit_id', $freshVisit->id)
+                    ->where('clinic_package_id', $pkgId)
+                    ->first();
+
+                if (! $vp) {
+                    $vp = new VisitPackage;
+                    $vp->visit_id = $freshVisit->id;
+                    $vp->clinic_package_id = $pkgId;
+                    $vp->branch_id = $branchId ?: null;
+                    $vp->added_by_user_id = $performedByUserId > 0 ? $performedByUserId : null;
+                    $vp->qty = $qty;
+                    $vp->unit_price_snapshot = $unit;
+                    $vp->line_total = $qty * $unit;
+                    $vp->save();
+                } else {
+                    $newQty = ((float) $vp->qty) + $qty;
+                    $existingUnit = (float) ($vp->unit_price_snapshot ?? 0);
+                    if ($existingUnit <= 0) {
+                        $existingUnit = $unit;
+                        $vp->unit_price_snapshot = $existingUnit;
+                    }
+                    $vp->qty = $newQty;
+                    $vp->line_total = $newQty * $existingUnit;
+                    if ($performedByUserId > 0 && ! $vp->added_by_user_id) {
+                        $vp->added_by_user_id = $performedByUserId;
+                    }
+                    $vp->save();
+                }
+            }
+        });
+    }
+
     public function requirementsForPackages(int $branchId, array $lines): array
     {
         if (! $this->enabled()) {

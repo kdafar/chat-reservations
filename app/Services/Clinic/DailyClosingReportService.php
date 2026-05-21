@@ -77,6 +77,7 @@ final class DailyClosingReportService
         $financialRow = (clone $completedVisits)
             ->selectRaw('
                 COALESCE(SUM(fees_total), 0) as fees_total,
+                COALESCE(SUM(packages_price_total), 0) as packages_price_total,
                 COALESCE(SUM(discount_total), 0) as discount_total,
                 COALESCE(SUM(items_cost_total), 0) as items_cost_total,
                 COALESCE(SUM(items_price_total), 0) as items_price_total,
@@ -84,12 +85,20 @@ final class DailyClosingReportService
             ')
             ->first();
 
+        // Full revenue = fees + packages + items − discount (audit follow-up #3).
+        $totalRevenue = (float) ($financialRow?->fees_total ?? 0)
+            + (float) ($financialRow?->packages_price_total ?? 0)
+            + (float) ($financialRow?->items_price_total ?? 0)
+            - (float) ($financialRow?->discount_total ?? 0);
+
         $financials = [
             'fees_total' => (string) ($financialRow?->fees_total ?? '0'),
+            'packages_price_total' => (string) ($financialRow?->packages_price_total ?? '0'),
             'discount_total' => (string) ($financialRow?->discount_total ?? '0'),
             'items_cost_total' => (string) ($financialRow?->items_cost_total ?? '0'),
             'items_price_total' => (string) ($financialRow?->items_price_total ?? '0'),
             'profit_total' => (string) ($financialRow?->profit_total ?? '0'),
+            'total_revenue' => (string) $totalRevenue,
         ];
 
         // --- DOCTOR BREAKDOWN ---
@@ -100,6 +109,9 @@ final class DailyClosingReportService
                 doctors.name as doctor_name,
                 COUNT(*) as visits_completed,
                 COALESCE(SUM(visits.fees_total), 0) as fees_total,
+                COALESCE(SUM(visits.packages_price_total), 0) as packages_total,
+                COALESCE(SUM(visits.items_price_total), 0) as items_total,
+                COALESCE(SUM(visits.discount_total), 0) as discount_total,
                 COALESCE(SUM(visits.profit_total), 0) as profit_total
             ')
             ->groupBy('visits.doctor_id', 'doctors.name')
@@ -107,12 +119,18 @@ final class DailyClosingReportService
             ->get()
             ->mapWithKeys(function ($r) {
                 $id = (int) ($r->doctor_id ?? 0);
+                $revenue = (float) $r->fees_total + (float) $r->packages_total
+                    + (float) $r->items_total - (float) $r->discount_total;
 
                 return [$id => [
                     'doctor_id' => $id,
                     'doctor_name' => $r->doctor_name,
                     'visits_completed' => (int) $r->visits_completed,
                     'fees_total' => (string) $r->fees_total,
+                    'packages_total' => (string) $r->packages_total,
+                    'items_total' => (string) $r->items_total,
+                    'discount_total' => (string) $r->discount_total,
+                    'revenue_total' => (string) $revenue,
                     'profit_total' => (string) $r->profit_total,
                 ]];
             })
@@ -134,8 +152,10 @@ final class DailyClosingReportService
         }
 
         // 2. Financial Composition Series (For Donut/Pie)
+        // Includes packages — previously this rolled them silently into "Fees".
         $financialSeries = [
             (float) ($financialRow?->fees_total ?? 0),
+            (float) ($financialRow?->packages_price_total ?? 0),
             (float) ($financialRow?->items_price_total ?? 0),
             (float) ($financialRow?->discount_total ?? 0),
         ];
@@ -167,7 +187,7 @@ final class DailyClosingReportService
                     'data' => array_values($hourlyDistribution),
                 ],
                 'financial_composition' => [
-                    'labels' => ['Service Fees', 'Pharmacy/Items', 'Discounts'],
+                    'labels' => ['Service Fees', 'Packages', 'Pharmacy/Items', 'Discounts'],
                     'series' => $financialSeries,
                 ],
                 'status_distribution' => [

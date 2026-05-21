@@ -22,13 +22,29 @@ class VisitResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-list';
 
-    protected static ?string $navigationGroup = 'Clinic — Operations';
-
-    protected static ?string $modelLabel = 'Visit';
-
-    protected static ?string $pluralModelLabel = 'Visits';
+    protected static ?string $navigationGroup = null;
 
     protected static ?int $navigationSort = 20;
+
+    public static function getNavigationGroup(): ?string
+    {
+        return __('common.nav.clinic_operations');
+    }
+
+    public static function getNavigationLabel(): string
+    {
+        return __('resources.visit.nav_label');
+    }
+
+    public static function getModelLabel(): string
+    {
+        return __('resources.visit.label');
+    }
+
+    public static function getPluralModelLabel(): string
+    {
+        return __('resources.visit.label_plural');
+    }
 
     protected static function financialsEnabled(): bool
     {
@@ -43,70 +59,72 @@ class VisitResource extends Resource
     public static function form(Form $form): Form
     {
         return $form->schema([
-            Forms\Components\Section::make('Visit Context')
+            Forms\Components\Section::make(__('clinic_visit.sections.visit_context'))
                 ->columns(3)
                 ->schema([
                     Forms\Components\Select::make('booking_id')
                         ->relationship('booking', 'booking_code')
-                        ->label('Appointment')
+                        ->label(__('clinic_visit.fields.appointment.label'))
                         ->searchable()
                         ->preload()
                         ->nullable()
                         // FIX: Strict restriction on edit.
                         // Staff cannot change the booking link once created. Only Admin can fix mistakes.
-                        ->disabled(fn (string $operation) => $operation === 'edit' && auth()->id() !== 1 && ! auth()->user()?->hasRole('admin'))
-                        ->helperText('Usually created automatically on appointment check-in.'),
+                        ->disabled(fn (string $operation) => $operation === 'edit' && ! (auth()->user()?->hasRole(['admin', 'super_admin']) ?? false))
+                        ->helperText(__('clinic_visit.fields.appointment.helper')),
 
                     Forms\Components\Select::make('restaurant_table_id')
                         ->relationship('room', 'name')
-                        ->label('Room')
+                        ->label(__('clinic_visit.fields.room.label'))
                         ->searchable()
                         ->preload()
                         ->nullable()
-                        ->disabled(fn (string $operation) => $operation === 'edit' && auth()->id() !== 1 && ! auth()->user()?->hasRole('admin')),
+                        ->disabled(fn (string $operation) => $operation === 'edit' && ! (auth()->user()?->hasRole(['admin', 'super_admin']) ?? false)),
 
                     Forms\Components\Select::make('branch_id')
                         ->relationship('branch', 'id', modifyQueryUsing: fn (Builder $query) => $query->forUser(auth()->user()))
-                        ->label('Branch')
+                        ->label(__('clinic_visit.fields.branch.label'))
                         ->getOptionLabelFromRecordUsing(fn ($record) => $record->localized_name ?? ('#'.$record->id))
                         ->searchable()
                         ->preload()
                         ->required()
                         ->default(fn () => Branch::forUser(auth()->user())->count() === 1 ? Branch::forUser(auth()->user())->first()?->id : null)
-                        ->disabled(fn (string $operation) => $operation === 'edit' && auth()->id() !== 1 && ! auth()->user()?->hasRole('admin')),
+                        ->disabled(fn (string $operation) => $operation === 'edit' && ! (auth()->user()?->hasRole(['admin', 'super_admin']) ?? false)),
 
                     Forms\Components\Select::make('patient_id')
                         ->relationship('patient', 'name')
-                        ->label('Patient')
+                        ->label(__('clinic_visit.fields.patient.label'))
                         ->searchable()
                         ->preload()
                         ->required()
-                        ->disabled(fn (string $operation) => $operation === 'edit' && auth()->id() !== 1 && ! auth()->user()?->hasRole('admin')),
+                        ->disabled(fn (string $operation) => $operation === 'edit' && ! (auth()->user()?->hasRole(['admin', 'super_admin']) ?? false)),
 
                     Forms\Components\Select::make('doctor_id')
                         ->relationship('doctor', 'name')
-                        ->label('Doctor')
+                        ->label(__('clinic_visit.fields.doctor.label'))
                         ->searchable()
                         ->preload()
                         ->required()
-                        ->disabled(fn (string $operation) => $operation === 'edit' && auth()->id() !== 1 && ! auth()->user()?->hasRole('admin')),
+                        ->disabled(fn (string $operation) => $operation === 'edit' && ! (auth()->user()?->hasRole(['admin', 'super_admin']) ?? false)),
 
                     Forms\Components\Select::make('status')
-                        ->label('Status')
+                        ->label(__('clinic_visit.fields.status.label'))
                         ->options([
-                            'created' => 'Created',
-                            'in_progress' => 'In Progress',
-                            'awaiting_doctor' => 'Awaiting Doctor',
-                            'completed' => 'Completed',
-                            'cancelled' => 'Cancelled',
-                            'no_show' => 'No-show',
+                            'created' => __('clinic_visit.options.status.created'),
+                            'awaiting_doctor' => __('clinic_visit.options.status.awaiting_doctor'),
+                            'awaiting_stock' => __('clinic_visit.options.status.awaiting_stock'),
+                            'in_progress' => __('clinic_visit.options.status.in_progress'),
+                            'awaiting_payment' => __('clinic_visit.options.status.awaiting_payment'),
+                            'completed' => __('clinic_visit.options.status.completed'),
+                            'cancelled' => __('clinic_visit.options.status.cancelled'),
+                            'no_show' => __('clinic_visit.options.status.no_show'),
                         ])
                         ->default('created')
                         ->native(false)
                         ->required()
                         // Status needs to be editable by staff to move workflow forward (e.g. In Progress -> Completed)
                         // But we can lock it if it's already completed to prevent tampering
-                        ->disabled(fn (?Visit $record) => $record && in_array($record->status, ['completed', 'cancelled']) && auth()->id() !== 1)
+                        ->disabled(fn (?Visit $record) => $record && in_array($record->status, ['completed', 'cancelled']) && ! (auth()->user()?->hasRole(['admin', 'super_admin']) ?? false))
                         ->afterStateUpdated(function ($state, ?Visit $record) {
                             if (! $record) {
                                 return;
@@ -127,7 +145,7 @@ class VisitResource extends Resource
                                         ]);
 
                                         Notification::make()
-                                            ->title('Service start time captured')
+                                            ->title(__('clinic_visit.notifications.service_start_captured'))
                                             ->success()
                                             ->send();
                                     }
@@ -139,7 +157,7 @@ class VisitResource extends Resource
                                         ]);
 
                                         Notification::make()
-                                            ->title('Completion time captured')
+                                            ->title(__('clinic_visit.notifications.completion_time_captured'))
                                             ->success()
                                             ->send();
                                     }
@@ -147,8 +165,8 @@ class VisitResource extends Resource
                                     report($e);
 
                                     Notification::make()
-                                        ->title('Failed to auto-capture visit timestamps')
-                                        ->body('Please check logs and try again.')
+                                        ->title(__('clinic_visit.notifications.auto_capture_failed'))
+                                        ->body(__('clinic_visit.notifications.check_logs'))
                                         ->danger()
                                         ->send();
                                 }
@@ -172,57 +190,57 @@ class VisitResource extends Resource
                                 app(VisitCostingService::class)->compute($record, (int) (auth()->id() ?? 0));
 
                                 Notification::make()
-                                    ->title('Financial snapshot computed')
+                                    ->title(__('clinic_visit.notifications.financial_snapshot_computed'))
                                     ->success()
                                     ->send();
                             } catch (\Throwable $e) {
                                 report($e);
 
                                 Notification::make()
-                                    ->title('Failed to compute financial snapshot')
-                                    ->body('Please check logs and try again.')
+                                    ->title(__('clinic_visit.notifications.financial_snapshot_failed'))
+                                    ->body(__('clinic_visit.notifications.check_logs'))
                                     ->danger()
                                     ->send();
                             }
                         }),
 
                     Forms\Components\TextInput::make('source')
-                        ->label('Source')
+                        ->label(__('clinic_visit.fields.source.label'))
                         ->maxLength(255)
                         ->nullable()
-                        ->placeholder('web / whatsapp / call / walk_in / reception')
-                        ->helperText('Attribution only.')
-                        ->disabled(fn (string $operation) => $operation === 'edit' && auth()->id() !== 1),
+                        ->placeholder(__('clinic_visit.fields.source.placeholder'))
+                        ->helperText(__('clinic_visit.fields.source.helper'))
+                        ->disabled(fn (string $operation) => $operation === 'edit' && ! (auth()->user()?->hasRole(['admin', 'super_admin']) ?? false)),
 
                     Forms\Components\TextInput::make('booking_code')
-                        ->label('Booking Code')
+                        ->label(__('clinic_visit.fields.booking_code.label'))
                         ->maxLength(255)
                         ->nullable()
-                        ->helperText('Snapshot from appointment (optional).')
-                        ->disabled(fn (string $operation) => $operation === 'edit' && auth()->id() !== 1),
+                        ->helperText(__('clinic_visit.fields.booking_code.helper'))
+                        ->disabled(fn (string $operation) => $operation === 'edit' && ! (auth()->user()?->hasRole(['admin', 'super_admin']) ?? false)),
 
                     Forms\Components\DateTimePicker::make('checked_in_at')
-                        ->label('Checked In At')
+                        ->label(__('clinic_visit.fields.checked_in_at.label'))
                         ->seconds(false)
                         ->nullable()
-                        ->disabled(fn (string $operation) => $operation === 'edit' && auth()->id() !== 1),
+                        ->disabled(fn (string $operation) => $operation === 'edit' && ! (auth()->user()?->hasRole(['admin', 'super_admin']) ?? false)),
 
                     Forms\Components\DateTimePicker::make('queued_at')
-                        ->label('Queued At')
+                        ->label(__('clinic_visit.fields.queued_at.label'))
                         ->seconds(false)
                         ->nullable()
                         ->disabled(), // Always disabled (system controlled)
                     // ->helperText('Set at check-in.'),
 
                     Forms\Components\DateTimePicker::make('accepted_at')
-                        ->label('Accepted At')
+                        ->label(__('clinic_visit.fields.accepted_at.label'))
                         ->seconds(false)
                         ->nullable()
                         ->disabled(), // Always disabled (system controlled)
                     // ->helperText('Set when doctor accepts the patient.'),
 
                     Forms\Components\Select::make('accepted_by_user_id')
-                        ->label('Accepted By')
+                        ->label(__('clinic_visit.fields.accepted_by.label'))
                         ->relationship('acceptedBy', 'name') // see note below
                         ->searchable()
                         ->preload()
@@ -230,23 +248,23 @@ class VisitResource extends Resource
                         ->disabled(),
 
                     Forms\Components\DateTimePicker::make('service_started_at')
-                        ->label('Service Started At')
+                        ->label(__('clinic_visit.fields.service_started_at.label'))
                         ->seconds(false)
                         ->nullable()
                         ->disabled(),
                     // ->helperText('Set once when the doctor starts the consultation.'),
 
                     Forms\Components\DateTimePicker::make('completed_at')
-                        ->label('Completed At')
+                        ->label(__('clinic_visit.fields.completed_at.label'))
                         ->seconds(false)
                         ->nullable()
-                        ->disabled(fn (string $operation) => $operation === 'edit' && auth()->id() !== 1),
+                        ->disabled(fn (string $operation) => $operation === 'edit' && ! (auth()->user()?->hasRole(['admin', 'super_admin']) ?? false)),
                 ])
                 ->collapsible(),
 
             Forms\Components\Actions::make([
                 Forms\Components\Actions\Action::make('markServiceStarted')
-                    ->label('Mark Service Started')
+                    ->label(__('clinic_visit.actions.mark_service_started'))
                     ->icon('heroicon-o-play')
                     ->color('success')
                     ->visible(fn (?Visit $record) => $record
@@ -271,7 +289,7 @@ class VisitResource extends Resource
                             || $user->hasRole('super_admin')
                         )) {
                             Notification::make()
-                                ->title('Not allowed')
+                                ->title(__('clinic_visit.notifications.not_allowed'))
                                 ->danger()
                                 ->send();
 
@@ -283,28 +301,28 @@ class VisitResource extends Resource
                         ]);
 
                         Notification::make()
-                            ->title('Service marked as started')
+                            ->title(__('clinic_visit.notifications.service_marked_started'))
                             ->success()
                             ->send();
                     }),
             ])->columnSpanFull(),
 
-            Forms\Components\Section::make('Follow-up')
+            Forms\Components\Section::make(__('clinic_visit.sections.follow_up'))
                 ->columns(3)
                 ->schema([
                     Forms\Components\DatePicker::make('follow_up_date')
-                        ->label('Follow-up Date')
+                        ->label(__('clinic_visit.fields.follow_up_date.label'))
                         ->native(false)
                         ->minDate(now()->startOfDay()) // Restrict to today or future
                         ->nullable(),
                     Forms\Components\Toggle::make('auto_create_follow_up_booking')
-                        ->label('Auto-create follow-up booking')
-                        ->helperText('If enabled, system creates a pending booking for the follow-up date/time.')
+                        ->label(__('clinic_visit.fields.auto_create_follow_up_booking.label'))
+                        ->helperText(__('clinic_visit.fields.auto_create_follow_up_booking.helper'))
                         ->default(false)
                         ->dehydrated(false),
                     Forms\Components\Actions::make([
                         Action::make('syncFollowUpPlan')
-                            ->label('Sync Follow-up Plan')
+                            ->label(__('clinic_visit.actions.sync_follow_up_plan'))
                             ->icon('heroicon-o-arrow-path')
                             ->visible(fn (?Visit $record) => (bool) $record && (bool) $record->follow_up_date)
                             ->requiresConfirmation()
@@ -323,14 +341,14 @@ class VisitResource extends Resource
                                     );
 
                                     Notification::make()
-                                        ->title('Follow-up plan synced')
+                                        ->title(__('clinic_visit.notifications.follow_up_synced'))
                                         ->success()
                                         ->send();
                                 } catch (\Throwable $e) {
                                     report($e);
 
                                     Notification::make()
-                                        ->title('Failed to sync follow-up plan')
+                                        ->title(__('clinic_visit.notifications.follow_up_sync_failed'))
                                         ->danger()
                                         ->send();
                                 }
@@ -338,40 +356,43 @@ class VisitResource extends Resource
                     ])->columnSpanFull(),
 
                     Forms\Components\Textarea::make('notes')
-                        ->label('Internal Notes')
+                        ->label(__('clinic_visit.fields.notes.label'))
                         ->rows(4)
                         ->columnSpanFull()
                         ->nullable(),
                 ])
                 ->collapsible(),
 
-            Forms\Components\Section::make('Financial Snapshot')
+            Forms\Components\Section::make(__('clinic_visit.sections.financial_snapshot'))
                 ->columns(3)
                 ->schema([
                     // Replacement for Section::helperText()
                     Forms\Components\Placeholder::make('financial_helper')
                         ->label('')
-                        ->content('Computed by VisitCostingService (audit snapshot).')
+                        ->content(__('clinic_visit.fields.financial_helper_content'))
                         ->columnSpanFull(),
 
                     Forms\Components\TextInput::make('fees_total')
-                        ->label('Fees Total')
+                        ->label(__('clinic_visit.fields.fees_total.label'))
+                        ->helperText(__('clinic_visit.fields.fees_total.helper'))
                         ->numeric()
                         ->step('0.001')
                         ->default(0)
                         ->nullable()
-                        ->disabled(fn () => ! static::canOverrideFinancials()),
+                        ->disabled(),
 
                     Forms\Components\TextInput::make('discount_total')
-                        ->label('Discount Total')
+                        ->label(__('clinic_visit.fields.discount_total.label'))
+                        ->helperText(__('clinic_visit.fields.discount_total.helper'))
                         ->numeric()
                         ->step('0.001')
+                        ->minValue(0)
                         ->default(0)
                         ->nullable()
-                        ->disabled(fn () => ! static::canOverrideFinancials()),
+                        ->disabled(fn () => ! (auth()->user()?->hasRole(['admin', 'super_admin']) ?? false)),
 
                     Forms\Components\TextInput::make('items_cost_total')
-                        ->label('Items Cost Total')
+                        ->label(__('clinic_visit.fields.items_cost_total.label'))
                         ->numeric()
                         ->step('0.001')
                         ->default(0)
@@ -379,7 +400,15 @@ class VisitResource extends Resource
                         ->disabled(),
 
                     Forms\Components\TextInput::make('items_price_total')
-                        ->label('Items Price Total')
+                        ->label(__('clinic_visit.fields.items_price_total.label'))
+                        ->numeric()
+                        ->step('0.001')
+                        ->default(0)
+                        ->nullable()
+                        ->disabled(),
+
+                    Forms\Components\TextInput::make('packages_price_total')
+                        ->label(__('clinic_visit.fields.packages_price_total.label'))
                         ->numeric()
                         ->step('0.001')
                         ->default(0)
@@ -387,7 +416,7 @@ class VisitResource extends Resource
                         ->disabled(),
 
                     Forms\Components\TextInput::make('profit_total')
-                        ->label('Profit Total')
+                        ->label(__('clinic_visit.fields.profit_total.label'))
                         ->numeric()
                         ->step('0.001')
                         ->default(0)
@@ -395,13 +424,13 @@ class VisitResource extends Resource
                         ->disabled(),
 
                     Forms\Components\DateTimePicker::make('computed_at')
-                        ->label('Computed At')
+                        ->label(__('clinic_visit.fields.computed_at.label'))
                         ->seconds(false)
                         ->nullable()
                         ->disabled(),
 
                     Forms\Components\TextInput::make('computed_version')
-                        ->label('Computed Version')
+                        ->label(__('clinic_visit.fields.computed_version.label'))
                         ->maxLength(50)
                         ->default('v1')
                         ->nullable()
@@ -409,10 +438,11 @@ class VisitResource extends Resource
 
                     Forms\Components\Actions::make([
                         Forms\Components\Actions\Action::make('computeFinancials')
-                            ->label('Recompute Financials')
+                            ->label(__('clinic_visit.actions.recompute_financials'))
                             ->icon('heroicon-o-calculator')
-                            ->visible(fn (?Visit $record) => (bool) $record && static::financialsEnabled())
-                            ->disabled(fn (?Visit $record) => ! $record || ($record->status ?? null) !== 'completed')
+                            ->visible(fn (?Visit $record) => (bool) $record
+                                && static::financialsEnabled()
+                                && ($record->status ?? null) === 'completed')
                             ->requiresConfirmation()
                             // FIX: Replaced invalid `Form $form` injection with `\Livewire\Component $livewire`
                             ->action(function (?Visit $record, \Livewire\Component $livewire) {
@@ -431,15 +461,15 @@ class VisitResource extends Resource
                                     }
 
                                     Notification::make()
-                                        ->title('Financial snapshot recomputed')
+                                        ->title(__('clinic_visit.notifications.snapshot_recomputed'))
                                         ->success()
                                         ->send();
                                 } catch (\Throwable $e) {
                                     report($e);
 
                                     Notification::make()
-                                        ->title('Failed to recompute snapshot')
-                                        ->body('Please check logs and try again.')
+                                        ->title(__('clinic_visit.notifications.snapshot_recompute_failed'))
+                                        ->body(__('clinic_visit.notifications.check_logs'))
                                         ->danger()
                                         ->send();
                                 }
@@ -454,91 +484,93 @@ class VisitResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('id')->label('#')->sortable(),
+                Tables\Columns\TextColumn::make('id')->label(__('clinic_visit.columns.id'))->sortable(),
 
                 Tables\Columns\TextColumn::make('checked_in_at')
-                    ->label('Checked-in')
+                    ->label(__('clinic_visit.columns.checked_in'))
                     ->dateTime('Y-m-d h:i A')
                     ->sortable()
                     ->toggleable(),
 
                 Tables\Columns\TextColumn::make('service_started_at')
-                    ->label('Service Started')
+                    ->label(__('clinic_visit.columns.service_started'))
                     ->dateTime('Y-m-d h:i A')
                     ->sortable()
                     ->toggleable(),
 
                 Tables\Columns\TextColumn::make('patient.name')
-                    ->label('Patient')
+                    ->label(__('clinic_visit.columns.patient'))
                     ->searchable()
                     ->sortable()
                     ->description(fn (Visit $r) => $r->patient?->phone),
 
                 Tables\Columns\TextColumn::make('doctor.name')
-                    ->label('Doctor')
+                    ->label(__('clinic_visit.columns.doctor'))
                     ->sortable()
                     ->toggleable(),
 
                 Tables\Columns\TextColumn::make('branch_id')
-                    ->label('Branch')
+                    ->label(__('clinic_visit.columns.branch'))
                     ->formatStateUsing(fn ($state, Visit $r) => $r->branch?->localized_name ?? ('#'.$state))
                     ->toggleable(),
 
                 Tables\Columns\TextColumn::make('room.name')
-                    ->label('Room')
+                    ->label(__('clinic_visit.columns.room'))
                     ->toggleable(),
 
                 Tables\Columns\TextColumn::make('queued_at')
-                    ->label('Queued')
+                    ->label(__('clinic_visit.columns.queued'))
                     ->dateTime('Y-m-d h:i A')
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('accepted_at')
-                    ->label('Accepted')
+                    ->label(__('clinic_visit.columns.accepted'))
                     ->dateTime('Y-m-d h:i A')
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('acceptedBy.name')
-                    ->label('Accepted By')
+                    ->label(__('clinic_visit.columns.accepted_by'))
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('booking_code')
-                    ->label('Code')
+                    ->label(__('clinic_visit.columns.code'))
                     ->badge()
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('source')
-                    ->label('Source')
+                    ->label(__('clinic_visit.columns.source'))
                     ->badge()
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('fees_total')
-                    ->label('Fees')
+                    ->label(__('clinic_visit.columns.fees'))
                     ->numeric(3)
                     ->toggleable(),
 
                 Tables\Columns\TextColumn::make('profit_total')
-                    ->label('Profit')
+                    ->label(__('clinic_visit.columns.profit'))
                     ->numeric(3)
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('computed_at')
-                    ->label('Computed')
+                    ->label(__('clinic_visit.columns.computed'))
                     ->dateTime('Y-m-d h:i A')
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('computed_version')
-                    ->label('Ver')
+                    ->label(__('clinic_visit.columns.version'))
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('status')
                     ->badge()
                     ->color(fn (string $state): string => match ($state) {
                         'created' => 'gray',
-                        'in_progress' => 'info',
                         'awaiting_doctor' => 'warning',
+                        'awaiting_stock' => 'warning',
+                        'in_progress' => 'info',
+                        'awaiting_payment' => 'warning',
                         'completed' => 'success',
                         'cancelled' => 'danger',
                         'no_show' => 'warning',
@@ -548,11 +580,11 @@ class VisitResource extends Resource
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('doctor_id')
-                    ->label('Doctor')
+                    ->label(__('clinic_visit.filters.doctor'))
                     ->relationship('doctor', 'name'),
 
                 Tables\Filters\SelectFilter::make('branch_id')
-                    ->label('Clinic Branch')
+                    ->label(__('clinic_visit.filters.clinic_branch'))
                     ->multiple()
                     ->options(fn () => Branch::forUser(auth()->user())
                         ->orderByRaw("JSON_UNQUOTE(JSON_EXTRACT(name, '$.\"en\"'))")
@@ -567,15 +599,17 @@ class VisitResource extends Resource
 
                 Tables\Filters\SelectFilter::make('status')
                     ->options([
-                        'created' => 'Created',
-                        'in_progress' => 'In Progress',
-                        'awaiting_doctor' => 'Awaiting Doctor',
-                        'completed' => 'Completed',
-                        'cancelled' => 'Cancelled',
-                        'no_show' => 'No-show',
+                        'created' => __('clinic_visit.options.status.created'),
+                        'awaiting_doctor' => __('clinic_visit.options.status.awaiting_doctor'),
+                        'awaiting_stock' => __('clinic_visit.options.status.awaiting_stock'),
+                        'in_progress' => __('clinic_visit.options.status.in_progress'),
+                        'awaiting_payment' => __('clinic_visit.options.status.awaiting_payment'),
+                        'completed' => __('clinic_visit.options.status.completed'),
+                        'cancelled' => __('clinic_visit.options.status.cancelled'),
+                        'no_show' => __('clinic_visit.options.status.no_show'),
                     ]),
                 Tables\Filters\TernaryFilter::make('is_accepted')
-                    ->label('Accepted?')
+                    ->label(__('clinic_visit.filters.accepted_question'))
                     ->queries(
                         true: fn (Builder $q) => $q->whereNotNull('accepted_at'),
                         false: fn (Builder $q) => $q->whereNull('accepted_at'),
@@ -595,29 +629,29 @@ class VisitResource extends Resource
             ])
             ->actions([
                 Tables\Actions\EditAction::make()
-                    ->label('Open Visit')
+                    ->label(__('clinic_visit.actions.open_visit'))
                     ->icon('heroicon-o-folder-open'),
 
                 Tables\Actions\Action::make('recomputeFinancials')
-                    ->label('Recompute Financials')
+                    ->label(__('clinic_visit.actions.recompute_financials'))
                     ->icon('heroicon-o-calculator')
-                    ->visible(fn () => static::financialsEnabled())
-                    ->disabled(fn (Visit $record) => ($record->status ?? null) !== 'completed')
+                    ->visible(fn (Visit $record) => static::financialsEnabled()
+                        && ($record->status ?? null) === 'completed')
                     ->requiresConfirmation()
                     ->action(function (Visit $record) {
                         try {
                             app(VisitCostingService::class)->compute($record, (int) (auth()->id() ?? 0));
 
                             Notification::make()
-                                ->title('Financial snapshot recomputed')
+                                ->title(__('clinic_visit.notifications.snapshot_recomputed'))
                                 ->success()
                                 ->send();
                         } catch (\Throwable $e) {
                             report($e);
 
                             Notification::make()
-                                ->title('Failed to recompute snapshot')
-                                ->body('Please check logs and try again.')
+                                ->title(__('clinic_visit.notifications.snapshot_recompute_failed'))
+                                ->body(__('clinic_visit.notifications.check_logs'))
                                 ->danger()
                                 ->send();
                         }
@@ -626,6 +660,9 @@ class VisitResource extends Resource
             ->bulkActions([
                 Tables\Actions\DeleteBulkAction::make(),
             ])
+            ->emptyStateHeading(__('resources.visit.empty_heading'))
+            ->emptyStateDescription(__('resources.visit.empty_description'))
+            ->emptyStateIcon('heroicon-o-clipboard-document-list')
             ->defaultSort('id', 'desc');
     }
 

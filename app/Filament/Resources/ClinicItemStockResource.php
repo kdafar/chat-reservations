@@ -21,22 +21,38 @@ class ClinicItemStockResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-cube';
 
-    protected static ?string $navigationGroup = 'Clinic — Inventory';
-
-    protected static ?string $modelLabel = 'Clinic Stock';
-
-    protected static ?string $pluralModelLabel = 'Clinic Stocks';
+    protected static ?string $navigationGroup = null;
 
     protected static ?int $navigationSort = 10;
+
+    public static function getNavigationGroup(): ?string
+    {
+        return __('common.nav.clinic_inventory');
+    }
+
+    public static function getNavigationLabel(): string
+    {
+        return __('resources.clinic_item_stock.nav_label');
+    }
+
+    public static function getModelLabel(): string
+    {
+        return __('resources.clinic_item_stock.label');
+    }
+
+    public static function getPluralModelLabel(): string
+    {
+        return __('resources.clinic_item_stock.label_plural');
+    }
 
     public static function form(Form $form): Form
     {
         return $form->schema([
-            Forms\Components\Section::make('Stock (Base Units)')
+            Forms\Components\Section::make(__('clinic_inventory.clinic_item_stock.sections.stock_base'))
                 ->columns(2)
                 ->schema([
                     Forms\Components\Select::make('branch_id')
-                        ->label('Branch')
+                        ->label(__('clinic_inventory.clinic_item_stock.fields.branch'))
                         ->options(fn () => Branch::query()->orderBy('id')->get()
                             ->mapWithKeys(fn ($b) => [$b->id => ($b->localized_name ?? ('#'.$b->id))])
                             ->all()
@@ -45,7 +61,7 @@ class ClinicItemStockResource extends Resource
                         ->disabled(fn (?ClinicItemStock $record) => filled($record)),
 
                     Forms\Components\Select::make('clinic_item_id')
-                        ->label('Clinic Item')
+                        ->label(__('clinic_inventory.clinic_item_stock.fields.clinic_item'))
                         ->options(fn () => ClinicItem::query()->orderBy('id', 'desc')->get()
                             ->mapWithKeys(fn (ClinicItem $it) => [$it->id => $it->localized_name])
                             ->all()
@@ -54,18 +70,18 @@ class ClinicItemStockResource extends Resource
                         ->disabled(fn (?ClinicItemStock $record) => filled($record)),
 
                     Forms\Components\TextInput::make('qty_on_hand_base')
-                        ->label('Qty On Hand (Base)')
+                        ->label(__('clinic_inventory.clinic_item_stock.fields.qty_on_hand_base'))
                         ->disabled()
                         ->dehydrated(false),
 
                     Forms\Components\TextInput::make('min_qty_threshold_base')
-                        ->label('Low Stock Threshold (Base)')
+                        ->label(__('clinic_inventory.clinic_item_stock.fields.min_threshold_base'))
                         ->numeric()
                         ->step('0.0001')
                         ->nullable(),
 
                     Forms\Components\TextInput::make('bin_location')
-                        ->label('Bin Location')
+                        ->label(__('clinic_inventory.clinic_item_stock.fields.bin_location'))
                         ->maxLength(191)
                         ->nullable(),
                 ]),
@@ -79,7 +95,7 @@ class ClinicItemStockResource extends Resource
                 Tables\Columns\TextColumn::make('id')->label('#')->sortable(),
 
                 Tables\Columns\TextColumn::make('branch_id')
-                    ->label('Branch')
+                    ->label(__('clinic_inventory.clinic_item_stock.fields.branch'))
                     ->formatStateUsing(function ($state) {
                         $b = Branch::query()->find($state);
 
@@ -88,27 +104,27 @@ class ClinicItemStockResource extends Resource
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('clinic_item_id')
-                    ->label('Item')
+                    ->label(__('clinic_inventory.clinic_item_stock.fields.item'))
                     ->formatStateUsing(fn ($state, ClinicItemStock $r) => $r->clinicItem?->localized_name ?? ('#'.$state))
                     ->searchable(),
 
                 Tables\Columns\TextColumn::make('qty_on_hand_base')
-                    ->label('On Hand (Base)')
+                    ->label(__('clinic_inventory.clinic_item_stock.fields.on_hand_base'))
                     ->numeric(4)
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('min_qty_threshold_base')
-                    ->label('Threshold')
+                    ->label(__('clinic_inventory.clinic_item_stock.fields.threshold'))
                     ->numeric(4)
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('bin_location')
-                    ->label('Bin')
+                    ->label(__('clinic_inventory.clinic_item_stock.fields.bin'))
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('branch_id')
-                    ->label('Branch')
+                    ->label(__('clinic_inventory.clinic_item_stock.fields.branch'))
                     ->options(fn () => Branch::query()->orderBy('id')->get()
                         ->mapWithKeys(fn ($b) => [$b->id => ($b->localized_name ?? ('#'.$b->id))])
                         ->all()
@@ -116,11 +132,11 @@ class ClinicItemStockResource extends Resource
             ])
             ->headerActions([
                 Tables\Actions\Action::make('receiveStock')
-                    ->label('Receive Stock')
+                    ->label(__('clinic_inventory.clinic_item_stock.actions.receive_stock'))
                     ->icon('heroicon-o-arrow-down-tray')
                     ->form([
                         Forms\Components\Select::make('branch_id')
-                            ->label('Branch')
+                            ->label(__('clinic_inventory.clinic_item_stock.fields.branch'))
                             ->required()
                             ->options(fn () => Branch::query()->orderBy('id')->get()
                                 ->mapWithKeys(fn ($b) => [$b->id => ($b->localized_name ?? ('#'.$b->id))])
@@ -128,7 +144,7 @@ class ClinicItemStockResource extends Resource
                             ),
 
                         Forms\Components\Select::make('clinic_item_id')
-                            ->label('Clinic Item')
+                            ->label(__('clinic_inventory.clinic_item_stock.fields.clinic_item'))
                             ->required()
                             ->searchable()
                             ->preload()
@@ -141,21 +157,21 @@ class ClinicItemStockResource extends Resource
                             ),
 
                         Forms\Components\TextInput::make('qty_stock_units')
-                            ->label('Qty (Stock Units)')
+                            ->label(__('clinic_inventory.clinic_item_stock.fields.qty_stock_units'))
                             ->numeric()
                             ->step('0.0001')
                             ->nullable()
-                            ->helperText('Enter boxes/vials/bottles count. Will convert to base using conversion_factor.'),
+                            ->helperText(__('clinic_inventory.clinic_item_stock.helpers.qty_stock_units')),
 
                         Forms\Components\TextInput::make('qty_base')
-                            ->label('Qty (Base Units)')
+                            ->label(__('clinic_inventory.clinic_item_stock.fields.qty_base'))
                             ->numeric()
                             ->step('0.0001')
                             ->nullable()
-                            ->helperText('Alternatively enter base qty directly (ml/units/pcs).'),
+                            ->helperText(__('clinic_inventory.clinic_item_stock.helpers.qty_base')),
 
                         Forms\Components\TextInput::make('notes')
-                            ->label('Notes')
+                            ->label(__('clinic_inventory.clinic_item_stock.fields.notes'))
                             ->maxLength(191)
                             ->nullable(),
                     ])
@@ -173,7 +189,7 @@ class ClinicItemStockResource extends Resource
 
                         if (($qtyStockUnits === null || $qtyStockUnits <= 0) && ($qtyBase === null || $qtyBase <= 0)) {
                             Notification::make()
-                                ->title('Please enter Qty (Stock Units) or Qty (Base Units)')
+                                ->title(__('clinic_inventory.clinic_item_stock.notifications.enter_qty'))
                                 ->danger()
                                 ->send();
 
@@ -193,7 +209,7 @@ class ClinicItemStockResource extends Resource
                         );
 
                         Notification::make()
-                            ->title('Stock received successfully')
+                            ->title(__('clinic_inventory.clinic_item_stock.notifications.received_success'))
                             ->success()
                             ->send();
                     }),

@@ -32,7 +32,18 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->login()
+            ->databaseNotifications()
+            ->databaseNotificationsPolling('5s')
+            ->renderHook(
+                \Filament\View\PanelsRenderHook::BODY_END,
+                fn (): string => view('filament.hooks.notification-sound')->render(),
+            )
+            ->renderHook(
+                \Filament\View\PanelsRenderHook::TOPBAR_END,
+                fn (): string => view('filament.hooks.user-branch-badge')->render(),
+            )
             ->sidebarFullyCollapsibleOnDesktop()
+            ->maxContentWidth(\Filament\Support\Enums\MaxWidth::Full)
             ->colors([
                 'primary' => Color::hex('#b19860'),
                 'gray' => [
@@ -77,6 +88,16 @@ class AdminPanelProvider extends PanelProvider
                 \App\Filament\Resources\ClinicStockMovementResource::class,
                 \App\Filament\Resources\VisitStockRequestResource::class,
                 \App\Filament\Resources\ClinicPackageResource::class,
+
+                // --- Accounting (Phase 1) ---
+                \App\Filament\Resources\Accounting\ChartOfAccountResource::class,
+                \App\Filament\Resources\Accounting\JournalEntryResource::class,
+
+                // --- Accounting (Phase 2) ---
+                \App\Filament\Resources\Accounting\VendorResource::class,
+                \App\Filament\Resources\Accounting\ExpenseResource::class,
+                \App\Filament\Resources\Accounting\AccountingPeriodResource::class,
+                \App\Filament\Resources\Accounting\BankReconciliationResource::class,
             ])
             ->pages([
                 \App\Filament\Pages\AdminDashboardRoute::class,
@@ -93,8 +114,17 @@ class AdminPanelProvider extends PanelProvider
                 // \App\Filament\Pages\DailyBusinessReport::class,
                 \App\Filament\Pages\ExecutiveDashboard::class,
                 \App\Filament\Pages\WaitingPatients::class,
-                //\App\Filament\Pages\NurseStation::class,
+                // \App\Filament\Pages\NurseStation::class,
                 \App\Filament\Pages\DailyReconciliationReport::class,
+
+                // --- Accounting (Phase 1) ---
+                \App\Filament\Pages\Accounting\TrialBalance::class,
+
+                // --- Accounting (Phase 2) reports ---
+                \App\Filament\Pages\Accounting\GeneralLedger::class,
+                \App\Filament\Pages\Accounting\ProfitAndLossReport::class,
+                \App\Filament\Pages\Accounting\BalanceSheetReport::class,
+                \App\Filament\Pages\Accounting\CashFlowReport::class,
             ])
             ->widgets([
                 \App\Filament\Widgets\WhatsAppStatusWidget::class,
@@ -115,16 +145,15 @@ class AdminPanelProvider extends PanelProvider
             // ORDER GROUPS HERE (TOP → BOTTOM)
             // Make sure these labels match your resources/pages navigationGroup strings.
             ->navigationGroups([
-                NavigationGroup::make()->label('Analytics'),
-
-                NavigationGroup::make()->label('Clinic — Operations'),
-                NavigationGroup::make()->label('Clinic — Scheduling'),
-                NavigationGroup::make()->label('Clinic — Setup'),
-                NavigationGroup::make()->label('Clinic — Inventory'),
-                NavigationGroup::make()->label('Clinic — Reports'),
-                NavigationGroup::make()->label('Clinic — Finance'),
-                NavigationGroup::make()->label('Clinic — Tools'),
-                NavigationGroup::make()->label('Clinic — Compliance'),
+                NavigationGroup::make()->label(fn () => __('common.nav.clinic_operations')),
+                NavigationGroup::make()->label(fn () => __('common.nav.clinic_scheduling')),
+                NavigationGroup::make()->label(fn () => __('common.nav.clinic_setup')),
+                NavigationGroup::make()->label(fn () => __('common.nav.clinic_inventory')),
+                NavigationGroup::make()->label(fn () => __('common.nav.clinic_reports')),
+                NavigationGroup::make()->label(fn () => __('common.nav.clinic_finance')),
+                NavigationGroup::make()->label(fn () => __('common.nav.accounting')),
+                NavigationGroup::make()->label(fn () => __('common.nav.clinic_tools')),
+                NavigationGroup::make()->label(fn () => __('common.nav.clinic_compliance')),
 
                 NavigationGroup::make()->label('Access Control'),
                 NavigationGroup::make()->label('Messaging'),
@@ -149,6 +178,18 @@ class AdminPanelProvider extends PanelProvider
                 ShareErrorsFromSession::class,
                 VerifyCsrfToken::class,
                 SubstituteBindings::class,
+                \App\Http\Middleware\SetLocaleFromUser::class,
+            ])
+            ->userMenuItems([
+                // Locale switcher: persists to users.preferred_locale.
+                'switch-locale' => \Filament\Navigation\MenuItem::make()
+                    ->label(fn () => app()->getLocale() === 'ar'
+                        ? __('common.locale.switch_to_english')
+                        : __('common.locale.switch_to_arabic'))
+                    ->icon('heroicon-o-language')
+                    ->url(fn () => route('locale.switch', [
+                        'lang' => app()->getLocale() === 'ar' ? 'en' : 'ar',
+                    ])),
             ])
             ->authMiddleware([Authenticate::class]);
     }

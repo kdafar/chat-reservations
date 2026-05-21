@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Concerns\HasHelpAction;
 use App\Models\Booking;
 use App\Models\Doctor;
 use App\Models\Patient;
@@ -28,22 +29,52 @@ use Illuminate\Support\Str; // Added per patch
 
 class DoctorSchedule extends Page implements HasForms, HasTable
 {
+    use HasHelpAction;
     use InteractsWithForms;
     use InteractsWithTable;
 
     protected static ?string $navigationIcon = 'heroicon-o-calendar-days';
 
-    protected static ?string $navigationGroup = 'Clinic — Operations';
+    protected static ?string $navigationGroup = null;
 
-    protected static ?string $title = 'Doctor Schedule';
+    protected static ?string $title = null;
 
     protected static ?int $navigationSort = 40;
 
     protected static string $view = 'filament.pages.doctor-schedule';
 
+    public static function getNavigationGroup(): ?string
+    {
+        return __('common.nav.clinic_operations');
+    }
+
+    public static function getNavigationLabel(): string
+    {
+        return __('pages.doctor_schedule.nav_label');
+    }
+
+    public function getTitle(): string|\Illuminate\Contracts\Support\Htmlable
+    {
+        return __('pages.doctor_schedule.title');
+    }
+
     public static function canAccess(): bool
     {
         return (bool) auth()->user()?->can('view_doctor-schedule');
+    }
+
+    protected function getHeaderActions(): array
+    {
+        return $this->withHelp([]);
+    }
+
+    protected function helpContent(): array
+    {
+        return [
+            ['heading' => __('help.pages.doctor_schedule.what.heading'), 'body' => __('help.pages.doctor_schedule.what.body')],
+            ['heading' => __('help.pages.doctor_schedule.how.heading'), 'items' => (array) trans('help.pages.doctor_schedule.how.items')],
+            ['heading' => __('help.pages.doctor_schedule.faq.heading'), 'items' => (array) trans('help.pages.doctor_schedule.faq.items')],
+        ];
     }
 
     /**

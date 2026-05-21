@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Concerns\HasHelpAction;
 use Filament\Infolists\Components\Grid;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Infolists\Infolist;
@@ -9,20 +10,51 @@ use Filament\Pages\Dashboard as FilamentDashboard;
 
 class ClinicReportingDashboard extends FilamentDashboard
 {
+    use HasHelpAction;
+
     protected static ?string $navigationIcon = 'heroicon-o-chart-bar';
 
-    protected static ?string $navigationGroup = 'Clinic — Reports';
+    protected static ?string $navigationGroup = null;
 
-    protected static ?string $navigationLabel = 'Clinic Reports';
+    protected static ?string $navigationLabel = null;
 
     protected static ?string $slug = 'clinic-reports';
 
     protected static ?int $navigationSort = 10;
 
+    public static function getNavigationGroup(): ?string
+    {
+        return __('common.nav.clinic_reports');
+    }
+
+    public static function getNavigationLabel(): string
+    {
+        return __('pages.clinic_reporting_dashboard.nav_label');
+    }
+
+    public function getTitle(): string|\Illuminate\Contracts\Support\Htmlable
+    {
+        return __('pages.clinic_reporting_dashboard.title');
+    }
+
     // public static function canAccess(): bool
     // {
     //     return auth()->user()->can('view_clinic_reports');
     // }
+
+    protected function getHeaderActions(): array
+    {
+        return $this->withHelp([]);
+    }
+
+    protected function helpContent(): array
+    {
+        return [
+            ['heading' => __('help.pages.clinic_reporting_dashboard.what.heading'), 'body' => __('help.pages.clinic_reporting_dashboard.what.body')],
+            ['heading' => __('help.pages.clinic_reporting_dashboard.how.heading'), 'items' => (array) trans('help.pages.clinic_reporting_dashboard.how.items')],
+            ['heading' => __('help.pages.clinic_reporting_dashboard.faq.heading'), 'items' => (array) trans('help.pages.clinic_reporting_dashboard.faq.items')],
+        ];
+    }
 
     /**
      * IMPORTANT:

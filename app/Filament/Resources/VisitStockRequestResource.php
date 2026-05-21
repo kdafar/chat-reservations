@@ -20,50 +20,66 @@ class VisitStockRequestResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-inbox-stack';
 
-    protected static ?string $navigationGroup = 'Clinic — Inventory';
-
-    protected static ?string $modelLabel = 'Stock Request';
-
-    protected static ?string $pluralModelLabel = 'Stock Requests';
+    protected static ?string $navigationGroup = null;
 
     protected static ?int $navigationSort = 30;
+
+    public static function getNavigationGroup(): ?string
+    {
+        return __('common.nav.clinic_inventory');
+    }
+
+    public static function getNavigationLabel(): string
+    {
+        return __('resources.visit_stock_request.nav_label');
+    }
+
+    public static function getModelLabel(): string
+    {
+        return __('resources.visit_stock_request.label');
+    }
+
+    public static function getPluralModelLabel(): string
+    {
+        return __('resources.visit_stock_request.label_plural');
+    }
 
     public static function form(Forms\Form $form): Forms\Form
     {
         // We generally do not create/edit these manually.
         // Keep form minimal for View page / safety.
         return $form->schema([
-            Forms\Components\Section::make('Request')
+            Forms\Components\Section::make(__('clinic_inventory.visit_stock_request.sections.request'))
                 ->columns(3)
                 ->schema([
                     Forms\Components\TextInput::make('id')->disabled(),
                     Forms\Components\Select::make('status')
                         ->options([
-                            VisitStockRequest::STATUS_PENDING => 'Pending',
-                            VisitStockRequest::STATUS_FULFILLED => 'Fulfilled',
-                            VisitStockRequest::STATUS_CANCELLED => 'Cancelled',
+                            VisitStockRequest::STATUS_PENDING => __('clinic_inventory.visit_stock_request.statuses.pending'),
+                            VisitStockRequest::STATUS_FULFILLED => __('clinic_inventory.visit_stock_request.statuses.fulfilled'),
+                            VisitStockRequest::STATUS_CANCELLED => __('clinic_inventory.visit_stock_request.statuses.cancelled'),
                         ])
                         ->disabled(),
                     Forms\Components\Textarea::make('notes')->rows(3)->disabled(),
 
                     Forms\Components\Placeholder::make('visit')
-                        ->label('Visit')
-                        ->content(fn (VisitStockRequest $r) => (string) ($r->visit?->booking_code ?? ('Visit #'.$r->visit_id))),
+                        ->label(__('clinic_inventory.visit_stock_request.fields.visit'))
+                        ->content(fn (VisitStockRequest $r) => (string) ($r->visit?->booking_code ?? (__('clinic_inventory.visit_stock_request.visit_prefix').$r->visit_id))),
 
                     Forms\Components\Placeholder::make('branch')
-                        ->label('Branch')
+                        ->label(__('clinic_inventory.visit_stock_request.fields.branch'))
                         ->content(fn (VisitStockRequest $r) => (string) ($r->branch?->localized_name ?? ('#'.$r->branch_id))),
 
                     Forms\Components\Placeholder::make('requested_by')
-                        ->label('Requested By')
+                        ->label(__('clinic_inventory.visit_stock_request.fields.requested_by'))
                         ->content(fn (VisitStockRequest $r) => (string) ($r->requestedBy?->name ?? '—')),
 
                     Forms\Components\Placeholder::make('fulfilled_by')
-                        ->label('Fulfilled By')
+                        ->label(__('clinic_inventory.visit_stock_request.fields.fulfilled_by'))
                         ->content(fn (VisitStockRequest $r) => (string) ($r->fulfilledBy?->name ?? '—')),
 
                     Forms\Components\Placeholder::make('fulfilled_at')
-                        ->label('Fulfilled At')
+                        ->label(__('clinic_inventory.visit_stock_request.fields.fulfilled_at'))
                         ->content(fn (VisitStockRequest $r) => $r->fulfilled_at?->format('Y-m-d h:i A') ?? '—'),
                 ]),
         ]);
@@ -79,23 +95,23 @@ class VisitStockRequestResource extends Resource
                 Tables\Columns\TextColumn::make('id')->label('#')->sortable(),
 
                 Tables\Columns\TextColumn::make('visit.booking_code')
-                    ->label('Visit')
+                    ->label(__('clinic_inventory.visit_stock_request.fields.visit'))
                     ->badge()
                     ->searchable()
                     ->url(fn (VisitStockRequest $r) => $r->visit_id ? \App\Filament\Resources\VisitResource::getUrl('edit', ['record' => $r->visit_id]) : null),
 
                 Tables\Columns\TextColumn::make('branch.localized_name')
-                    ->label('Branch')
+                    ->label(__('clinic_inventory.visit_stock_request.fields.branch'))
                     ->toggleable(),
 
                 // [Legacy Architect] Detailed Items Column with Stock Check
                 Tables\Columns\TextColumn::make('items_summary')
-                    ->label('Items & Availability')
+                    ->label(__('clinic_inventory.visit_stock_request.fields.items_availability'))
                     ->html()
                     ->wrap()
                     ->state(function (VisitStockRequest $record) {
                         if ($record->lines->isEmpty()) {
-                            return '<span class="text-gray-400 text-xs italic">No items</span>';
+                            return '<span class="text-gray-400 text-xs italic">'.e(__('clinic_inventory.visit_stock_request.empty_items')).'</span>';
                         }
 
                         $stockSvc = app(\App\Services\Clinic\ClinicStockService::class);
@@ -140,6 +156,7 @@ class VisitStockRequestResource extends Resource
                     }),
 
                 Tables\Columns\TextColumn::make('status')
+                    ->formatStateUsing(fn (string $state): string => $state ? __('clinic_inventory.visit_stock_request.statuses.'.$state) : '')
                     ->badge()
                     ->color(fn (string $state) => match ($state) {
                         VisitStockRequest::STATUS_PENDING => 'warning',
@@ -150,20 +167,20 @@ class VisitStockRequestResource extends Resource
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('requestedBy.name')
-                    ->label('Req By')
+                    ->label(__('clinic_inventory.visit_stock_request.fields.req_by'))
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('created_at')
-                    ->label('Time')
+                    ->label(__('clinic_inventory.visit_stock_request.fields.time'))
                     ->dateTime('h:i A') // Shorter format for table
                     ->sortable(),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('status')
                     ->options([
-                        VisitStockRequest::STATUS_PENDING => 'Pending',
-                        VisitStockRequest::STATUS_FULFILLED => 'Fulfilled',
-                        VisitStockRequest::STATUS_CANCELLED => 'Cancelled',
+                        VisitStockRequest::STATUS_PENDING => __('clinic_inventory.visit_stock_request.statuses.pending'),
+                        VisitStockRequest::STATUS_FULFILLED => __('clinic_inventory.visit_stock_request.statuses.fulfilled'),
+                        VisitStockRequest::STATUS_CANCELLED => __('clinic_inventory.visit_stock_request.statuses.cancelled'),
                     ])
                     ->default(VisitStockRequest::STATUS_PENDING),
             ])
@@ -171,7 +188,7 @@ class VisitStockRequestResource extends Resource
                 Tables\Actions\ViewAction::make(),
 
                 Tables\Actions\Action::make('fulfill')
-                    ->label('Fulfill')
+                    ->label(__('clinic_inventory.visit_stock_request.actions.fulfill'))
                     ->icon('heroicon-o-check-circle')
                     ->color('success')
                     ->requiresConfirmation()
@@ -187,18 +204,18 @@ class VisitStockRequestResource extends Resource
                     })
                     ->form([
                         Forms\Components\Textarea::make('notes')
-                            ->label('Fulfillment Notes')
+                            ->label(__('clinic_inventory.visit_stock_request.fields.fulfillment_notes'))
                             ->rows(3)
                             ->nullable(),
 
                         Forms\Components\Select::make('resume_status')
-                            ->label('Resume Visit Status')
+                            ->label(__('clinic_inventory.visit_stock_request.fields.resume_visit_status'))
                             ->options([
-                                'awaiting_doctor' => 'Awaiting Doctor (Queue)',
-                                'in_progress' => 'In Progress (Room)',
+                                'awaiting_doctor' => __('clinic_inventory.visit_stock_request.resume_options.awaiting_doctor'),
+                                'in_progress' => __('clinic_inventory.visit_stock_request.resume_options.in_progress'),
                             ])
                             ->required()
-                            ->helperText('Where should the patient go after this stock arrives?'),
+                            ->helperText(__('clinic_inventory.visit_stock_request.helpers.resume_status')),
                     ])
                     ->action(function (VisitStockRequest $record, array $data) {
                         $trace = 'ADM-FULFILL-'.now()->format('YmdHis').'-'.substr(md5((string) microtime(true)), 0, 6);
@@ -231,8 +248,8 @@ class VisitStockRequestResource extends Resource
                             ]);
 
                             Notification::make()
-                                ->title('Stock request fulfilled')
-                                ->body('Items consumed and visit updated.')
+                                ->title(__('clinic_inventory.visit_stock_request.notifications.fulfilled_title'))
+                                ->body(__('clinic_inventory.visit_stock_request.notifications.fulfilled_body'))
                                 ->success()
                                 ->send();
 
@@ -246,7 +263,7 @@ class VisitStockRequestResource extends Resource
                             ]);
 
                             Notification::make()
-                                ->title('Fulfillment failed')
+                                ->title(__('clinic_inventory.visit_stock_request.notifications.fulfill_failed_title'))
                                 ->body($e->getMessage())
                                 ->danger()
                                 ->send();
@@ -256,14 +273,14 @@ class VisitStockRequestResource extends Resource
                     }),
 
                 Tables\Actions\Action::make('cancel')
-                    ->label('Cancel')
+                    ->label(__('clinic_inventory.visit_stock_request.actions.cancel'))
                     ->icon('heroicon-o-x-circle')
                     ->color('danger')
                     ->requiresConfirmation()
                     ->visible(fn (VisitStockRequest $r) => ($r->status ?? null) === VisitStockRequest::STATUS_PENDING)
                     ->form([
                         Forms\Components\Textarea::make('reason')
-                            ->label('Reason')
+                            ->label(__('clinic_inventory.visit_stock_request.fields.reason'))
                             ->rows(3)
                             ->required(),
                     ])

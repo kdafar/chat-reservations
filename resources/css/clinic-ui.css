@@ -1,0 +1,393 @@
+/*
+ |--------------------------------------------------------------------------
+ | Clinic UI Design System
+ |--------------------------------------------------------------------------
+ | Shared component classes used across every clinic custom page (Room Console,
+ | Dashboard, Reports, Nurse Station). Replaces the ~500 lines of inline
+ | <style> blocks that used to be duplicated across blade files.
+ |
+ | Naming: prefix everything `.clinic-` so it doesn't clash with Filament's
+ | own tokens (.fi-*, .fi-page, etc).
+ |
+ | Sections:
+ |   1. Layout: page background, sticky header
+ |   2. Surfaces: glass cards, metric tiles, empty states
+ |   3. Status badges: awaiting_doctor / in_progress / awaiting_stock /
+ |                     awaiting_payment / completed / cancelled / no_show
+ |   4. Buttons / pills / chips
+ |   5. Animations: fade-in, pulse-dot
+ */
+
+/* ============================================================
+ | 1) LAYOUT
+ | ============================================================ */
+
+/* A subtle gradient background that works under both themes. */
+.clinic-page-bg {
+    min-height: 100vh;
+    background: linear-gradient(135deg, #fafafa 0%, #f5f5f4 50%, #fafafa 100%);
+    padding: 1rem;
+}
+
+@media (min-width: 768px) {
+    .clinic-page-bg { padding: 1.5rem; }
+}
+
+@media (min-width: 1024px) {
+    .clinic-page-bg { padding: 2rem; }
+}
+
+.dark .clinic-page-bg {
+    background: linear-gradient(135deg, #0a0a0a 0%, #111827 50%, #0a0a0a 100%);
+}
+
+/* Bounded inner column so 4K monitors don't stretch text out. */
+.clinic-container {
+    max-width: 2000px;
+    margin-inline: auto;
+}
+
+/* Reset Filament's default page padding on pages that supply their own. */
+.clinic-fullbleed.fi-page { padding: 0 !important; background: transparent !important; }
+.clinic-fullbleed .fi-page-content { max-width: 100% !important; padding: 0 !important; }
+
+/* ============================================================
+ | 2) SURFACES
+ | ============================================================ */
+
+/* The default workhorse — frosted background, soft shadow, hover lift. */
+.clinic-glass-card {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.88) 100%);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid rgba(0, 0, 0, 0.04);
+    box-shadow: 0 8px 32px -8px rgba(0, 0, 0, 0.08);
+    border-radius: 1.5rem;
+    transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.dark .clinic-glass-card {
+    background: linear-gradient(135deg, rgba(17, 24, 39, 0.85) 0%, rgba(17, 24, 39, 0.75) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    box-shadow: 0 8px 32px -8px rgba(0, 0, 0, 0.4);
+}
+
+.clinic-glass-card-hover:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 24px 48px -12px rgba(0, 0, 0, 0.12);
+}
+
+.dark .clinic-glass-card-hover:hover {
+    box-shadow: 0 24px 48px -12px rgba(0, 0, 0, 0.6);
+}
+
+/* Sticky page header on top of the gradient. */
+.clinic-glass-header {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(255, 255, 255, 0.92) 100%);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid rgba(0, 0, 0, 0.05);
+    box-shadow: 0 4px 24px -4px rgba(0, 0, 0, 0.06);
+    border-radius: 1.5rem;
+    padding: 1.5rem;
+}
+
+@media (min-width: 768px) {
+    .clinic-glass-header { padding: 2rem; }
+}
+
+.dark .clinic-glass-header {
+    background: linear-gradient(135deg, rgba(17, 24, 39, 0.85) 0%, rgba(17, 24, 39, 0.75) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 4px 24px -4px rgba(0, 0, 0, 0.3);
+}
+
+/* KPI / metric tile — clickable variant when used as a button. */
+.clinic-kpi {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(255, 255, 255, 0.92) 100%);
+    border: 1px solid rgba(0, 0, 0, 0.05);
+    box-shadow: 0 4px 16px -4px rgba(0, 0, 0, 0.06);
+    border-radius: 1.5rem;
+    padding: 1.5rem;
+    position: relative;
+    overflow: hidden;
+    text-align: left;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@media (min-width: 768px) {
+    .clinic-kpi { padding: 2rem; }
+}
+
+.dark .clinic-kpi {
+    background: linear-gradient(135deg, rgba(17, 24, 39, 0.7) 0%, rgba(17, 24, 39, 0.6) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    box-shadow: 0 4px 16px -4px rgba(0, 0, 0, 0.3);
+}
+
+.clinic-kpi::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, transparent, currentColor, transparent);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.clinic-kpi:hover {
+    border-color: rgba(0, 0, 0, 0.1);
+    box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.12);
+    transform: translateY(-2px);
+}
+
+.clinic-kpi:hover::before { opacity: 0.6; }
+
+.dark .clinic-kpi:hover {
+    border-color: rgba(255, 255, 255, 0.12);
+    box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.5);
+}
+
+.clinic-kpi-active {
+    background: linear-gradient(135deg, rgba(0, 0, 0, 0.03) 0%, rgba(0, 0, 0, 0.01) 100%);
+    border-color: rgba(0, 0, 0, 0.12);
+    box-shadow: 0 8px 24px -6px rgba(0, 0, 0, 0.15), inset 0 0 0 1px rgba(0, 0, 0, 0.02);
+}
+
+.clinic-kpi-active::before { opacity: 1; }
+
+.dark .clinic-kpi-active {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.04) 100%);
+    border-color: rgba(255, 255, 255, 0.15);
+    box-shadow: 0 8px 24px -6px rgba(0, 0, 0, 0.4), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.clinic-kpi-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: rgb(75, 85, 99);
+    margin-bottom: 0.75rem;
+}
+
+.dark .clinic-kpi-label { color: rgb(156, 163, 175); }
+
+.clinic-kpi-number {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+    font-weight: 900;
+    letter-spacing: -0.02em;
+    font-size: 3rem;
+    line-height: 1;
+    color: rgb(17, 24, 39);
+    margin-bottom: 0.75rem;
+}
+
+@media (min-width: 768px) {
+    .clinic-kpi-number { font-size: 3.5rem; }
+}
+
+.dark .clinic-kpi-number { color: rgb(255, 255, 255); }
+
+.clinic-kpi-caption {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: rgb(107, 114, 128);
+}
+
+.dark .clinic-kpi-caption { color: rgb(107, 114, 128); }
+
+/* Dashed empty state for "no patients waiting" type messages. */
+.clinic-empty-state {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.5) 0%, rgba(255, 255, 255, 0.3) 100%);
+    backdrop-filter: blur(20px);
+    border: 2px dashed rgba(0, 0, 0, 0.08);
+    border-radius: 1.5rem;
+    padding: 4rem 2rem;
+    text-align: center;
+}
+
+.dark .clinic-empty-state {
+    background: linear-gradient(135deg, rgba(17, 24, 39, 0.4) 0%, rgba(17, 24, 39, 0.2) 100%);
+    border-color: rgba(255, 255, 255, 0.08);
+}
+
+/* ============================================================
+ | 3) STATUS BADGES
+ | ============================================================
+ | One class per terminal state, plus the new `awaiting_payment`
+ | state introduced by audit fix #9. Color scheme:
+ |   awaiting_doctor   amber
+ |   awaiting_stock    purple
+ |   in_progress       blue
+ |   awaiting_payment  rose      (NEW — distinct from amber)
+ |   completed         emerald
+ |   cancelled         red
+ |   no_show           gray
+ */
+
+.clinic-status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    font-size: 0.65rem;
+    padding: 0.4rem 0.85rem;
+    border-radius: 0.75rem;
+    box-shadow: 0 2px 8px -2px currentColor;
+}
+
+.clinic-status-awaiting-doctor {
+    background: linear-gradient(135deg, rgb(254, 243, 199), rgb(255, 251, 235));
+    color: rgb(120, 53, 15);
+    box-shadow: inset 0 0 0 1px rgb(253, 230, 138);
+}
+.dark .clinic-status-awaiting-doctor {
+    background: linear-gradient(135deg, rgba(120, 53, 15, 0.4), rgba(120, 53, 15, 0.2));
+    color: rgb(252, 211, 77);
+    box-shadow: inset 0 0 0 1px rgba(146, 64, 14, 0.6);
+}
+
+.clinic-status-in-progress {
+    background: linear-gradient(135deg, rgb(219, 234, 254), rgb(239, 246, 255));
+    color: rgb(30, 58, 138);
+    box-shadow: inset 0 0 0 1px rgb(191, 219, 254);
+}
+.dark .clinic-status-in-progress {
+    background: linear-gradient(135deg, rgba(30, 58, 138, 0.4), rgba(30, 58, 138, 0.2));
+    color: rgb(147, 197, 253);
+    box-shadow: inset 0 0 0 1px rgba(30, 64, 175, 0.6);
+}
+
+.clinic-status-awaiting-stock {
+    background: linear-gradient(135deg, rgb(237, 233, 254), rgb(245, 243, 255));
+    color: rgb(76, 29, 149);
+    box-shadow: inset 0 0 0 1px rgb(221, 214, 254);
+}
+.dark .clinic-status-awaiting-stock {
+    background: linear-gradient(135deg, rgba(76, 29, 149, 0.4), rgba(76, 29, 149, 0.2));
+    color: rgb(196, 181, 253);
+    box-shadow: inset 0 0 0 1px rgba(91, 33, 182, 0.6);
+}
+
+.clinic-status-awaiting-payment {
+    background: linear-gradient(135deg, rgb(255, 228, 230), rgb(255, 241, 242));
+    color: rgb(136, 19, 55);
+    box-shadow: inset 0 0 0 1px rgb(254, 205, 211);
+}
+.dark .clinic-status-awaiting-payment {
+    background: linear-gradient(135deg, rgba(136, 19, 55, 0.4), rgba(136, 19, 55, 0.2));
+    color: rgb(253, 164, 175);
+    box-shadow: inset 0 0 0 1px rgba(159, 18, 57, 0.6);
+}
+
+.clinic-status-completed {
+    background: linear-gradient(135deg, rgb(209, 250, 229), rgb(236, 253, 245));
+    color: rgb(6, 78, 59);
+    box-shadow: inset 0 0 0 1px rgb(167, 243, 208);
+}
+.dark .clinic-status-completed {
+    background: linear-gradient(135deg, rgba(6, 78, 59, 0.4), rgba(6, 78, 59, 0.2));
+    color: rgb(110, 231, 183);
+    box-shadow: inset 0 0 0 1px rgba(4, 120, 87, 0.6);
+}
+
+.clinic-status-cancelled {
+    background: linear-gradient(135deg, rgb(254, 226, 226), rgb(254, 242, 242));
+    color: rgb(127, 29, 29);
+    box-shadow: inset 0 0 0 1px rgb(252, 165, 165);
+}
+.dark .clinic-status-cancelled {
+    background: linear-gradient(135deg, rgba(127, 29, 29, 0.4), rgba(127, 29, 29, 0.2));
+    color: rgb(252, 165, 165);
+    box-shadow: inset 0 0 0 1px rgba(153, 27, 27, 0.6);
+}
+
+.clinic-status-no-show {
+    background: linear-gradient(135deg, rgb(243, 244, 246), rgb(249, 250, 251));
+    color: rgb(31, 41, 55);
+    box-shadow: inset 0 0 0 1px rgb(209, 213, 219);
+}
+.dark .clinic-status-no-show {
+    background: linear-gradient(135deg, rgba(31, 41, 55, 0.5), rgba(31, 41, 55, 0.3));
+    color: rgb(209, 213, 219);
+    box-shadow: inset 0 0 0 1px rgba(75, 85, 99, 0.6);
+}
+
+/* ============================================================
+ | 4) BUTTONS / PILLS / CHIPS
+ | ============================================================ */
+
+.clinic-action-btn {
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    font-weight: 700;
+    box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.12);
+}
+
+.clinic-action-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 16px -4px rgba(0, 0, 0, 0.18);
+}
+
+.clinic-action-btn:active { transform: translateY(0); }
+
+/* Quiet pill — neutral chip used in headers / filter rows. */
+.clinic-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.75rem;
+    border-radius: 999px;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    background: rgba(255, 255, 255, 0.75);
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: rgb(55, 65, 81);
+}
+
+.dark .clinic-pill {
+    border-color: rgba(51, 65, 85, 0.55);
+    background: rgba(17, 24, 39, 0.55);
+    color: rgb(229, 231, 235);
+}
+
+/* "Section title" label above a group of cards. */
+.clinic-section-label {
+    font-size: 0.75rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgb(100, 116, 139);
+}
+
+.dark .clinic-section-label { color: rgb(148, 163, 184); }
+
+/* ============================================================
+ | 5) ANIMATIONS
+ | ============================================================ */
+
+@keyframes clinic-fade-in {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.clinic-fade-in { animation: clinic-fade-in 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
+
+@keyframes clinic-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.clinic-pulse-dot {
+    display: inline-block;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: currentColor;
+    animation: clinic-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}

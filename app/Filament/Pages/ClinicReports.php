@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Concerns\HasHelpAction;
 use App\Models\Branch;
 use App\Models\Doctor;
 use Filament\Forms;
@@ -10,11 +11,13 @@ use Filament\Pages\Page;
 
 class ClinicReports extends Page
 {
+    use HasHelpAction;
+
     protected static ?string $navigationIcon = 'heroicon-o-presentation-chart-line';
 
-    protected static ?string $navigationGroup = 'Clinic — Reports';
+    protected static ?string $navigationGroup = null;
 
-    protected static ?string $navigationLabel = 'Clinic Reports (Filters)';
+    protected static ?string $navigationLabel = null;
 
     protected static ?string $slug = 'clinic-reports-v2';
 
@@ -22,9 +25,38 @@ class ClinicReports extends Page
 
     protected static string $view = 'filament.pages.clinic-reports';
 
+    public static function getNavigationGroup(): ?string
+    {
+        return __('common.nav.clinic_reports');
+    }
+
+    public static function getNavigationLabel(): string
+    {
+        return __('pages.clinic_reports.nav_label');
+    }
+
+    public function getTitle(): string|\Illuminate\Contracts\Support\Htmlable
+    {
+        return __('pages.clinic_reports.title');
+    }
+
     public static function canAccess(): bool
     {
         return auth()->check() && auth()->user()->can('view_clinic_reports');
+    }
+
+    protected function getHeaderActions(): array
+    {
+        return $this->withHelp([]);
+    }
+
+    protected function helpContent(): array
+    {
+        return [
+            ['heading' => __('help.pages.clinic_reports.what.heading'), 'body' => __('help.pages.clinic_reports.what.body')],
+            ['heading' => __('help.pages.clinic_reports.how.heading'), 'items' => (array) trans('help.pages.clinic_reports.how.items')],
+            ['heading' => __('help.pages.clinic_reports.faq.heading'), 'items' => (array) trans('help.pages.clinic_reports.faq.items')],
+        ];
     }
 
     /**

@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\DB;
 
 class VisitCostingService
 {
-    public const VERSION = 'v1';
+    public const VERSION = 'v2';
 
     private function r3(float $v): float
     {
@@ -21,7 +21,6 @@ class VisitCostingService
         }
 
         return DB::transaction(function () use ($visit, $actorUserId) {
-            // Note: Assuming 'visitItems' is the correct relationship method name in your system.
             $items = $visit->visitItems()
                 ->get(['id', 'qty', 'unit_cost_snapshot', 'unit_price_snapshot', 'line_cost_total', 'line_price_total']);
 
@@ -39,7 +38,6 @@ class VisitCostingService
                 $itemsCostTotal += $lineCost;
                 $itemsPriceTotal += $linePrice;
 
-                // compare with rounding to avoid float jitter
                 $dbLineCost = $this->r3((float) ($it->line_cost_total ?? 0));
                 $dbLinePrice = $this->r3((float) ($it->line_price_total ?? 0));
 
@@ -54,28 +52,29 @@ class VisitCostingService
             $itemsCostTotal = $this->r3($itemsCostTotal);
             $itemsPriceTotal = $this->r3($itemsPriceTotal);
 
-            // ---------------------------------------------------------
-            // FIX: Fetch Fee from Doctor (Smart Calculation)
-            // ---------------------------------------------------------
-            // We must ensure the doctor relation is loaded to get the master fee.
-            if (! $visit->relationLoaded('doctor')) {
-                $visit->load('doctor');
-            }
+            // Fees = sum of every VisitCharge row on the visit.
+            // The consultation fee is already stored as a VisitCharge at collection time,
+            // so we no longer need to look up the doctor's current consultation_fee
+            // (which would corrupt the historical snapshot when the doctor's fee changes).
+            $feesTotal = $this->r3(
+                (float) $visit->visitCharges()->sum('line_total')
+            );
 
-            // If the visit has a doctor, pull their consultation fee.
-            // Otherwise fallback to existing fees_total or 0.
-            $doctorFee = (float) ($visit->doctor->consultation_fee ?? $visit->fees_total ?? 0);
-            $fees = $this->r3($doctorFee);
+            $packagesPriceTotal = $this->r3(
+                (float) $visit->visitPackages()->sum('line_total')
+            );
 
             $discount = $this->r3((float) ($visit->discount_total ?? 0));
 
-            // FIXED: Added itemsPriceTotal (Revenue) to the profit calculation.
-            // Previous logic was: Fees - Discount - Cost (which missed the item sales revenue).
-            // New logic: (Fees + Item Sales) - Discount - Item Costs
-            $profit = $this->r3(($fees + $itemsPriceTotal) - $discount - $itemsCostTotal);
+            $profit = $this->r3(
+                ($feesTotal + $packagesPriceTotal + $itemsPriceTotal)
+                - $discount
+                - $itemsCostTotal
+            );
 
             $visit->forceFill([
-                'fees_total' => $fees, // <--- IMPORTANT: Save the fetched fee back to DB
+                'fees_total' => $feesTotal,
+                'packages_price_total' => $packagesPriceTotal,
                 'items_cost_total' => $itemsCostTotal,
                 'items_price_total' => $itemsPriceTotal,
                 'profit_total' => $profit,
@@ -83,11 +82,10 @@ class VisitCostingService
                 'computed_version' => self::VERSION,
             ])->save();
 
-            if (config('clinic.doctor_comp_enabled', false)) {
-                // Defensive check: Ensure the service exists before calling
-                if (class_exists(\App\Services\Clinic\DoctorCompensationService::class)) {
-                    app(\App\Services\Clinic\DoctorCompensationService::class)->sync($visit, $actorUserId);
-                }
+            if (config('clinic.doctor_comp_enabled', false)
+                && class_exists(\App\Services\Clinic\DoctorCompensationService::class)
+            ) {
+                app(\App\Services\Clinic\DoctorCompensationService::class)->sync($visit, $actorUserId);
             }
 
             return $visit->refresh();
@@ -95,26 +93,24 @@ class VisitCostingService
     }
 
     /**
-     * Helper to get the remaining balance due for a visit.
-     * used by the Payment Form.
-     *  PRESERVED FOR COMPATIBILITY with VisitPaymentsRelationManager
+     * Remaining balance for payment forms.
+     * Total due = fees + packages + items_price − discount.
      */
     public function getRemainingBalance(Visit $visit): float
     {
-        // Ensure we have the latest totals
         $this->compute($visit);
 
-        $totalDue = ($visit->fees_total ?? 0) + ($visit->items_price_total ?? 0);
+        $totalDue = (float) ($visit->fees_total ?? 0)
+            + (float) ($visit->packages_price_total ?? 0)
+            + (float) ($visit->items_price_total ?? 0)
+            - (float) ($visit->discount_total ?? 0);
 
-        // Sum only valid payments (paid)
-        // Defensive check on payments relationship
-        $paidSoFar = $visit->payments
-            ? $visit->payments->where('status', 'paid')->sum('amount')
-            : 0;
+        $paidSoFar = (float) $visit->payments()
+            ->where('status', 'paid')
+            ->sum('amount');
 
         $balance = $totalDue - $paidSoFar;
 
-        // Never return negative balance for a payment form default
-        return $balance > 0 ? (float) $balance : 0.00;
+        return $balance > 0 ? $balance : 0.0;
     }
 }

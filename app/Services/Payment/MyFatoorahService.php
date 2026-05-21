@@ -72,8 +72,17 @@ class MyFatoorahService
             'CustomerReference' => $refId,
             'Language' => app()->getLocale() === 'ar' ? 'ar' : 'en',
             'NotificationOption' => 'LNK',
-            'CallBackUrl' => route('bookings.payment.finalize', ['account_id' => $accountId]),
-            'ErrorUrl' => route('bookings.payment.failed', ['account_id' => $accountId]),
+            // HMAC the account_id so the callback can verify it wasn't tampered with.
+            // We can't use Laravel's signedRoute here because MyFatoorah appends paymentId/Id
+            // to the query string, which breaks the signed-route signature check.
+            'CallBackUrl' => route('bookings.payment.finalize', [
+                'account_id' => $accountId,
+                'sig' => $this->accountSig((string) $accountId),
+            ]),
+            'ErrorUrl' => route('bookings.payment.failed', [
+                'account_id' => $accountId,
+                'sig' => $this->accountSig((string) $accountId),
+            ]),
         ];
 
         Log::info('[MyFatoorah] createInvoice request', [
@@ -144,6 +153,15 @@ class MyFatoorahService
         $mfObj = new MyFatoorahPaymentStatus($this->mfConfig);
 
         return $mfObj->getPaymentStatus($paymentId, 'PaymentId');
+    }
+
+    /**
+     * Stable HMAC of the gateway account id used on callback URLs.
+     * Lets the callback verify the account_id query param wasn't tampered with.
+     */
+    public static function accountSig(string $accountId): string
+    {
+        return hash_hmac('sha256', 'mf:'.$accountId, (string) config('app.key'));
     }
 
     private function normalizeKuwaitPhone(string $phone): string

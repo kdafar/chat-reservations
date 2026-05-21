@@ -2,21 +2,22 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Concerns\HasHelpAction;
 use App\Models\Booking;
-use App\Models\Doctor;
-use App\Models\Patient;
 use App\Models\Visit;
+use App\Models\VisitPayment;
 use Carbon\Carbon;
 use Filament\Pages\Page;
-use Illuminate\Support\Facades\Schema;
 
 class ClinicDashboard extends Page
 {
+    use HasHelpAction;
+
     protected static ?string $navigationIcon = 'heroicon-o-home';
 
-    protected static ?string $navigationGroup = 'Clinic — Operations';
+    protected static ?string $navigationGroup = null;
 
-    protected static ?string $navigationLabel = 'Dashboard';
+    protected static ?string $navigationLabel = null;
 
     protected static ?string $slug = 'clinic-dashboard';
 
@@ -24,9 +25,38 @@ class ClinicDashboard extends Page
 
     protected static string $view = 'filament.pages.clinic-dashboard';
 
+    public static function getNavigationGroup(): ?string
+    {
+        return __('common.nav.clinic_operations');
+    }
+
+    public static function getNavigationLabel(): string
+    {
+        return __('pages.clinic_dashboard.nav_label');
+    }
+
+    public function getTitle(): string|\Illuminate\Contracts\Support\Htmlable
+    {
+        return __('pages.clinic_dashboard.title');
+    }
+
     public static function canAccess(): bool
     {
         return auth()->check();
+    }
+
+    protected function getHeaderActions(): array
+    {
+        return $this->withHelp([]);
+    }
+
+    protected function helpContent(): array
+    {
+        return [
+            ['heading' => __('help.pages.clinic_dashboard.what.heading'), 'body' => __('help.pages.clinic_dashboard.what.body')],
+            ['heading' => __('help.pages.clinic_dashboard.how.heading'), 'items' => (array) trans('help.pages.clinic_dashboard.how.items')],
+            ['heading' => __('help.pages.clinic_dashboard.faq.heading'), 'items' => (array) trans('help.pages.clinic_dashboard.faq.items')],
+        ];
     }
 
     public array $stats = [];
@@ -36,77 +66,74 @@ class ClinicDashboard extends Page
     public function mount(): void
     {
         $tz = config('app.timezone', 'Asia/Kuwait');
+        $today = Carbon::now($tz)->toDateString();
         $todayStart = Carbon::now($tz)->startOfDay();
         $todayEnd = Carbon::now($tz)->endOfDay();
 
-        // Determine safe columns (prevents "unknown column" crashes if schema differs)
-        $bookingDateCol = Schema::hasColumn('bookings', 'booking_date') ? 'booking_date' : (Schema::hasColumn('bookings', 'scheduled_at') ? 'scheduled_at' : 'created_at');
-        $bookingStatusCol = Schema::hasColumn('bookings', 'status') ? 'status' : null;
-
-        $visitDateCol = Schema::hasColumn('visits', 'visit_date') ? 'visit_date' : (Schema::hasColumn('visits', 'started_at') ? 'started_at' : 'created_at');
-
-        // --- KPIs (lightweight) ---
+        // --- KPIs ---
         $bookingsToday = Booking::query()
-            ->when($bookingDateCol, fn ($q) => $q->whereBetween($bookingDateCol, [$todayStart, $todayEnd]))
+            ->whereDate('res_date', $today)
             ->count();
 
-        $completedVisitsToday = Visit::query()
-            ->when($visitDateCol, fn ($q) => $q->whereBetween($visitDateCol, [$todayStart, $todayEnd]))
-            ->when(Schema::hasColumn('visits', 'status'), fn ($q) => $q->where('status', 'completed'))
+        $completedToday = Visit::query()
+            ->whereDate('completed_at', $today)
+            ->where('status', Visit::STATUS_COMPLETED)
             ->count();
 
-        $activeDoctors = Doctor::query()
-            ->when(Schema::hasColumn('doctors', 'is_active'), fn ($q) => $q->where('is_active', 1))
+        $awaitingNow = Visit::query()
+            ->whereIn('status', [
+                Visit::STATUS_AWAITING_DOCTOR,
+                Visit::STATUS_IN_PROGRESS,
+                Visit::STATUS_AWAITING_STOCK,
+                Visit::STATUS_AWAITING_PAYMENT,
+            ])
             ->count();
 
-        $patientsTotal = Patient::query()->count();
+        $revenueToday = (float) VisitPayment::query()
+            ->whereDate('paid_at', $today)
+            ->where('status', 'paid')
+            ->sum('amount');
 
-        // Optional: Pending/Confirmed counts if you have booking status
-        $pendingBookings = null;
-        $confirmedBookings = null;
+        $pendingPayments = Visit::query()
+            ->where('status', Visit::STATUS_AWAITING_PAYMENT)
+            ->count();
 
-        if ($bookingStatusCol) {
-            $pendingBookings = Booking::query()
-                ->when($bookingDateCol, fn ($q) => $q->whereBetween($bookingDateCol, [$todayStart, $todayEnd]))
-                ->where('status', 'pending')
-                ->count();
+        $confirmedToday = Booking::query()
+            ->whereDate('res_date', $today)
+            ->where('status', 'confirmed')
+            ->whereNull('checked_in_at')
+            ->count();
 
-            $confirmedBookings = Booking::query()
-                ->when($bookingDateCol, fn ($q) => $q->whereBetween($bookingDateCol, [$todayStart, $todayEnd]))
-                ->whereIn('status', ['confirmed', 'approved'])
-                ->count();
-        }
+        // --- Today's appointments (with names, not IDs) ---
+        $this->todayBookings = Booking::query()
+            ->with(['patient:id,name,phone', 'doctor:id,name', 'branch:id,name'])
+            ->whereDate('res_date', $today)
+            ->orderBy('res_time')
+            ->limit(12)
+            ->get()
+            ->map(fn (Booking $b) => [
+                'id' => $b->id,
+                'code' => $b->booking_code,
+                'status' => (string) ($b->status ?? '—'),
+                'time' => $b->res_time
+                    ? Carbon::parse($b->res_time)->format('h:i A')
+                    : ($b->res_start ? $b->res_start->timezone(config('app.timezone', 'Asia/Kuwait'))->format('h:i A') : '—'),
+                'patient_name' => $b->patient?->name ?? '—',
+                'patient_phone' => $b->patient?->phone ?? $b->msisdn ?? null,
+                'doctor_name' => $b->doctor?->name ?? '—',
+                'branch_name' => $b->branch?->localized_name ?? '—',
+                'checked_in' => $b->checked_in_at !== null,
+            ])
+            ->all();
 
         $this->stats = [
             'bookings_today' => $bookingsToday,
-            'visits_completed_today' => $completedVisitsToday,
-            'active_doctors' => $activeDoctors,
-            'patients_total' => $patientsTotal,
-            'pending_today' => $pendingBookings,
-            'confirmed_today' => $confirmedBookings,
-            'today_label' => Carbon::now($tz)->toFormattedDateString(),
+            'completed_today' => $completedToday,
+            'awaiting_now' => $awaitingNow,
+            'revenue_today' => $revenueToday,
+            'pending_payments' => $pendingPayments,
+            'confirmed_today' => $confirmedToday,
+            'today_label' => Carbon::now($tz)->isoFormat('dddd, D MMMM YYYY'),
         ];
-
-        // --- Today list (small, capped) ---
-        $this->todayBookings = Booking::query()
-            ->select(['id'])
-            ->when(Schema::hasColumn('bookings', 'patient_id'), fn ($q) => $q->addSelect('patient_id'))
-            ->when(Schema::hasColumn('bookings', 'doctor_id'), fn ($q) => $q->addSelect('doctor_id'))
-            ->when($bookingDateCol, fn ($q) => $q->addSelect($bookingDateCol))
-            ->when($bookingStatusCol, fn ($q) => $q->addSelect('status'))
-            ->when($bookingDateCol, fn ($q) => $q->whereBetween($bookingDateCol, [$todayStart, $todayEnd]))
-            ->latest($bookingDateCol)
-            ->limit(8)
-            ->get()
-            ->map(function ($b) use ($bookingDateCol) {
-                return [
-                    'id' => $b->id,
-                    'status' => $b->status ?? null,
-                    'time' => isset($b->{$bookingDateCol}) ? Carbon::parse($b->{$bookingDateCol})->format('H:i') : null,
-                    'patient_id' => $b->patient_id ?? null,
-                    'doctor_id' => $b->doctor_id ?? null,
-                ];
-            })
-            ->all();
     }
 }

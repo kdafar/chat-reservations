@@ -375,9 +375,12 @@ class BookingFlowService
         $code = $nfm['booking_code'] ?? null;
         $endSession = filter_var($nfm['end_session'] ?? false, FILTER_VALIDATE_BOOLEAN);
 
-        if ($endSession) {
-            return;
-        }
+        Log::info('Flow finale: received', [
+            'booking_id' => $id,
+            'booking_code' => $code,
+            'end_session' => $endSession,
+            'payload_keys' => array_keys($nfm),
+        ]);
 
         $b = null;
         if ($id) {
@@ -394,6 +397,9 @@ class BookingFlowService
             return;
         }
 
+        // Send the QR confirmation when the flow actually completes. The
+        // WhatsApp Flow client emits the nfm_reply payload once the user taps
+        // "Done" on the CONFIRMATION screen — that's the moment we want.
         $this->sendBookingConfirmation($b, $session);
 
         // Optional: append DB-defined finale trigger (if active)
@@ -440,13 +446,9 @@ class BookingFlowService
             $this->sender()->sendTextMessage($session->phone, $caption);
         }
 
-        // 2) Confirmation template (separate idempotency)
-        $tplKey = "{$keyBase}:tpl";
-        if (cache()->add($tplKey, 1, now()->addMinutes(10))) {
-            \Log::info('WA confirm: sending template', ['booking_id' => $b->id, 'code' => $b->booking_code, 'to' => $session->phone]);
-            $ok = $this->tpl->bookingConfirmed($session, $b);
-            \Log::info('WA confirm: template result', ['ok' => $ok, 'booking_id' => $b->id, 'code' => $b->booking_code]);
-        }
+        // Note: the booking_confirmed_final / barfres_confirmed template is
+        // intentionally not sent — the QR + caption already convey the same
+        // information.
     }
 
     /* ---------------- TRIGGER HELPERS ---------------- */

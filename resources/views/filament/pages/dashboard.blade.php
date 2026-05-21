@@ -1,4 +1,6 @@
 <x-filament-panels::page.simple>
+    @vite(['resources/css/filament-dashboard.css', 'resources/js/filament-dashboard.js'])
+
     @if (method_exists($this, 'getHeaderWidgets'))
         <x-filament-widgets::widgets
             :widgets="$this->getHeaderWidgets()"
@@ -7,267 +9,322 @@
         />
     @endif
 
-    <style>
-        .custom-prose h2 { font-size: 1.5rem; font-weight: 700; margin-top: 2rem; margin-bottom: 1rem; }
-        .custom-prose h3 { font-size: 1.15rem; font-weight: 700; margin-top: 1.5rem; margin-bottom: .75rem; }
-        .custom-prose p, .custom-prose ul, .custom-prose ol { line-height: 1.7; }
-        .custom-prose ul, .custom-prose ol { padding-left: 1.5rem; }
-        .custom-prose li { margin-bottom: .5rem; }
-        .custom-prose code {
-            background-color: var(--gray-100);
-            color: var(--danger-600);
-            padding: .2rem .4rem;
-            border-radius: 6px;
-            font-weight: 700;
-            font-size: .9em;
-        }
-        .dark .custom-prose code { background-color: var(--gray-800); color: var(--danger-400); }
+    @php
+        $tz = config('app.timezone', 'Asia/Kuwait');
+        $today = \Carbon\Carbon::today($tz);
 
-        .quick-link-card { transition: all .2s ease-in-out; }
-        .quick-link-card:hover { transform: translateY(-3px); box-shadow: 0 10px 22px rgba(0,0,0,.10); }
-        .dark .quick-link-card:hover { box-shadow: 0 10px 22px rgba(0,0,0,.25); }
+        // Live counters for the hero
+        $bookingsToday = \App\Models\Booking::query()->whereDate('res_date', $today)->count();
+        $inQueueNow = \App\Models\Visit::query()
+            ->whereIn('status', [
+                \App\Models\Visit::STATUS_AWAITING_DOCTOR,
+                \App\Models\Visit::STATUS_IN_PROGRESS,
+                \App\Models\Visit::STATUS_AWAITING_STOCK,
+                \App\Models\Visit::STATUS_AWAITING_PAYMENT,
+            ])
+            ->count();
+        $pendingPayment = \App\Models\Visit::query()
+            ->where('status', \App\Models\Visit::STATUS_AWAITING_PAYMENT)
+            ->count();
 
-        .hero {
-            border: 1px solid rgba(148,163,184,.35);
-            background:
-                radial-gradient(1200px 400px at 10% 0%, rgba(59,130,246,.12), transparent 60%),
-                radial-gradient(900px 360px at 90% 0%, rgba(16,185,129,.10), transparent 60%),
-                linear-gradient(180deg, rgba(255,255,255,.85), rgba(255,255,255,.60));
-        }
-        .dark .hero {
-            border-color: rgba(51,65,85,.55);
-            background:
-                radial-gradient(1200px 400px at 10% 0%, rgba(59,130,246,.18), transparent 60%),
-                radial-gradient(900px 360px at 90% 0%, rgba(16,185,129,.14), transparent 60%),
-                linear-gradient(180deg, rgba(17,24,39,.75), rgba(17,24,39,.55));
-        }
+        // Resource resolvers (use safe class_exists where applicable)
+        $bookingUrl = \App\Filament\Resources\BookingResource::getUrl();
+        $visitsUrl = \App\Filament\Resources\VisitResource::getUrl();
+        $roomConsoleUrl = \App\Filament\Pages\WaitingPatients::getUrl();
+        $reconciliationUrl = \App\Filament\Pages\DailyReconciliationReport::getUrl();
+        $closingUrl = class_exists(\App\Filament\Pages\DailyClosingReport::class)
+            ? \App\Filament\Pages\DailyClosingReport::getUrl() : null;
+        $businessUrl = class_exists(\App\Filament\Pages\DailyBusinessReport::class)
+            ? \App\Filament\Pages\DailyBusinessReport::getUrl() : null;
+        $patientUrl = \App\Filament\Resources\PatientResource::getUrl();
+        $doctorUrl = \App\Filament\Resources\DoctorResource::getUrl();
+        $itemUrl = \App\Filament\Resources\ClinicItemResource::getUrl();
+        $packageUrl = class_exists(\App\Filament\Resources\ClinicPackageResource::class)
+            ? \App\Filament\Resources\ClinicPackageResource::getUrl() : null;
+        $availabilityUrl = \App\Filament\Resources\BranchAvailabilityRuleResource::getUrl();
+        $blackoutUrl = \App\Filament\Resources\BranchBlackoutResource::getUrl();
+        $compProfileUrl = class_exists(\App\Filament\Resources\DoctorCompensationProfileResource::class)
+            ? \App\Filament\Resources\DoctorCompensationProfileResource::getUrl() : null;
+        $compLedgerUrl = class_exists(\App\Filament\Resources\DoctorCompensationLedgerResource::class)
+            ? \App\Filament\Resources\DoctorCompensationLedgerResource::getUrl() : null;
+        $waCommandUrl = class_exists(\App\Filament\Resources\WACommandResource::class)
+            ? \App\Filament\Resources\WACommandResource::getUrl() : null;
+        $waMessageUrl = class_exists(\App\Filament\Resources\WAMessageResource::class)
+            ? \App\Filament\Resources\WAMessageResource::getUrl() : null;
+        $waSessionUrl = class_exists(\App\Filament\Resources\WhatsappSessionResource::class)
+            ? \App\Filament\Resources\WhatsappSessionResource::getUrl() : null;
+        $waLogUrl = class_exists(\App\Filament\Resources\WAMessageLogResource::class)
+            ? \App\Filament\Resources\WAMessageLogResource::getUrl() : null;
+        $systemSettingUrl = class_exists(\App\Filament\Resources\SystemSettingResource::class)
+            ? \App\Filament\Resources\SystemSettingResource::getUrl() : null;
+    @endphp
 
-        .pill {
-            display: inline-flex;
-            align-items: center;
-            gap: .5rem;
-            padding: .4rem .6rem;
-            border-radius: 999px;
-            border: 1px solid rgba(148,163,184,.35);
-            background: rgba(255,255,255,.75);
-            font-size: .8rem;
-        }
-        .dark .pill {
-            border-color: rgba(51,65,85,.55);
-            background: rgba(17,24,39,.55);
-        }
+    <div class="clinic-fullbleed">
+        <div class="clinic-page-bg">
+            <div class="clinic-container space-y-6">
 
-        .section-title {
-            font-size: .9rem;
-            font-weight: 800;
-            letter-spacing: .03em;
-            text-transform: uppercase;
-            color: rgba(100,116,139,1);
-        }
-        .dark .section-title { color: rgba(148,163,184,1); }
-
-        .card-title {
-            display:flex;
-            align-items:center;
-            justify-content:space-between;
-            gap: 10px;
-        }
-        .card-title h4 { margin:0; }
-        .kbd {
-            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-            font-size: .72rem;
-            padding: .15rem .4rem;
-            border-radius: 6px;
-            border: 1px solid rgba(148,163,184,.35);
-            background: rgba(248,250,252,.7);
-        }
-        .dark .kbd { border-color: rgba(51,65,85,.55); background: rgba(15,23,42,.65); }
-    </style>
-
-    <div class="custom-prose text-gray-600 dark:text-gray-300">
-        {{-- HERO --}}
-        <x-filament::section>
-            <div class="hero rounded-xl p-6 md:p-7">
-                <div class="flex flex-col gap-4">
-                    <div class="flex flex-wrap items-center gap-2">
-                        <span class="pill">🏥 Clinic Operations</span>
-                        <span class="pill">📲 WhatsApp Booking Flow</span>
-                        <span class="pill">🧾 Appointments & Check-in</span>
-                    </div>
-
-                    <div>
-                        <h2 class="!mt-0 text-gray-900 dark:text-white">
-                            Welcome to the Clinic Booking Hub
-                        </h2>
-                        <p class="text-base md:text-lg">
-                            Manage your WhatsApp-driven clinic appointments: configure patient messages and commands,
-                            control availability, and run daily front-desk operations — from one place.
-                        </p>
-                    </div>
-
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-                        <div class="rounded-lg border border-gray-200 dark:border-gray-700 bg-white/70 dark:bg-gray-900/40 p-4">
-                            <div class="section-title">Front Desk</div>
-                            <div class="mt-1 text-sm">
-                                Check-in patients, assign rooms, and handle reschedules/cancellations quickly.
-                            </div>
+                {{-- Hero --}}
+                <div class="clinic-glass-header">
+                    <div class="flex flex-col gap-6">
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <span class="clinic-pill">🏥 Clinic Operations</span>
+                            <span class="clinic-pill">🗓 Appointments</span>
+                            <span class="clinic-pill">💊 Inventory</span>
+                            <span class="clinic-pill">📊 Reports</span>
                         </div>
-                        <div class="rounded-lg border border-gray-200 dark:border-gray-700 bg-white/70 dark:bg-gray-900/40 p-4">
-                            <div class="section-title">Availability</div>
-                            <div class="mt-1 text-sm">
-                                Set clinic hours, time slots, lead time, and blackout dates per branch.
-                            </div>
-                        </div>
-                        <div class="rounded-lg border border-gray-200 dark:border-gray-700 bg-white/70 dark:bg-gray-900/40 p-4">
-                            <div class="section-title">WhatsApp System</div>
-                            <div class="mt-1 text-sm">
-                                Control templates, feature flags, sessions, and logs for debugging.
-                            </div>
-                        </div>
-                    </div>
 
-                    <div class="pt-2">
-                        <h3 class="text-gray-900 dark:text-white">Start Here</h3>
-                        <ol class="list-decimal space-y-2">
-                            <li>
-                                <strong>Define WhatsApp Commands:</strong>
-                                Go to
-                                <a href="{{ \App\Filament\Resources\WACommandResource::getUrl() }}"
-                                   class="text-primary-600 hover:underline">
-                                    Commands
-                                </a>
-                                to add keywords like <code>hi</code>, <code>start</code>, <code>reset</code> (EN/AR)
-                                and map their actions.
-                            </li>
-                            <li>
-                                <strong>Edit Patient-Facing Messages:</strong>
-                                Open
-                                <a href="{{ \App\Filament\Resources\WAMessageResource::getUrl() }}"
-                                   class="text-primary-600 hover:underline">
-                                    Message Catalog
-                                </a>
-                                and update prompts, errors, and confirmations (variables like
-                                <code>{date}</code>, <code>{time}</code>, <code>{clinic}</code>).
-                            </li>
-                            <li>
-                                <strong>Verify System Settings:</strong>
-                                In
-                                <a href="{{ \App\Filament\Resources\SystemSettingResource::getUrl() }}"
-                                   class="text-primary-600 hover:underline">
-                                    System Settings
-                                </a>
-                                confirm tokens, template names/locales, and feature flags (Flows toggle, fallbacks, session expiry).
-                            </li>
-                        </ol>
+                        <div>
+                            <h1 class="text-3xl md:text-4xl font-black tracking-tight text-gray-900 dark:text-white">
+                                Welcome back
+                            </h1>
+                            <p class="mt-2 text-base text-gray-600 dark:text-gray-400">
+                                {{ \Carbon\Carbon::now($tz)->isoFormat('dddd, D MMMM YYYY') }} ·
+                                <span class="font-semibold text-gray-800 dark:text-gray-200">{{ $bookingsToday }}</span> appointments today ·
+                                <span class="font-semibold text-amber-700 dark:text-amber-400">{{ $inQueueNow }}</span> in queue ·
+                                <span class="font-semibold text-rose-700 dark:text-rose-400">{{ $pendingPayment }}</span> pending payment
+                            </p>
+                        </div>
+
+                        {{-- Primary actions --}}
+                        <div class="flex flex-wrap gap-2">
+                            <x-filament::button tag="a" :href="$bookingUrl" icon="heroicon-o-calendar-days" color="primary" class="clinic-action-btn">
+                                Open Appointments
+                            </x-filament::button>
+                            <x-filament::button tag="a" :href="$roomConsoleUrl" icon="heroicon-o-queue-list" color="warning" class="clinic-action-btn">
+                                Room Console
+                            </x-filament::button>
+                            <x-filament::button tag="a" :href="$reconciliationUrl" icon="heroicon-o-presentation-chart-line" color="gray" class="clinic-action-btn">
+                                Daily Reconciliation
+                            </x-filament::button>
+                        </div>
                     </div>
                 </div>
-            </div>
-        </x-filament::section>
 
-        <div class="mt-6">
-            <div class="flex items-center justify-between mb-3">
-                <div class="section-title">Quick Access</div>
-                <div class="text-xs text-gray-500 dark:text-gray-400">
-                    Tip: use search in each page for fast lookup.
+                {{-- Clinic Operations (primary) --}}
+                <div>
+                    <div class="clinic-section-label mb-3 px-1">Clinic Operations</div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <a href="{{ $bookingUrl }}" class="clinic-glass-card clinic-glass-card-hover p-5 flex items-start gap-4">
+                            <div class="w-11 h-11 rounded-xl bg-blue-100 dark:bg-blue-950/40 flex items-center justify-center shrink-0">
+                                <svg class="w-6 h-6 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                          d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                                </svg>
+                            </div>
+                            <div class="min-w-0">
+                                <div class="font-bold text-gray-900 dark:text-white">Appointments</div>
+                                <div class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Today's queue, check-in, reschedule.</div>
+                            </div>
+                        </a>
+
+                        <a href="{{ $roomConsoleUrl }}" class="clinic-glass-card clinic-glass-card-hover p-5 flex items-start gap-4">
+                            <div class="w-11 h-11 rounded-xl bg-amber-100 dark:bg-amber-950/40 flex items-center justify-center shrink-0">
+                                <svg class="w-6 h-6 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                          d="M4 6h16M4 12h16M4 18h7"/>
+                                </svg>
+                            </div>
+                            <div class="min-w-0">
+                                <div class="font-bold text-gray-900 dark:text-white">Room Console</div>
+                                <div class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Doctor's live patient queue.</div>
+                            </div>
+                        </a>
+
+                        <a href="{{ $visitsUrl }}" class="clinic-glass-card clinic-glass-card-hover p-5 flex items-start gap-4">
+                            <div class="w-11 h-11 rounded-xl bg-emerald-100 dark:bg-emerald-950/40 flex items-center justify-center shrink-0">
+                                <svg class="w-6 h-6 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                          d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                </svg>
+                            </div>
+                            <div class="min-w-0">
+                                <div class="font-bold text-gray-900 dark:text-white">Visits</div>
+                                <div class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Edit, recompute, follow-up plans.</div>
+                            </div>
+                        </a>
+
+                        <a href="{{ $patientUrl }}" class="clinic-glass-card clinic-glass-card-hover p-5 flex items-start gap-4">
+                            <div class="w-11 h-11 rounded-xl bg-pink-100 dark:bg-pink-950/40 flex items-center justify-center shrink-0">
+                                <svg class="w-6 h-6 text-pink-600 dark:text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                          d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+                                </svg>
+                            </div>
+                            <div class="min-w-0">
+                                <div class="font-bold text-gray-900 dark:text-white">Patients</div>
+                                <div class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Search history, demographics, contacts.</div>
+                            </div>
+                        </a>
+
+                        <a href="{{ $doctorUrl }}" class="clinic-glass-card clinic-glass-card-hover p-5 flex items-start gap-4">
+                            <div class="w-11 h-11 rounded-xl bg-indigo-100 dark:bg-indigo-950/40 flex items-center justify-center shrink-0">
+                                <svg class="w-6 h-6 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                          d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h-4m-6 0H5m14 0h2M5 21H3"/>
+                                </svg>
+                            </div>
+                            <div class="min-w-0">
+                                <div class="font-bold text-gray-900 dark:text-white">Doctors</div>
+                                <div class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Fees, rooms, schedule.</div>
+                            </div>
+                        </a>
+
+                        @if ($packageUrl)
+                            <a href="{{ $packageUrl }}" class="clinic-glass-card clinic-glass-card-hover p-5 flex items-start gap-4">
+                                <div class="w-11 h-11 rounded-xl bg-purple-100 dark:bg-purple-950/40 flex items-center justify-center shrink-0">
+                                    <svg class="w-6 h-6 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                              d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+                                    </svg>
+                                </div>
+                                <div class="min-w-0">
+                                    <div class="font-bold text-gray-900 dark:text-white">Packages</div>
+                                    <div class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Treatment bundles, pricing, items.</div>
+                                </div>
+                            </a>
+                        @endif
+
+                        <a href="{{ $itemUrl }}" class="clinic-glass-card clinic-glass-card-hover p-5 flex items-start gap-4">
+                            <div class="w-11 h-11 rounded-xl bg-teal-100 dark:bg-teal-950/40 flex items-center justify-center shrink-0">
+                                <svg class="w-6 h-6 text-teal-600 dark:text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                          d="M19 14l-7 7m0 0l-7-7m7 7V3"/>
+                                </svg>
+                            </div>
+                            <div class="min-w-0">
+                                <div class="font-bold text-gray-900 dark:text-white">Inventory</div>
+                                <div class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Items, stock levels, movements.</div>
+                            </div>
+                        </a>
+
+                        @if ($compLedgerUrl)
+                            <a href="{{ $compLedgerUrl }}" class="clinic-glass-card clinic-glass-card-hover p-5 flex items-start gap-4">
+                                <div class="w-11 h-11 rounded-xl bg-rose-100 dark:bg-rose-950/40 flex items-center justify-center shrink-0">
+                                    <svg class="w-6 h-6 text-rose-600 dark:text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                              d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                    </svg>
+                                </div>
+                                <div class="min-w-0">
+                                    <div class="font-bold text-gray-900 dark:text-white">Doctor Payouts</div>
+                                    <div class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Compensation ledger per visit.</div>
+                                </div>
+                            </a>
+                        @endif
+                    </div>
                 </div>
-            </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {{-- CONFIG & COPY --}}
-                <a href="{{ \App\Filament\Resources\WACommandResource::getUrl() }}"
-                   class="block p-6 bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 quick-link-card">
-                    <div class="card-title">
-                        <h4 class="text-lg font-semibold text-gray-900 dark:text-white">Commands</h4>
-                        <span class="kbd">WhatsApp</span>
+                {{-- Reports --}}
+                <div>
+                    <div class="clinic-section-label mb-3 px-1">Reports</div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        @if ($closingUrl)
+                            <a href="{{ $closingUrl }}" class="clinic-glass-card clinic-glass-card-hover p-5 flex items-start gap-4">
+                                <div class="w-11 h-11 rounded-xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center shrink-0">
+                                    <svg class="w-6 h-6 text-gray-700 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                              d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                    </svg>
+                                </div>
+                                <div class="min-w-0">
+                                    <div class="font-bold text-gray-900 dark:text-white">Daily Closing</div>
+                                    <div class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">End-of-day summary by status &amp; doctor.</div>
+                                </div>
+                            </a>
+                        @endif
+
+                        <a href="{{ $reconciliationUrl }}" class="clinic-glass-card clinic-glass-card-hover p-5 flex items-start gap-4">
+                            <div class="w-11 h-11 rounded-xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center shrink-0">
+                                <svg class="w-6 h-6 text-gray-700 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                          d="M3 3v18h18M7 14l3-3 3 3 4-4"/>
+                                </svg>
+                            </div>
+                            <div class="min-w-0">
+                                <div class="font-bold text-gray-900 dark:text-white">Daily Reconciliation</div>
+                                <div class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Cash drawer vs. collected payments.</div>
+                            </div>
+                        </a>
+
+                        @if ($businessUrl)
+                            <a href="{{ $businessUrl }}" class="clinic-glass-card clinic-glass-card-hover p-5 flex items-start gap-4">
+                                <div class="w-11 h-11 rounded-xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center shrink-0">
+                                    <svg class="w-6 h-6 text-gray-700 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                              d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                                    </svg>
+                                </div>
+                                <div class="min-w-0">
+                                    <div class="font-bold text-gray-900 dark:text-white">Daily Business</div>
+                                    <div class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Revenue, cost, profit, doctor cuts.</div>
+                                </div>
+                            </a>
+                        @endif
                     </div>
-                    <p class="mt-2 text-sm">Admin keywords (EN/AR) → actions (start, reset, menu, jump).</p>
-                </a>
+                </div>
 
-                <a href="{{ \App\Filament\Resources\WAMessageResource::getUrl() }}"
-                   class="block p-6 bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 quick-link-card">
-                    <div class="card-title">
-                        <h4 class="text-lg font-semibold text-gray-900 dark:text-white">Message Catalog</h4>
-                        <span class="kbd">Copy</span>
-                    </div>
-                    <p class="mt-2 text-sm">Patient-facing prompts, variables, and previews.</p>
-                </a>
-
-                <a href="{{ \App\Filament\Resources\SystemSettingResource::getUrl() }}"
-                   class="block p-6 bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 quick-link-card">
-                    <div class="card-title">
-                        <h4 class="text-lg font-semibold text-gray-900 dark:text-white">System Settings</h4>
-                        <span class="kbd">Config</span>
-                    </div>
-                    <p class="mt-2 text-sm">Feature flags, WABA config, template names/locales.</p>
-                </a>
-
-                {{-- OPERATIONS --}}
-                <a href="{{ \App\Filament\Resources\BookingResource::getUrl() }}"
-                   class="block p-6 bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 quick-link-card">
-                    <div class="card-title">
-                        <h4 class="text-lg font-semibold text-gray-900 dark:text-white">Appointments</h4>
-                        <span class="kbd">Ops</span>
-                    </div>
-                    <p class="mt-2 text-sm">Search, filter, and manage upcoming patient appointments.</p>
-                </a>
-
-                @if (class_exists(\App\Filament\Resources\WhatsappSessionResource::class))
-                    <a href="{{ \App\Filament\Resources\WhatsappSessionResource::getUrl() }}"
-                       class="block p-6 bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 quick-link-card">
-                        <div class="card-title">
-                            <h4 class="text-lg font-semibold text-gray-900 dark:text-white">Sessions</h4>
-                            <span class="kbd">State</span>
+                {{-- Configuration (collapsed by default - secondary) --}}
+                <details class="clinic-glass-card p-5 group">
+                    <summary class="cursor-pointer flex items-center justify-between gap-4">
+                        <div>
+                            <div class="font-bold text-gray-900 dark:text-white">Configuration & Setup</div>
+                            <div class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                                Branch hours, closures, doctor compensation profiles, WhatsApp templates &amp; system settings
+                            </div>
                         </div>
-                        <p class="mt-2 text-sm">Inspect user flow state; reset if needed.</p>
-                    </a>
-                @endif
+                        <svg class="w-5 h-5 text-gray-400 group-open:rotate-180 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                        </svg>
+                    </summary>
 
-                <a href="{{ \App\Filament\Resources\WAMessageLogResource::getUrl() }}"
-                   class="block p-6 bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 quick-link-card">
-                    <div class="card-title">
-                        <h4 class="text-lg font-semibold text-gray-900 dark:text-white">WhatsApp Logs</h4>
-                        <span class="kbd">Debug</span>
+                    <div class="mt-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                        <a href="{{ $availabilityUrl }}" class="block p-4 rounded-xl border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-white/5 transition">
+                            <div class="font-semibold text-gray-900 dark:text-white">Clinic Hours</div>
+                            <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">Working hours, slot length, capacity</div>
+                        </a>
+                        <a href="{{ $blackoutUrl }}" class="block p-4 rounded-xl border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-white/5 transition">
+                            <div class="font-semibold text-gray-900 dark:text-white">Closures</div>
+                            <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">Holiday blackouts per branch</div>
+                        </a>
+                        @if ($compProfileUrl)
+                            <a href="{{ $compProfileUrl }}" class="block p-4 rounded-xl border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-white/5 transition">
+                                <div class="font-semibold text-gray-900 dark:text-white">Doctor Compensation</div>
+                                <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">Salary vs. percentage profiles</div>
+                            </a>
+                        @endif
+                        @if ($waCommandUrl)
+                            <a href="{{ $waCommandUrl }}" class="block p-4 rounded-xl border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-white/5 transition">
+                                <div class="font-semibold text-gray-900 dark:text-white">WhatsApp Commands</div>
+                                <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">Keywords → actions (EN/AR)</div>
+                            </a>
+                        @endif
+                        @if ($waMessageUrl)
+                            <a href="{{ $waMessageUrl }}" class="block p-4 rounded-xl border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-white/5 transition">
+                                <div class="font-semibold text-gray-900 dark:text-white">WhatsApp Messages</div>
+                                <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">Patient-facing text templates</div>
+                            </a>
+                        @endif
+                        @if ($waSessionUrl)
+                            <a href="{{ $waSessionUrl }}" class="block p-4 rounded-xl border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-white/5 transition">
+                                <div class="font-semibold text-gray-900 dark:text-white">WhatsApp Sessions</div>
+                                <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">Flow state, debug stuck sessions</div>
+                            </a>
+                        @endif
+                        @if ($waLogUrl)
+                            <a href="{{ $waLogUrl }}" class="block p-4 rounded-xl border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-white/5 transition">
+                                <div class="font-semibold text-gray-900 dark:text-white">WhatsApp Logs</div>
+                                <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">Inbound &amp; outbound payloads</div>
+                            </a>
+                        @endif
+                        @if ($systemSettingUrl)
+                            <a href="{{ $systemSettingUrl }}" class="block p-4 rounded-xl border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-white/5 transition">
+                                <div class="font-semibold text-gray-900 dark:text-white">System Settings</div>
+                                <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">Feature flags, integration tokens</div>
+                            </a>
+                        @endif
                     </div>
-                    <p class="mt-2 text-sm">Payloads, idempotency, errors, and duplicates.</p>
-                </a>
+                </details>
 
-                {{-- AVAILABILITY & BRANCHES --}}
-                <a href="{{ \App\Filament\Resources\BranchAvailabilityRuleResource::getUrl() }}"
-                   class="block p-6 bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 quick-link-card">
-                    <div class="card-title">
-                        <h4 class="text-lg font-semibold text-gray-900 dark:text-white">Clinic Hours & Slots</h4>
-                        <span class="kbd">Hours</span>
-                    </div>
-                    <p class="mt-2 text-sm">Working hours, lead time, capacity per day.</p>
-                </a>
-
-                <a href="{{ \App\Filament\Resources\BranchBlackoutResource::getUrl() }}"
-                   class="block p-6 bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 quick-link-card">
-                    <div class="card-title">
-                        <h4 class="text-lg font-semibold text-gray-900 dark:text-white">Closures</h4>
-                        <span class="kbd">Dates</span>
-                    </div>
-                    <p class="mt-2 text-sm">Block specific dates per clinic/branch.</p>
-                </a>
-
-                <a href="{{ \App\Filament\Resources\BranchResource::getUrl() }}"
-                   class="block p-6 bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 quick-link-card">
-                    <div class="card-title">
-                        <h4 class="text-lg font-semibold text-gray-900 dark:text-white">Clinics / Branches</h4>
-                        <span class="kbd">Catalog</span>
-                    </div>
-                    <p class="mt-2 text-sm">Manage clinic info and availability toggles.</p>
-                </a>
-            </div>
-
-            <div class="mt-6 text-sm text-gray-500 dark:text-gray-400">
-                <div class="section-title mb-2">Daily Workflow</div>
-                <ul class="list-disc space-y-1">
-                    <li>Front desk opens <strong>Appointments</strong>, filters <code>today</code>, and prepares rooms.</li>
-                    <li>Use <strong>Clinic Check-in Scanner</strong> to scan patient QR and mark arrival.</li>
-                    <li>For unexpected closures, add a <strong>Closure</strong> date and reschedule affected patients.</li>
-                    <li>If WhatsApp flow acts weird, check <strong>Sessions</strong> and <strong>WhatsApp Logs</strong>.</li>
-                </ul>
             </div>
         </div>
     </div>

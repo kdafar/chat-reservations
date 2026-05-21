@@ -2,13 +2,13 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Concerns\HasHelpAction;
 use App\Filament\Resources\VisitResource;
 use App\Models\ClinicItem;
 use App\Models\ClinicPackage;
 use App\Models\Doctor;
 use App\Models\Visit;
 // [Legacy Architect] Added for status constants
-use App\Services\Clinic\ClinicStockService;
 use App\Services\Clinic\VisitChargeService;
 use App\Services\Clinic\VisitStockRequestService;
 use Filament\Actions\Action;
@@ -22,13 +22,14 @@ use Illuminate\Support\Facades\Log;
 
 class WaitingPatients extends Page
 {
+    use HasHelpAction;
     use InteractsWithActions;
 
     protected static ?string $navigationIcon = 'heroicon-o-queue-list';
 
-    protected static ?string $navigationGroup = 'Clinic — Operations';
+    protected static ?string $navigationGroup = null;
 
-    protected static ?string $title = 'Room Console';
+    protected static ?string $title = null;
 
     protected static ?int $navigationSort = 15;
 
@@ -36,9 +37,38 @@ class WaitingPatients extends Page
 
     protected ?string $maxContentWidth = 'full';
 
+    public static function getNavigationGroup(): ?string
+    {
+        return __('common.nav.clinic_operations');
+    }
+
+    public static function getNavigationLabel(): string
+    {
+        return __('pages.waiting_patients.nav_label');
+    }
+
+    public function getTitle(): string|\Illuminate\Contracts\Support\Htmlable
+    {
+        return __('pages.waiting_patients.title');
+    }
+
     public static function canAccess(): bool
     {
         return (bool) auth()->user()?->can('view_waiting_patients');
+    }
+
+    protected function getHeaderActions(): array
+    {
+        return $this->withHelp([]);
+    }
+
+    protected function helpContent(): array
+    {
+        return [
+            ['heading' => __('help.pages.waiting_patients.what.heading'), 'body' => __('help.pages.waiting_patients.what.body')],
+            ['heading' => __('help.pages.waiting_patients.how.heading'), 'items' => (array) trans('help.pages.waiting_patients.how.items')],
+            ['heading' => __('help.pages.waiting_patients.faq.heading'), 'items' => (array) trans('help.pages.waiting_patients.faq.items')],
+        ];
     }
 
     public function getViewData(): array
@@ -48,9 +78,28 @@ class WaitingPatients extends Page
             ->orderBy('queued_at')
             ->get();
 
+        // Read-only counter so the doctor can see where their finished patients went.
+        // We don't show them on the console (reception handles billing) but we
+        // surface the count so it's clear they didn't vanish.
+        $awaitingPaymentCount = $this->awaitingPaymentScope()->count();
+
         return [
             'visits' => $visits,
+            'awaitingPaymentCount' => $awaitingPaymentCount,
         ];
+    }
+
+    protected function awaitingPaymentScope(): Builder
+    {
+        $q = Visit::query()->where('status', Visit::STATUS_AWAITING_PAYMENT);
+
+        if ($this->isAdminUser()) {
+            return $q;
+        }
+
+        $doctorId = $this->resolveDoctorIdForUserId((int) (auth()->id() ?? 0));
+
+        return $doctorId ? $q->where('doctor_id', $doctorId) : $q->whereRaw('1=0');
     }
 
     protected function queueQuery(): Builder
@@ -165,26 +214,18 @@ class WaitingPatients extends Page
                             throw new \RuntimeException('Cannot finish: There is a pending stock request. Please fulfill or cancel it first.');
                         }
 
-                        // 2. Free the Room (Crucial for Operations)
+                        // 2. Free the Room operationally (mark it available) but preserve
+                        // the audit fields on Visit/Booking so reports and history can
+                        // still tell which room the patient was in.
                         $oldTableId = $visit->restaurant_table_id;
                         if ($oldTableId) {
                             \App\Models\RestaurantTable::where('id', $oldTableId)->update(['status' => 'available']);
-
-                            // Also clear room from Booking so it doesn't look occupied in other views
-                            if ($visit->booking_id) {
-                                \App\Models\Booking::where('id', $visit->booking_id)->update(['table_id' => null]);
-                            }
                         }
 
-                        // 3. Update Status to "awaiting_payment"
+                        // 3. Update Status to "awaiting_payment".
                         // This removes them from the "Waiting/In Progress" queues in this Console,
                         // but keeps them "Open" in BookingResource so Reception can charge them.
                         $visit->status = 'awaiting_payment';
-                        $visit->restaurant_table_id = null; // Detach room from visit history snapshot
-
-                        // Optional: Track when the doctor actually finished
-                        // $visit->service_ended_at = now(config('app.timezone', 'Asia/Kuwait'));
-
                         $visit->save();
 
                         Log::info('[WaitingPatients][completeVisit] success', [
@@ -463,38 +504,11 @@ class WaitingPatients extends Page
                         ->map(fn ($g, $itemId) => ['clinic_item_id' => (int) $itemId, 'qty_base' => (float) $g->sum('qty_base')])
                         ->values()->all();
 
-                    // 3) [Legacy Architect Fix] Check Stock BEFORE Creating Request
-                    $stockSvc = app(ClinicStockService::class);
+                    // 3) Single orchestrator: issues stock immediately if available,
+                    // otherwise creates a pending VisitStockRequest. Exactly one
+                    // stock-affecting action so we can't double-consume.
                     $reqSvc = app(VisitStockRequestService::class);
-                    $branchId = (int) ($visit->branch_id ?? 0);
-
-                    // Check shortages
-                    $shortages = $stockSvc->shortagesForRequirements($branchId, $requirements);
-                    $result = [];
-
-                    if (empty($shortages) && $stockSvc->enabled()) {
-                        // HAPPY PATH: Consume immediately
-                        DB::transaction(function () use ($stockSvc, $branchId, $requirements, $userId, $notes, $visit) {
-                            $itemIds = collect($requirements)->pluck('clinic_item_id')->unique();
-                            $itemsMap = ClinicItem::whereIn('id', $itemIds)->get()->keyBy('id');
-
-                            foreach ($requirements as $req) {
-                                $item = $itemsMap->get($req['clinic_item_id']);
-                                if ($item && $item->is_stockable) {
-                                    $stockSvc->consume($branchId, $item, (float) $req['qty_base'], $userId, $notes, $visit);
-                                }
-                            }
-                        });
-                        $result = ['mode' => 'issued', 'request_id' => 0];
-                    } else {
-                        // UNHAPPY PATH: Request Stock
-                        if (method_exists($reqSvc, 'issueOrRequestForVisit')) {
-                            $result = (array) $reqSvc->issueOrRequestForVisit($visit, $requirements, $userId, $notes, $trace);
-                        } else {
-                            $req = $reqSvc->createForVisit($visit, $requirements, $userId, $notes, true);
-                            $result = ['mode' => 'request', 'request_id' => (int) ($req?->id ?? 0)];
-                        }
-                    }
+                    $result = $reqSvc->issueOrRequestForVisit($visit, $requirements, $userId, $notes, $trace);
 
                     $visit->refresh();
 
@@ -757,19 +771,29 @@ class WaitingPatients extends Page
             return;
         }
 
-        // Check for any visits assigned to me that were updated in the last 12 seconds by SOMEONE ELSE.
+        // Defensive: the updated_by_user_id columns were added in a later
+        // migration. On a fresh DB without them the poll would crash every
+        // 12 seconds; treat them as absent gracefully.
+        $visitsHasUpdatedBy = \Illuminate\Support\Facades\Schema::hasColumn('visits', 'updated_by_user_id');
+        $stockHasUpdatedBy = \Illuminate\Support\Facades\Schema::hasColumn('visit_stock_requests', 'updated_by_user_id');
+
         $recentUpdates = Visit::query()
             ->where('doctor_id', $doctorId)
             ->where('updated_at', '>=', now()->subSeconds(12))
-            ->when($userId, fn ($q) => $q->where('updated_by_user_id', '!=', $userId))
+            ->when(
+                $userId && $visitsHasUpdatedBy,
+                fn ($q) => $q->where('updated_by_user_id', '!=', $userId)
+            )
             ->exists();
 
-        // Also check if any stock requests linked to my visits were updated
         $stockUpdates = DB::table('visit_stock_requests')
             ->join('visits', 'visits.id', '=', 'visit_stock_requests.visit_id')
             ->where('visits.doctor_id', $doctorId)
             ->where('visit_stock_requests.updated_at', '>=', now()->subSeconds(12))
-            ->where('visit_stock_requests.updated_by_user_id', '!=', $userId)
+            ->when(
+                $userId && $stockHasUpdatedBy,
+                fn ($q) => $q->where('visit_stock_requests.updated_by_user_id', '!=', $userId)
+            )
             ->exists();
 
         if ($recentUpdates || $stockUpdates) {

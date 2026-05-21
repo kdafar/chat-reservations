@@ -181,23 +181,31 @@ class GatewayAccount extends Model
     }
 
     /**
-     * Convenience: ensure at least something sensible exists.
-     * (If you want “no options unless configured”, remove this.)
+     * Convenience: ensure at least the manual methods are present.
+     * Only include 'link' (online payment) when a valid MyFatoorah gateway
+     * account actually exists for this booking — otherwise selecting 'link'
+     * would crash later when the controller tries to create an invoice.
      */
     public static function paymentOptionsForBookingWithFallback(\App\Models\Booking $booking): array
     {
         $opts = self::paymentOptionsForBooking($booking);
 
-        // If nothing configured at all, fallback to your prior defaults
-        if (empty($opts)) {
-            return [
-                'cash' => 'Cash',
-                'knet' => 'KNET (POS)',
-                'visa' => 'Credit Card (POS)',
-                'link' => 'Payment Link (Online)',
-            ];
+        if (! empty($opts)) {
+            return $opts;
         }
 
-        return $opts;
+        // Nothing explicitly configured: provide the manual POS defaults.
+        $defaults = [
+            'cash' => 'Cash',
+            'knet' => 'KNET (POS)',
+            'visa' => 'Credit Card (POS)',
+        ];
+
+        // Only expose 'link' if a usable online gateway account exists.
+        if (self::bestForBooking($booking)) {
+            $defaults['link'] = 'Payment Link (Online)';
+        }
+
+        return $defaults;
     }
 }

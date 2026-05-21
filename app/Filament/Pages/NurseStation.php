@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Concerns\HasHelpAction;
 use App\Filament\Resources\VisitResource;
 use App\Models\Visit;
 use Filament\Pages\Page;
@@ -12,21 +13,51 @@ use Illuminate\Support\Carbon;
 
 class NurseStation extends Page implements Tables\Contracts\HasTable
 {
+    use HasHelpAction;
     use Tables\Concerns\InteractsWithTable;
 
     protected static ?string $navigationIcon = 'heroicon-o-heart';
 
-    protected static ?string $navigationGroup = 'Clinic — Operations';
+    protected static ?string $navigationGroup = null;
 
-    protected static ?string $title = 'Nurse Station';
+    protected static ?string $title = null;
 
     protected static ?int $navigationSort = 16;
 
     protected static string $view = 'filament.pages.nurse-station';
 
+    public static function getNavigationGroup(): ?string
+    {
+        return __('common.nav.clinic_operations');
+    }
+
+    public static function getNavigationLabel(): string
+    {
+        return __('pages.nurse_station.nav_label');
+    }
+
+    public function getTitle(): string|\Illuminate\Contracts\Support\Htmlable
+    {
+        return __('pages.nurse_station.title');
+    }
+
     public static function canAccess(): bool
     {
         return (bool) auth()->user()?->can('view_nurse_station');
+    }
+
+    protected function getHeaderActions(): array
+    {
+        return $this->withHelp([]);
+    }
+
+    protected function helpContent(): array
+    {
+        return [
+            ['heading' => __('help.pages.nurse_station.what.heading'), 'body' => __('help.pages.nurse_station.what.body')],
+            ['heading' => __('help.pages.nurse_station.how.heading'), 'items' => (array) trans('help.pages.nurse_station.how.items')],
+            ['heading' => __('help.pages.nurse_station.faq.heading'), 'items' => (array) trans('help.pages.nurse_station.faq.items')],
+        ];
     }
 
     protected function tz(): string

@@ -28,17 +28,32 @@ class ExecutiveDashboard extends Page
 
     protected static ?string $navigationIcon = 'heroicon-o-chart-bar-square';
 
-    protected static ?string $navigationLabel = 'Executive Dashboard';
+    protected static ?string $navigationLabel = null;
 
-    protected static ?string $title = 'Executive Dashboard';
+    protected static ?string $title = null;
 
-    protected static ?string $navigationGroup = 'Analytics';
+    protected static ?string $navigationGroup = null;
 
     protected static string $view = 'filament.pages.executive-dashboard';
 
     protected static ?int $navigationSort = -110;
 
     protected ?string $maxContentWidth = 'full';
+
+    public static function getNavigationGroup(): ?string
+    {
+        return __('common.nav.clinic_reports');
+    }
+
+    public static function getNavigationLabel(): string
+    {
+        return __('pages.executive_dashboard.nav_label');
+    }
+
+    public function getTitle(): string|\Illuminate\Contracts\Support\Htmlable
+    {
+        return __('pages.executive_dashboard.title');
+    }
 
     public array $dashboardData = [];
 
@@ -248,7 +263,10 @@ class ExecutiveDashboard extends Page
             $query->where('branch_id', $branchId);
         }
 
-        $currentRevenue = (clone $query)->sum('fees_total');
+        // Revenue = fees + packages + items − discount (full bill, not just fees).
+        $revenueExpr = 'SUM(COALESCE(fees_total,0) + COALESCE(packages_price_total,0) + COALESCE(items_price_total,0) - COALESCE(discount_total,0))';
+
+        $currentRevenue = (float) (clone $query)->selectRaw("$revenueExpr as r")->value('r');
         $currentProfit = (clone $query)->sum('profit_total');
         $currentVisits = (clone $query)->count();
         $currentAvgTx = $currentVisits > 0 ? $currentRevenue / $currentVisits : 0;
@@ -265,7 +283,7 @@ class ExecutiveDashboard extends Page
             $prevQuery->where('branch_id', $branchId);
         }
 
-        $prevRevenue = $prevQuery->sum('fees_total');
+        $prevRevenue = (float) (clone $prevQuery)->selectRaw("$revenueExpr as r")->value('r');
         $prevProfit = $prevQuery->sum('profit_total');
         $prevVisits = $prevQuery->count();
 
@@ -316,11 +334,12 @@ class ExecutiveDashboard extends Page
 
     protected function getRevenueTrend(Carbon $startDate, Carbon $endDate, ?int $branchId): array
     {
+        // Full revenue per day = fees + packages + items − discount.
         $query = Visit::query()
             ->where('status', 'completed')
             ->whereBetween('completed_at', [$startDate, $endDate])
             ->selectRaw('DATE(completed_at) as date')
-            ->selectRaw('SUM(fees_total) as revenue')
+            ->selectRaw('SUM(COALESCE(fees_total,0) + COALESCE(packages_price_total,0) + COALESCE(items_price_total,0) - COALESCE(discount_total,0)) as revenue')
             ->selectRaw('SUM(profit_total) as profit')
             ->groupBy('date')
             ->orderBy('date');
@@ -387,10 +406,10 @@ class ExecutiveDashboard extends Page
             ->where('status', 'completed')
             ->whereBetween('completed_at', [$startDate, $endDate])
             ->selectRaw('branch_id')
-            ->selectRaw('SUM(fees_total) as revenue')
+            ->selectRaw('SUM(COALESCE(fees_total,0) + COALESCE(packages_price_total,0) + COALESCE(items_price_total,0) - COALESCE(discount_total,0)) as revenue')
             ->selectRaw('SUM(profit_total) as profit')
             ->selectRaw('COUNT(*) as visits')
-            ->selectRaw('AVG(fees_total) as avg_tx')
+            ->selectRaw('AVG(COALESCE(fees_total,0) + COALESCE(packages_price_total,0) + COALESCE(items_price_total,0) - COALESCE(discount_total,0)) as avg_tx')
             ->groupBy('branch_id')
             ->get();
 
@@ -439,7 +458,7 @@ class ExecutiveDashboard extends Page
             ->whereBetween('completed_at', [$startDate, $endDate])
             ->selectRaw('doctor_id')
             ->selectRaw('COUNT(*) as visits')
-            ->selectRaw('SUM(fees_total) as revenue')
+            ->selectRaw('SUM(COALESCE(fees_total,0) + COALESCE(packages_price_total,0) + COALESCE(items_price_total,0) - COALESCE(discount_total,0)) as revenue')
             ->groupBy('doctor_id');
 
         if ($branchId) {

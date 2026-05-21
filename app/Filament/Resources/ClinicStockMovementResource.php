@@ -17,13 +17,29 @@ class ClinicStockMovementResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-arrows-right-left';
 
-    protected static ?string $navigationGroup = 'Clinic — Inventory';
-
-    protected static ?string $modelLabel = 'Stock Movement';
-
-    protected static ?string $pluralModelLabel = 'Stock Movements';
+    protected static ?string $navigationGroup = null;
 
     protected static ?int $navigationSort = 20;
+
+    public static function getNavigationGroup(): ?string
+    {
+        return __('common.nav.clinic_inventory');
+    }
+
+    public static function getNavigationLabel(): string
+    {
+        return __('resources.clinic_stock_movement.nav_label');
+    }
+
+    public static function getModelLabel(): string
+    {
+        return __('resources.clinic_stock_movement.label');
+    }
+
+    public static function getPluralModelLabel(): string
+    {
+        return __('resources.clinic_stock_movement.label_plural');
+    }
 
     public static function table(Table $table): Table
     {
@@ -34,12 +50,12 @@ class ClinicStockMovementResource extends Resource
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('created_at')
-                    ->label('At')
+                    ->label(__('clinic_inventory.clinic_stock_movement.fields.at'))
                     ->dateTime('Y-m-d H:i')
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('branch_id')
-                    ->label('Branch')
+                    ->label(__('clinic_inventory.clinic_stock_movement.fields.branch'))
                     ->formatStateUsing(function ($state) {
                         $b = Branch::query()->find($state);
 
@@ -49,7 +65,7 @@ class ClinicStockMovementResource extends Resource
                     ->toggleable(),
 
                 Tables\Columns\TextColumn::make('clinic_item_id')
-                    ->label('Item')
+                    ->label(__('clinic_inventory.clinic_stock_movement.fields.item'))
                     ->formatStateUsing(function ($state) {
                         $it = ClinicItem::query()->find($state);
 
@@ -59,7 +75,8 @@ class ClinicStockMovementResource extends Resource
                     ->toggleable(),
 
                 Tables\Columns\TextColumn::make('type')
-                    ->label('Type')
+                    ->label(__('clinic_inventory.clinic_stock_movement.fields.type'))
+                    ->formatStateUsing(fn (string $state): string => $state ? __('clinic_inventory.clinic_stock_movement.types.'.$state) : '')
                     ->badge()
                     ->color(fn (string $state): string => match ($state) {
                         'restock' => 'success',
@@ -70,40 +87,40 @@ class ClinicStockMovementResource extends Resource
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('qty_change_base')
-                    ->label('Delta (Base)')
+                    ->label(__('clinic_inventory.clinic_stock_movement.fields.delta_base'))
                     ->numeric(4)
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('before_qty_base')
-                    ->label('Before')
+                    ->label(__('clinic_inventory.clinic_stock_movement.fields.before'))
                     ->numeric(4)
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('after_qty_base')
-                    ->label('After')
+                    ->label(__('clinic_inventory.clinic_stock_movement.fields.after'))
                     ->numeric(4)
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('performed_by')
-                    ->label('By (User ID)')
+                    ->label(__('clinic_inventory.clinic_stock_movement.fields.by_user_id'))
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('related_type')
-                    ->label('Related Type')
+                    ->label(__('clinic_inventory.clinic_stock_movement.fields.related_type'))
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('related_id')
-                    ->label('Related ID')
+                    ->label(__('clinic_inventory.clinic_stock_movement.fields.related_id'))
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('notes')
-                    ->label('Notes')
+                    ->label(__('clinic_inventory.clinic_stock_movement.fields.notes'))
                     ->limit(40)
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('branch_id')
-                    ->label('Branch')
+                    ->label(__('clinic_inventory.clinic_stock_movement.fields.branch'))
                     ->options(fn () => Branch::query()
                         ->orderBy('id')
                         ->get()
@@ -112,11 +129,11 @@ class ClinicStockMovementResource extends Resource
                     ),
 
                 Tables\Filters\SelectFilter::make('type')
-                    ->label('Type')
+                    ->label(__('clinic_inventory.clinic_stock_movement.fields.type'))
                     ->options([
-                        'restock' => 'Restock',
-                        'consume' => 'Consume',
-                        'adjustment' => 'Adjustment',
+                        'restock' => __('clinic_inventory.clinic_stock_movement.types.restock'),
+                        'consume' => __('clinic_inventory.clinic_stock_movement.types.consume'),
+                        'adjustment' => __('clinic_inventory.clinic_stock_movement.types.adjustment'),
                     ]),
             ])
             ->actions([])

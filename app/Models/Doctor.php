@@ -16,7 +16,7 @@ class Doctor extends Model
     protected $casts = [
         'working_hours' => 'array', // Automatically handles the JSON schedule
         'is_active' => 'boolean',
-        'consultation_fee' => 'decimal:2',
+        'consultation_fee' => 'decimal:3',
     ];
 
     public function partner(): BelongsTo

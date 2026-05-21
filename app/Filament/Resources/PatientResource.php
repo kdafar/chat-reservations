@@ -17,19 +17,39 @@ class PatientResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-users';
 
-    protected static ?string $navigationGroup = 'Clinic — Operations';
+    protected static ?string $navigationGroup = null;
 
     protected static ?int $navigationSort = 30;
+
+    public static function getNavigationGroup(): ?string
+    {
+        return __('common.nav.clinic_operations');
+    }
+
+    public static function getNavigationLabel(): string
+    {
+        return __('resources.patient.nav_label');
+    }
+
+    public static function getModelLabel(): string
+    {
+        return __('resources.patient.label');
+    }
+
+    public static function getPluralModelLabel(): string
+    {
+        return __('resources.patient.label_plural');
+    }
 
     protected static ?string $recordTitleAttribute = 'name';
 
     public static function form(Form $form): Form
     {
         return $form->schema([
-            Forms\Components\Section::make('Identity')
+            Forms\Components\Section::make(__('clinic_patient.sections.identity'))
                 ->schema([
                     Forms\Components\Select::make('partner_id')
-                        ->label('Clinic')
+                        ->label(__('clinic_patient.fields.clinic'))
                         ->options(Partner::all()->pluck('name', 'id'))
                         ->required()
                         ->searchable()
@@ -37,35 +57,36 @@ class PatientResource extends Resource
 
                     Forms\Components\TextInput::make('name')
                         ->required()
-                        ->label('Full Name')
-                        ->placeholder('Patient Name'),
+                        ->label(__('clinic_patient.fields.full_name'))
+                        ->placeholder(__('clinic_patient.placeholders.patient_name')),
 
                     Forms\Components\TextInput::make('phone')
-                        ->label('Mobile Number')
+                        ->label(__('clinic_patient.fields.mobile_number'))
                         ->tel()
                         ->required()
                         ->unique(ignoreRecord: true),
 
                     Forms\Components\TextInput::make('email')
                         ->email()
-                        ->placeholder('Optional'),
+                        ->placeholder(__('clinic_patient.placeholders.optional')),
                 ])->columns(2),
 
-            Forms\Components\Section::make('Demographics')
+            Forms\Components\Section::make(__('clinic_patient.sections.demographics'))
                 ->schema([
                     Forms\Components\DatePicker::make('dob')
-                        ->label('Date of Birth')
+                        ->label(__('clinic_patient.fields.date_of_birth'))
                         ->maxDate(now())
                         ->native(false),
 
                     Forms\Components\Select::make('gender')
+                        ->label(__('clinic_patient.fields.gender'))
                         ->options([
-                            'male' => 'Male',
-                            'female' => 'Female',
+                            'male' => __('clinic_patient.gender.male'),
+                            'female' => __('clinic_patient.gender.female'),
                         ]),
 
                     Forms\Components\Select::make('blood_group')
-                        ->label('Blood Group')
+                        ->label(__('clinic_patient.fields.blood_group'))
                         ->options([
                             'A+' => 'A+', 'A-' => 'A-',
                             'B+' => 'B+', 'B-' => 'B-',
@@ -74,27 +95,27 @@ class PatientResource extends Resource
                         ]),
 
                     Forms\Components\TextInput::make('civil_id')
-                        ->label('Civil ID / National ID'),
+                        ->label(__('clinic_patient.fields.civil_id')),
                 ])->columns(4),
 
-            Forms\Components\Section::make('Medical Profile')
+            Forms\Components\Section::make(__('clinic_patient.sections.medical_profile'))
                 ->schema([
                     Forms\Components\Textarea::make('allergies')
-                        ->label('Allergies')
-                        ->placeholder('e.g. Penicillin, Peanuts, Latex')
-                        ->helperText('This will appear on prescriptions.')
+                        ->label(__('clinic_patient.fields.allergies'))
+                        ->placeholder(__('clinic_patient.placeholders.allergies'))
+                        ->helperText(__('clinic_patient.helpers.allergies'))
                         ->rows(2)
                         ->columnSpanFull()
                         ->extraAttributes(['class' => 'bg-red-50 border-red-300 text-red-900']),
 
                     Forms\Components\Textarea::make('medical_alerts')
-                        ->label('Other Medical Alerts')
-                        ->placeholder('e.g. Diabetic, Pacemaker')
+                        ->label(__('clinic_patient.fields.medical_alerts'))
+                        ->placeholder(__('clinic_patient.placeholders.medical_alerts'))
                         ->rows(2)
                         ->columnSpanFull(),
 
                     Forms\Components\Textarea::make('notes')
-                        ->label('Admin Notes')
+                        ->label(__('clinic_patient.fields.admin_notes'))
                         ->rows(2)
                         ->columnSpanFull(),
                 ])
@@ -116,12 +137,13 @@ class PatientResource extends Resource
                     ->icon('heroicon-m-phone'),
 
                 Tables\Columns\TextColumn::make('dob')
-                    ->label('Age')
+                    ->label(__('clinic_patient.fields.age'))
                     ->date()
-                    ->formatStateUsing(fn ($state) => $state ? \Carbon\Carbon::parse($state)->age.' yrs' : '-'),
+                    ->formatStateUsing(fn ($state) => $state ? \Carbon\Carbon::parse($state)->age.' '.__('clinic_patient.yrs') : '-'),
 
                 Tables\Columns\TextColumn::make('gender')
-                    ->formatStateUsing(fn (string $state): string => ucfirst($state))
+                    ->label(__('clinic_patient.fields.gender'))
+                    ->formatStateUsing(fn (string $state): string => $state ? __('clinic_patient.gender.'.$state) : '')
                     ->icon(fn (string $state): string => match ($state) {
                         'male' => 'heroicon-m-user',
                         'female' => 'heroicon-m-user', // You can use gender specific icons if available
@@ -134,13 +156,13 @@ class PatientResource extends Resource
                     }),
 
                 Tables\Columns\TextColumn::make('blood_group')
-                    ->label('Blood')
+                    ->label(__('clinic_patient.fields.blood'))
                     ->badge()
                     ->color('danger'),
 
                 // Visual Warning if Allergies exist
                 Tables\Columns\IconColumn::make('allergies')
-                    ->label('Allergy')
+                    ->label(__('clinic_patient.fields.allergy'))
                     ->boolean()
                     ->trueIcon('heroicon-s-exclamation-triangle')
                     ->falseIcon('')
@@ -149,13 +171,13 @@ class PatientResource extends Resource
 
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime('M d, Y')
-                    ->label('Registered')
+                    ->label(__('clinic_patient.fields.registered'))
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('partner_id')
-                    ->label('Clinic')
+                    ->label(__('clinic_patient.fields.clinic'))
                     ->relationship('partner', 'name'),
             ])
             ->actions([
@@ -163,7 +185,10 @@ class PatientResource extends Resource
             ])
             ->bulkActions([
                 Tables\Actions\DeleteBulkAction::make(),
-            ]);
+            ])
+            ->emptyStateHeading(__('resources.patient.empty_heading'))
+            ->emptyStateDescription(__('resources.patient.empty_description'))
+            ->emptyStateIcon('heroicon-o-user-group');
     }
 
     public static function getRelations(): array

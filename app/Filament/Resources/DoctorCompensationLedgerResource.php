@@ -19,19 +19,35 @@ class DoctorCompensationLedgerResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-document-chart-bar';
 
-    protected static ?string $navigationGroup = 'Clinic — Finance';
-
-    protected static ?string $modelLabel = 'Doctor Compensation Ledger';
-
-    protected static ?string $pluralModelLabel = 'Doctor Compensation Ledgers';
+    protected static ?string $navigationGroup = null;
 
     protected static ?int $navigationSort = 20;
+
+    public static function getNavigationGroup(): ?string
+    {
+        return __('common.nav.clinic_finance');
+    }
+
+    public static function getNavigationLabel(): string
+    {
+        return __('resources.doctor_compensation_ledger.nav_label');
+    }
+
+    public static function getModelLabel(): string
+    {
+        return __('resources.doctor_compensation_ledger.label');
+    }
+
+    public static function getPluralModelLabel(): string
+    {
+        return __('resources.doctor_compensation_ledger.label_plural');
+    }
 
     public static function form(Form $form): Form
     {
         // Read-only
         return $form->schema([
-            Forms\Components\Section::make('Ledger (Read Only)')
+            Forms\Components\Section::make(__('clinic_misc.doctor_compensation_ledger.section_readonly'))
                 ->columns(3)
                 ->schema([
                     Forms\Components\TextInput::make('visit_id')->disabled(),
@@ -60,35 +76,35 @@ class DoctorCompensationLedgerResource extends Resource
                 Tables\Columns\TextColumn::make('id')->label('#')->sortable(),
 
                 Tables\Columns\TextColumn::make('visit_id')
-                    ->label('Visit')
+                    ->label(__('clinic_misc.doctor_compensation_ledger.visit'))
                     ->formatStateUsing(function ($state) {
                         $v = Visit::query()->find($state);
 
-                        return $v?->booking_code ?? ('Visit #'.$state);
+                        return $v?->booking_code ?? __('clinic_misc.doctor_compensation_ledger.visit_hash', ['id' => $state]);
                     })
                     ->searchable(),
 
                 Tables\Columns\TextColumn::make('doctor_id')
-                    ->label('Doctor')
-                    ->formatStateUsing(fn ($state) => Doctor::query()->find($state)?->name ?? ('Doctor #'.$state))
+                    ->label(__('clinic_misc.doctor_compensation_ledger.doctor'))
+                    ->formatStateUsing(fn ($state) => Doctor::query()->find($state)?->name ?? __('clinic_misc.doctor_compensation_ledger.doctor_hash', ['id' => $state]))
                     ->searchable(),
 
                 Tables\Columns\TextColumn::make('type_snapshot')->badge(),
                 Tables\Columns\TextColumn::make('basis_snapshot')->badge(),
 
-                Tables\Columns\TextColumn::make('fees_snapshot')->label('Fees')->numeric(3),
-                Tables\Columns\TextColumn::make('profit_snapshot')->label('Profit')->numeric(3),
-                Tables\Columns\TextColumn::make('doctor_cut_amount')->label('Doctor Cut')->numeric(3),
+                Tables\Columns\TextColumn::make('fees_snapshot')->label(__('clinic_misc.doctor_compensation_ledger.fees'))->numeric(3),
+                Tables\Columns\TextColumn::make('profit_snapshot')->label(__('clinic_misc.doctor_compensation_ledger.profit'))->numeric(3),
+                Tables\Columns\TextColumn::make('doctor_cut_amount')->label(__('clinic_misc.doctor_compensation_ledger.doctor_cut'))->numeric(3),
 
                 Tables\Columns\TextColumn::make('created_at')->dateTime('Y-m-d H:i')->sortable()->toggleable(),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('doctor_id')
-                    ->label('Doctor')
+                    ->label(__('clinic_misc.doctor_compensation_ledger.doctor'))
                     ->options(fn () => Doctor::query()
                         ->orderBy('id')
                         ->get()
-                        ->mapWithKeys(fn ($d) => [$d->id => ($d->name ?? ('Doctor #'.$d->id))])
+                        ->mapWithKeys(fn ($d) => [$d->id => ($d->name ?? __('clinic_misc.doctor_compensation_ledger.doctor_hash', ['id' => $d->id]))])
                         ->all()
                     ),
 

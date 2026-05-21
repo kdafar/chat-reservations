@@ -24,6 +24,8 @@ class Booking extends Model
 
     public const S_COMPLETED = 'completed'; // Added based on Resource usage
 
+    public const S_NO_SHOW = 'no_show';
+
     const REASON_PRICE = 'price_high';
 
     const REASON_EMERGENCY = 'patient_emergency';

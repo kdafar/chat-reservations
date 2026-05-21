@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Concerns\HasHelpAction;
 use App\Models\Branch;
 use App\Models\Doctor;
 use App\Models\VisitPayment;
@@ -14,19 +15,35 @@ use Illuminate\Support\Carbon;
 
 class DailyReconciliationReport extends Page
 {
+    use HasHelpAction;
     use InteractsWithForms;
 
     protected static ?string $navigationIcon = 'heroicon-o-presentation-chart-line';
 
-    protected static ?string $navigationGroup = 'Clinic — Reports';
+    protected static ?string $navigationGroup = null;
 
-    protected static ?string $title = 'Daily Shift Reconciliation';
+    protected static ?string $title = null;
 
     protected static string $view = 'filament.pages.daily-reconciliation-report';
 
     protected static ?int $navigationSort = 100;
 
     protected ?string $maxContentWidth = 'full';
+
+    public static function getNavigationGroup(): ?string
+    {
+        return __('common.nav.clinic_reports');
+    }
+
+    public static function getNavigationLabel(): string
+    {
+        return __('pages.daily_reconciliation_report.nav_label');
+    }
+
+    public function getTitle(): string|\Illuminate\Contracts\Support\Htmlable
+    {
+        return __('pages.daily_reconciliation_report.title');
+    }
 
     public ?array $data = [];
 
@@ -36,6 +53,20 @@ class DailyReconciliationReport extends Page
             'date' => now()->toDateString(),
             'branch_id' => null, // Default to "All My Branches"
         ]);
+    }
+
+    protected function getHeaderActions(): array
+    {
+        return $this->withHelp([]);
+    }
+
+    protected function helpContent(): array
+    {
+        return [
+            ['heading' => __('help.pages.daily_reconciliation_report.what.heading'), 'body' => __('help.pages.daily_reconciliation_report.what.body')],
+            ['heading' => __('help.pages.daily_reconciliation_report.how.heading'), 'items' => (array) trans('help.pages.daily_reconciliation_report.how.items')],
+            ['heading' => __('help.pages.daily_reconciliation_report.faq.heading'), 'items' => (array) trans('help.pages.daily_reconciliation_report.faq.items')],
+        ];
     }
 
     public function form(Form $form): Form

@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ClinicItem extends Model
 {
-    //use \App\Models\Concerns\BelongsToBranchScope;
+    // use \App\Models\Concerns\BelongsToBranchScope;
 
     protected $guarded = [];
 

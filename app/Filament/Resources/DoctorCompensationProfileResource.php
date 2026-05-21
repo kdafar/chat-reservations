@@ -17,59 +17,75 @@ class DoctorCompensationProfileResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-user-circle';
 
-    protected static ?string $navigationGroup = 'Clinic — Finance';
-
-    protected static ?string $modelLabel = 'Doctor Compensation Profile';
-
-    protected static ?string $pluralModelLabel = 'Doctor Compensation Profiles';
+    protected static ?string $navigationGroup = null;
 
     protected static ?int $navigationSort = 10;
+
+    public static function getNavigationGroup(): ?string
+    {
+        return __('common.nav.clinic_finance');
+    }
+
+    public static function getNavigationLabel(): string
+    {
+        return __('resources.doctor_compensation_profile.nav_label');
+    }
+
+    public static function getModelLabel(): string
+    {
+        return __('resources.doctor_compensation_profile.label');
+    }
+
+    public static function getPluralModelLabel(): string
+    {
+        return __('resources.doctor_compensation_profile.label_plural');
+    }
 
     public static function form(Form $form): Form
     {
         return $form->schema([
-            Forms\Components\Section::make('Profile')
+            Forms\Components\Section::make(__('clinic_misc.doctor_compensation_profile.section_profile'))
                 ->columns(3)
                 ->schema([
                     Forms\Components\Select::make('doctor_id')
-                        ->label('Doctor')
+                        ->label(__('clinic_misc.doctor_compensation_profile.doctor'))
                         ->relationship('doctor', 'id')
-                        ->getOptionLabelFromRecordUsing(fn (Doctor $d) => $d->name ?? ('Doctor #'.$d->id))
+                        ->getOptionLabelFromRecordUsing(fn (Doctor $d) => $d->name ?? __('clinic_misc.doctor_compensation_profile.doctor_hash', ['id' => $d->id]))
                         ->searchable()
                         ->preload()
                         ->required()
                         ->disabled(fn (string $operation) => $operation === 'edit'),
 
                     Forms\Components\Select::make('type')
-                        ->label('Type')
+                        ->label(__('clinic_misc.doctor_compensation_profile.type'))
                         ->options([
-                            'salary' => 'Salary',
-                            'percentage' => 'Percentage',
+                            'salary' => __('clinic_misc.doctor_compensation_profile.type_salary'),
+                            'percentage' => __('clinic_misc.doctor_compensation_profile.type_percentage'),
                         ])
                         ->native(false)
                         ->default('percentage')
                         ->required(),
 
                     Forms\Components\Select::make('basis')
-                        ->label('Basis')
+                        ->label(__('clinic_misc.doctor_compensation_profile.basis'))
                         ->options([
-                            'fees_only' => 'Fees Only (fees - discount)',
-                            'net_profit' => 'Net Profit',
+                            'fees_only' => __('clinic_misc.doctor_compensation_profile.basis_fees_only'),
+                            'net_profit' => __('clinic_misc.doctor_compensation_profile.basis_net_profit'),
                         ])
                         ->native(false)
                         ->default('fees_only')
                         ->required(),
 
                     Forms\Components\TextInput::make('percentage_rate')
-                        ->label('Percentage Rate')
+                        ->label(__('clinic_misc.doctor_compensation_profile.percentage_rate'))
                         ->numeric()
                         ->step('0.001')
                         ->nullable()
-                        ->helperText('Only used when Type = Percentage.')
+                        ->helperText(__('clinic_misc.doctor_compensation_profile.percentage_rate_help'))
                         ->visible(fn (Forms\Get $get) => $get('type') === 'percentage'),
 
                     Forms\Components\Toggle::make('is_active')
-                        ->label('Active')
+                        ->label(__('clinic_misc.doctor_compensation_profile.active'))
                         ->default(true),
                 ])
                 ->collapsible(),
@@ -82,8 +98,8 @@ class DoctorCompensationProfileResource extends Resource
             Tables\Columns\TextColumn::make('id')->label('#')->sortable(),
 
             Tables\Columns\TextColumn::make('doctor_id')
-                ->label('Doctor')
-                ->formatStateUsing(fn ($state) => Doctor::query()->find($state)?->name ?? ('Doctor #'.$state))
+                ->label(__('clinic_misc.doctor_compensation_profile.doctor'))
+                ->formatStateUsing(fn ($state) => Doctor::query()->find($state)?->name ?? __('clinic_misc.doctor_compensation_profile.doctor_hash', ['id' => $state]))
                 ->searchable(),
 
             Tables\Columns\TextColumn::make('type')
@@ -93,11 +109,11 @@ class DoctorCompensationProfileResource extends Resource
                 ->badge(),
 
             Tables\Columns\TextColumn::make('percentage_rate')
-                ->label('Rate')
+                ->label(__('clinic_misc.doctor_compensation_profile.rate'))
                 ->numeric(3),
 
             Tables\Columns\IconColumn::make('is_active')
-                ->label('Active')
+                ->label(__('clinic_misc.doctor_compensation_profile.active'))
                 ->boolean(),
         ])
             ->actions([

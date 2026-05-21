@@ -419,8 +419,7 @@ class FlowBookingHandler
                             $this->holds->releaseByPhoneAndBranch($msisdn, $branchId);
                         }
 
-                        // Trigger Confirmation (Edits also need confirmation message)
-                        $this->sendBookingConfirmation($booking, $session);
+                        // QR is dispatched on the user's "Done" tap, not here.
 
                         $this->ctx->put($token, [
                             'booking_id' => $booking->id,
@@ -520,6 +519,26 @@ class FlowBookingHandler
                 return $this->respond('CANCEL_SUCCESS', $this->screenCancelSuccess($session, $this->ctx->all($token), $locale));
 
             case 'CONFIRMATION':
+                // User tapped "Done" / triggered end_session from the booking
+                // confirmation screen: dispatch the QR now and flip the
+                // screen into its terminal (session-ended) state.
+                if ($act === 'end_session') {
+                    $bid = (int) ($c['booking_id'] ?? 0);
+                    if ($bid > 0 && $session) {
+                        if ($booking = Booking::find($bid)) {
+                            try {
+                                $this->sendBookingConfirmation($booking, $session);
+                            } catch (\Throwable $e) {
+                                \Log::error('WA confirm: send QR on Done failed', [
+                                    'booking_id' => $bid,
+                                    'error' => $e->getMessage(),
+                                ]);
+                            }
+                        }
+                    }
+                    $this->ctx->put($token, ['session_end' => true], $session);
+                }
+
                 return $this->respond('CONFIRMATION', $this->screenConfirmation($session, $this->ctx->all($token), $locale));
 
             default:
@@ -1091,10 +1110,9 @@ class FlowBookingHandler
             $this->holds->releaseByPhoneAndBranch($msisdn, $branchId);
         }
 
-        // IMMEDIATE CONFIRMATION SEND: Do not wait for client "Done" click.
-        if ($session) {
-            $this->sendBookingConfirmation($b, $session);
-        }
+        // QR is no longer sent here — it is dispatched once the user
+        // taps "Done" on the CONFIRMATION screen (case 'CONFIRMATION'
+        // with $act === 'end_session' below).
 
         $this->ctx->put($token, [
             'booking_id' => $b->id,
@@ -1115,8 +1133,9 @@ class FlowBookingHandler
     }
 
     /**
-     * Sends QR + Template immediately.
-     * Includes Idempotency lock to prevent double-send if "finale" trigger fires later.
+     * Sends the booking QR image (with caption) to the user.
+     * Includes idempotency lock so the "finale" webhook trigger and the
+     * in-flow "Done" tap do not produce a duplicate send.
      */
     protected function sendBookingConfirmation(Booking $b, WhatsappSession $session): void
     {
@@ -1158,11 +1177,9 @@ class FlowBookingHandler
             $sender->sendTextMessage($session->phone, $caption);
         }
 
-        // 2. Send Template (optional, usually good for quick reference)
-        $tplKey = "{$keyBase}:tpl";
-        if (cache()->add($tplKey, 1, now()->addMinutes(10))) {
-            $this->tpl->bookingConfirmed($session, $b);
-        }
+        // Note: the booking_confirmed_final / barfres_confirmed template is
+        // intentionally not sent — the QR + caption already convey the same
+        // information.
     }
 
     private function buildLocalDateTime(?string $date, ?string $time, string $tz = 'Asia/Kuwait'): ?Carbon

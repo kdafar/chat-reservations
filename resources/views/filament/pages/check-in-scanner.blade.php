@@ -7,9 +7,9 @@
         <div class="mb-8">
             <div class="flex items-center justify-between">
                 <div>
-                    <h1 class="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-white">Guest Check-in</h1>
+                    <h1 class="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-white">{{ __('clinic_views.check_in_scanner.heading') }}</h1>
                     <p class="mt-2 text-sm sm:text-base text-gray-600 dark:text-gray-400">
-                        Scan QR codes or enter check-in codes manually
+                        {{ __('clinic_views.check_in_scanner.subheading') }}
                     </p>
                 </div>
                 <div class="hidden sm:flex items-center gap-3">
@@ -17,12 +17,12 @@
                     <x-filament::button size="lg"
                         onclick="document.querySelector('[data-scanner-root]')?.__alpine?.start?.()"
                         icon="heroicon-o-camera">
-                        Start Camera
+                        {{ __('clinic_views.check_in_scanner.start_camera') }}
                     </x-filament::button>
                     <x-filament::button size="lg" color="gray"
                         onclick="document.querySelector('[data-scanner-root]')?.__alpine?.stop?.()"
                         icon="heroicon-o-stop-circle">
-                        Stop
+                        {{ __('clinic_views.check_in_scanner.stop') }}
                     </x-filament::button>
                 </div>
             </div>
@@ -362,7 +362,7 @@
                                 <svg class="w-6 h-6 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
                                 </svg>
-                                QR Code Scanner
+                                {{ __('clinic_views.check_in_scanner.qr_code_scanner') }}
                             </h2>
 
                             <!-- Controls -->
@@ -376,16 +376,16 @@
                                     x-bind:color="torchOn ? 'warning' : 'gray'"
                                     x-cloak
                                     icon="heroicon-o-bolt"
-                                    tooltip="Toggle Torch"
+                                    tooltip="{{ __('clinic_views.check_in_scanner.toggle_torch') }}"
                                 >
                                 </x-filament::icon-button>
 
                                 <!-- Mobile Start/Stop -->
                                 <x-filament::button class="sm:hidden" size="sm" x-bind:disabled="starting || started" x-on:click="_start()" icon="heroicon-o-camera" x-cloak>
-                                    <span x-show="!starting">Start</span><span x-show="starting">...</span>
+                                    <span x-show="!starting">{{ __('clinic_views.check_in_scanner.start') }}</span><span x-show="starting">...</span>
                                 </x-filament::button>
                                 <x-filament::button class="sm:hidden" size="sm" color="gray" x-bind:disabled="starting || !started" x-on:click="_stop()" icon="heroicon-o-stop-circle" x-cloak>
-                                    Stop
+                                    {{ __('clinic_views.check_in_scanner.stop') }}
                                 </x-filament::button>
                             </div>
                         </div>
@@ -400,7 +400,7 @@
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
                                     </svg>
-                                    <p class="text-sm">Camera preview will appear here</p>
+                                    <p class="text-sm">{{ __('clinic_views.check_in_scanner.camera_preview_placeholder') }}</p>
                                 </div>
                             </div>
                         </div>
@@ -412,10 +412,10 @@
                                     <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
                                     <span class="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
                                 </span>
-                                <span class="text-sm font-medium">Camera Active</span>
+                                <span class="text-sm font-medium">{{ __('clinic_views.check_in_scanner.camera_active') }}</span>
                             </div>
                             <div x-show="!started && !starting" class="text-sm text-gray-500 dark:text-gray-400" x-cloak>
-                                Camera Inactive
+                                {{ __('clinic_views.check_in_scanner.camera_inactive') }}
                             </div>
                         </div>
 
@@ -423,7 +423,7 @@
                         <template x-if="cameras.length > 1" x-cloak>
                             <div class="mt-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
                                 <label for="camera-select" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                    Select Camera
+                                    {{ __('clinic_views.check_in_scanner.select_camera') }}
                                 </label>
                                 <select id="camera-select" x-model="cameraId" 
                                         class="fi-input block w-full dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300 dark:focus:border-primary-500 dark:focus:ring-primary-500"
@@ -461,14 +461,14 @@
                             <svg class="w-6 h-6 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                             </svg>
-                            Manual Entry
+                            {{ __('clinic_views.check_in_scanner.manual_entry') }}
                         </h2>
                         <div class="flex gap-2">
                             <input
                                 x-ref="manual"
                                 type="text"
                                 class="fi-input block w-full text-base dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300 dark:focus:border-primary-500 dark:focus:ring-primary-500"
-                                placeholder="https://barfres.majestic-kw.com/c/{token} or token"
+                                placeholder="{{ __('clinic_views.check_in_scanner.manual_placeholder') }}"
                                 @keydown.enter.prevent="manualCheck()"
                             >
                             <x-filament::button 
@@ -476,7 +476,7 @@
                                 x-on:click="manualCheck()"
                                 icon="heroicon-o-check-circle"
                             >
-                                Check-in
+                                {{ __('clinic_views.check_in_scanner.check_in') }}
                             </x-filament::button>
                         </div>
                     </div>
@@ -491,23 +491,23 @@
                     <div class="p-6">
                         <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
                             <svg class="w-6 h-6 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-                            Scanner Settings
+                            {{ __('clinic_views.check_in_scanner.scanner_settings') }}
                         </h2>
                         <div class="space-y-4">
                             <label class="flex items-center justify-between cursor-pointer">
-                                <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Auto-start Camera</span>
+                                <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('clinic_views.check_in_scanner.auto_start_camera') }}</span>
                                 <input type="checkbox" class="fi-input dark:bg-gray-700 dark:border-gray-600 dark:checked:bg-primary-500 dark:checked:border-primary-500" x-model="scanner.prefAutoStart">
                             </label>
                             <label class="flex items-center justify-between cursor-pointer">
-                                <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Beep on Scan</span>
+                                <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('clinic_views.check_in_scanner.beep_on_scan') }}</span>
                                 <input type="checkbox" class="fi-input dark:bg-gray-700 dark:border-gray-600 dark:checked:bg-primary-500 dark:checked:border-primary-500" x-model="scanner.prefBeep">
                             </label>
                             <label class="flex items-center justify-between cursor-pointer">
-                                <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Haptic Feedback on Scan</span>
+                                <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('clinic_views.check_in_scanner.haptic_feedback') }}</span>
                                 <input type="checkbox" class="fi-input dark:bg-gray-700 dark:border-gray-600 dark:checked:bg-primary-500 dark:checked:border-primary-500" x-model="scanner.prefHaptic">
                             </label>
                             <div>
-                                <label for="dedupe" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Scan Cooldown (ms)</label>
+                                <label for="dedupe" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ __('clinic_views.check_in_scanner.scan_cooldown') }}</label>
                                 <input id="dedupe" type="number" step="100" 
                                        class="fi-input block w-full dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300 dark:focus:border-primary-500 dark:focus:ring-primary-500" 
                                        x-model.number="scanner.dedupeWindowMs">
@@ -557,27 +557,27 @@
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                   <div>
-                      <h3 class="text-xl font-bold">Check-in Successful</h3>
-                      <p class="text-sm text-green-100">Guest has been checked in</p>
+                      <h3 class="text-xl font-bold">{{ __('clinic_views.check_in_scanner.check_in_successful') }}</h3>
+                      <p class="text-sm text-green-100">{{ __('clinic_views.check_in_scanner.guest_checked_in') }}</p>
                   </div>
               </div>
           </div>
           <div class="p-6">
               <dl class="space-y-3" x-if="lwResult">
                   <div class="flex justify-between py-2 border-b border-gray-200 dark:border-gray-700">
-                      <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Code</dt>
+                      <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">{{ __('clinic_views.check_in_scanner.code') }}</dt>
                       <dd class="text-sm font-mono font-semibold text-gray-900 dark:text-gray-100" x-text="lwResult.code"></dd>
                   </div>
                   <div class="flex justify-between py-2 border-b border-gray-200 dark:border-gray-700">
-                      <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Party Size</dt>
+                      <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">{{ __('clinic_views.check_in_scanner.party_size') }}</dt>
                       <dd class="text-sm font-semibold text-gray-900 dark:text-gray-100" x-text="lwResult.party_size + ' guests'"></dd>
                   </div>
                   <div class="flex justify-between py-2 border-b border-gray-200 dark:border-gray-700">
-                      <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Branch</dt>
+                      <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">{{ __('clinic_views.check_in_scanner.branch') }}</dt>
                       <dd class="text-sm font-semibold text-gray-900 dark:text-gray-100" x-text="lwResult.branch"></dd>
                   </div>
                   <div class="flex justify-between py-2 border-b border-gray-200 dark:border-gray-700">
-                      <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Table</dt>
+                      <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">{{ __('clinic_views.check_in_scanner.table') }}</dt>
                       <dd class="text-sm font-semibold text-gray-900 dark:text-gray-100">
                           <span x-text="lwResult.table ? lwResult.table.name : 'Not assigned'"></span>
                           <span x-if="lwResult.table" class="text-gray-500 dark:text-gray-400" x-text="' (Capacity: ' + lwResult.table.capacity + ')'"></span>

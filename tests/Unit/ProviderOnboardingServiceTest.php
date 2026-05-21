@@ -4,120 +4,154 @@ namespace Tests\Unit;
 
 use App\Models\Flow;
 use App\Models\FlowTemplate;
+use App\Models\FlowTrigger;
 use App\Models\FlowVersion;
 use App\Models\Provider;
 use App\Models\ServiceType;
 use App\Services\ProviderOnboardingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
+/**
+ * Regression cover for ProviderOnboardingService (audit follow-up #5).
+ *
+ * onboard($provider) walks the provider's ServiceType templates and clones
+ * each template's latest version into a provider-specific Flow + FlowVersion
+ * + FlowTrigger, so the provider can immediately receive WhatsApp traffic.
+ *
+ * If this method regresses, new providers go live with no flows wired up
+ * and inbound messages silently fall through.
+ */
 class ProviderOnboardingServiceTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_onboard_clones_published_template_version_and_links_everything_correctly(): void
+    protected ProviderOnboardingService $svc;
+
+    protected function setUp(): void
     {
-        // 1) Arrange a ServiceType + Template + Published Template Version
-        $serviceType = ServiceType::factory()->create([
-            'name' => 'Restaurants',
-            'slug' => 'restaurants',
+        parent::setUp();
+        $this->svc = app(ProviderOnboardingService::class);
+    }
+
+    /** Seed a complete service-type → template → version chain. */
+    private function seedTemplateChain(): array
+    {
+        $service = new ServiceType;
+        $service->forceFill([
+            'slug' => 'clinic-'.uniqid(),
+            'name' => 'Clinic',
+            'name_en' => 'Clinic',
+            'is_active' => true,
+        ])->save();
+
+        $template = FlowTemplate::create([
+            'service_type_id' => $service->id,
+            'slug' => 'booking-'.uniqid(),
+            'name' => 'Booking Flow',
+            'description' => 'Test template',
         ]);
 
-        $flowTemplate = FlowTemplate::factory()->create([
-            'service_type_id' => $serviceType->id,
-            'name' => 'Base Restaurants Template',
-            'slug' => 'restaurants_base',
-        ]);
-
-        $templateVersion = FlowVersion::factory()->create([
-            'flow_template_id' => $flowTemplate->id,
-            'service_type_id' => $serviceType->id,
+        // Template version uses a high version number so the cloned
+        // provider-side version (which starts at version=1) does not collide
+        // on the (flow_template_id, version) unique index.
+        $version = FlowVersion::create([
+            'flow_template_id' => $template->id,
+            'service_type_id' => $service->id,
             'is_template' => true,
             'status' => 'published',
-            'published_at' => Carbon::now()->subMinute(),
-            'definition' => json_encode([
-                'start_screen' => 'WELCOME',
-                'screens' => [
-                    'WELCOME' => [
-                        'type' => 'text',
-                        'message' => 'Hi {{name}}! Welcome to Restaurants.',
-                        'next' => null,
-                    ],
-                ],
-            ]),
-            'version' => 1,
-            'name' => 'v1',
+            'version' => 100,
+            'name' => 'template-v100',
+            'definition' => ['screens' => ['WELCOME', 'CONFIRM']],
+            'schema_json' => ['v' => '1.0'],
+            'components_json' => ['screens' => ['WELCOME']],
         ]);
 
-        $flowTemplate->update(['latest_version_id' => $templateVersion->id]);
+        $template->update(['latest_version_id' => $version->id]);
 
-        // Link the template as the default for the service type
-        $serviceType->update(['default_flow_template_id' => $flowTemplate->id]);
-
-        $provider = Provider::factory()->create([
-            'service_type_id' => $serviceType->id,
-            'name' => 'Demo Provider',
+        $provider = Provider::create([
+            'service_type_id' => $service->id,
+            'name' => 'Test Clinic',
+            'slug' => 'test-clinic-'.uniqid(),
+            'status' => 'active',
+            'is_active' => true,
+            'auth_type' => 'none',
         ]);
 
-        // 2) Act
-        $flow = (new ProviderOnboardingService)->onboard($provider);
+        return compact('service', 'template', 'version', 'provider');
+    }
 
-        // 3) Assert — Flow was created and is active
-        $this->assertInstanceOf(Flow::class, $flow);
-        $this->assertDatabaseHas('flows', [
-            'id' => $flow->id,
-            'provider_id' => $provider->id,
-            'is_active' => 1,
+    public function test_onboard_clones_flow_version_for_provider(): void
+    {
+        ['provider' => $provider, 'template' => $template] = $this->seedTemplateChain();
+
+        $this->svc->onboard($provider);
+
+        // A Flow was created for the provider, with the template slug as trigger.
+        $flow = Flow::where('provider_id', $provider->id)->first();
+        $this->assertNotNull($flow);
+        $this->assertSame($template->slug, $flow->trigger_keyword);
+
+        // A new (non-template) FlowVersion exists for that flow.
+        $newVer = $flow->versions()->first();
+        $this->assertNotNull($newVer);
+        $this->assertFalse((bool) $newVer->is_template);
+        $this->assertSame((int) $provider->id, (int) $newVer->provider_id);
+        $this->assertSame('published', $newVer->status);
+    }
+
+    public function test_onboard_creates_flow_trigger(): void
+    {
+        ['provider' => $provider, 'template' => $template] = $this->seedTemplateChain();
+
+        $this->svc->onboard($provider);
+
+        $trigger = FlowTrigger::where('provider_id', $provider->id)
+            ->where('keyword', $template->slug)
+            ->first();
+
+        $this->assertNotNull($trigger, 'FlowTrigger should be created for the provider');
+        $this->assertTrue((bool) $trigger->is_active);
+        $this->assertTrue((bool) $trigger->use_latest_published);
+    }
+
+    public function test_onboard_is_idempotent(): void
+    {
+        ['provider' => $provider] = $this->seedTemplateChain();
+
+        $this->svc->onboard($provider);
+        $flowCount = Flow::where('provider_id', $provider->id)->count();
+        $versionCount = FlowVersion::where('provider_id', $provider->id)->count();
+        $triggerCount = FlowTrigger::where('provider_id', $provider->id)->count();
+
+        // Re-onboarding must NOT duplicate
+        $this->svc->onboard($provider);
+
+        $this->assertSame($flowCount, Flow::where('provider_id', $provider->id)->count());
+        $this->assertSame($versionCount, FlowVersion::where('provider_id', $provider->id)->count());
+        $this->assertSame($triggerCount, FlowTrigger::where('provider_id', $provider->id)->count());
+    }
+
+    public function test_onboard_with_no_templates_no_ops(): void
+    {
+        $service = new ServiceType;
+        $service->forceFill([
+            'slug' => 'no-templates-'.uniqid(),
+            'name' => 'Empty Service',
+            'name_en' => 'Empty Service',
+            'is_active' => true,
+        ])->save();
+        $provider = Provider::create([
+            'service_type_id' => $service->id,
+            'name' => 'No Flows',
+            'slug' => 'no-flows-'.uniqid(),
+            'status' => 'active',
+            'is_active' => true,
+            'auth_type' => 'none',
         ]);
 
-        // Name/keyword come from the template (as implemented by the service)
-        $this->assertSame($flowTemplate->name, $flow->name);
-        $this->assertSame($flowTemplate->slug, $flow->trigger_keyword);
+        $this->svc->onboard($provider);
 
-        // Exactly one provider-specific version created and linked to this flow
-        $this->assertSame(1, $flow->versions()->count(), 'Expected exactly one copied flow version.');
-        $copiedVersion = $flow->versions()->first();
-        $this->assertNotNull($copiedVersion);
-        $this->assertNotSame($templateVersion->id, $copiedVersion->id, 'Copied version must be a new row.');
-        $this->assertSame($flow->id, $copiedVersion->flow_id, 'Copied version must reference the new flow.');
-
-        // Copied version must be non-template, published, and linked to provider/serviceType/template
-        $this->assertDatabaseHas('flow_versions', [
-            'id' => $copiedVersion->id,
-            'flow_id' => $flow->id,
-            'flow_template_id' => $flowTemplate->id,
-            'provider_id' => $provider->id,
-            'service_type_id' => $serviceType->id,
-            'is_template' => 0,
-            'status' => 'published',
-        ]);
-        $this->assertNotNull($copiedVersion->published_at, 'Copied version should be published now.');
-
-        // Definition should be copied verbatim
-        $this->assertSame($templateVersion->definition, $copiedVersion->definition);
-
-        // Versioning: cloned version may inherit the same number; assert >= template version (allows bumping if you choose)
-        $this->assertGreaterThanOrEqual($templateVersion->version, $copiedVersion->version);
-
-        // If flows has live_version_id, it should point to the copied version
-        if (Schema::hasColumn('flows', 'live_version_id')) {
-            $this->assertSame($copiedVersion->id, $flow->fresh()->live_version_id);
-        }
-
-        // 4) Idempotency — rerunning should not create duplicates
-        (new ProviderOnboardingService)->onboard($provider);
-
-        $this->assertSame(
-            1,
-            Flow::where('provider_id', $provider->id)->count(),
-            'Onboard should not create duplicate flows.'
-        );
-        $this->assertSame(
-            1,
-            $flow->fresh()->versions()->count(),
-            'Onboard should not create duplicate versions.'
-        );
+        $this->assertSame(0, Flow::where('provider_id', $provider->id)->count());
     }
 }

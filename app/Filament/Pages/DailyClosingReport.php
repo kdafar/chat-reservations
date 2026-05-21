@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Pages;
 
+use App\Filament\Concerns\HasHelpAction;
 use App\Models\Branch;
 use App\Services\Clinic\DailyClosingReportService;
 use Carbon\Carbon;
@@ -14,18 +15,35 @@ use Filament\Pages\Page;
 
 final class DailyClosingReport extends Page
 {
+    use HasHelpAction;
+
     protected static ?string $navigationIcon = 'heroicon-o-chart-bar';
 
-    protected static ?string $navigationGroup = 'Clinic — Reports';
+    protected static ?string $navigationGroup = null;
 
-    protected static ?string $navigationLabel = 'Daily Closing';
+    protected static ?string $navigationLabel = null;
 
-    protected static ?string $title = 'Daily Closing Report';
+    protected static ?string $title = null;
 
     // Set to high priority for the Clinic group
     protected static ?int $navigationSort = 30;
 
     protected static string $view = 'filament.pages.clinic.daily-closing-report';
+
+    public static function getNavigationGroup(): ?string
+    {
+        return __('common.nav.clinic_reports');
+    }
+
+    public static function getNavigationLabel(): string
+    {
+        return __('pages.daily_closing_report.nav_label');
+    }
+
+    public function getTitle(): string|\Illuminate\Contracts\Support\Htmlable
+    {
+        return __('pages.daily_closing_report.title');
+    }
 
     public ?string $date = null;
 
@@ -86,7 +104,7 @@ final class DailyClosingReport extends Page
 
     protected function getHeaderActions(): array
     {
-        return [
+        return $this->withHelp([
             Action::make('refresh')
                 ->label('Refresh Data')
                 ->color('gray')
@@ -98,6 +116,15 @@ final class DailyClosingReport extends Page
                 ->icon('heroicon-m-printer')
                 ->color('warning')
                 ->action(fn () => $this->dispatch('print-report')),
+        ]);
+    }
+
+    protected function helpContent(): array
+    {
+        return [
+            ['heading' => __('help.pages.daily_closing_report.what.heading'), 'body' => __('help.pages.daily_closing_report.what.body')],
+            ['heading' => __('help.pages.daily_closing_report.how.heading'), 'items' => (array) trans('help.pages.daily_closing_report.how.items')],
+            ['heading' => __('help.pages.daily_closing_report.faq.heading'), 'items' => (array) trans('help.pages.daily_closing_report.faq.items')],
         ];
     }
 

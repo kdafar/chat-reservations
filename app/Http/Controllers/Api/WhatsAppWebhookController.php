@@ -12,7 +12,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
-use Netflie\WhatsAppCloudApi\WebHook;
 
 class WhatsAppWebhookController extends Controller
 {
@@ -29,16 +28,30 @@ class WhatsAppWebhookController extends Controller
         Log::info('WA webhook: request start', $ctx);
 
         try {
-            $webhook = new WebHook;
-
             // Tokens from admin settings first, then config fallback.
             $verifyToken = (string) (Sys::get('whatsapp.verify_token') ?? config('services.whatsapp.verify_token', ''));
             $appSecret = (string) (Sys::get('whatsapp.app_secret') ?? config('services.whatsapp.app_secret', ''));
 
             // === GET: Meta verification handshake
+            //
+            // The Netflie SDK's VerificationRequest::validate() echoes the
+            // challenge back even on a wrong token (it only calls
+            // http_response_code(403), which Laravel discards). That would
+            // let any caller successfully complete Meta's handshake against
+            // our endpoint — so we validate the token ourselves first and
+            // only fall through to the SDK when it actually matches.
             if ($request->isMethod('get')) {
-                $challenge = $webhook->verify($request->query->all(), $verifyToken);
-                Log::info('WA webhook: verification OK (SDK)', $ctx);
+                $mode = (string) $request->query('hub_mode', '');
+                $token = (string) $request->query('hub_verify_token', '');
+                $challenge = (string) $request->query('hub_challenge', '');
+
+                if ($mode !== 'subscribe' || $verifyToken === '' || ! hash_equals($verifyToken, $token)) {
+                    Log::warning('WA webhook: verification REJECTED', $ctx + ['mode' => $mode]);
+
+                    return response('Forbidden', 403);
+                }
+
+                Log::info('WA webhook: verification OK', $ctx);
 
                 return response($challenge, 200); // Meta expects raw challenge
             }

@@ -303,10 +303,10 @@
 
                         <div class="min-w-0">
                             <h1 class="text-2xl md:text-3xl font-black tracking-tight text-gray-900 dark:text-white">
-                                Room Console
+                                {{ __('clinic_views.waiting_patients.heading') }}
                             </h1>
                             <p class="text-sm text-gray-600 dark:text-gray-400 mt-1 font-medium">
-                                Real-time patient queue management
+                                {{ __('clinic_views.waiting_patients.subheading') }}
                             </p>
                         </div>
                     </div>
@@ -318,13 +318,13 @@
                         size="md"
                         class="action-btn shrink-0"
                     >
-                        <span class="font-bold">Refresh</span>
+                        <span class="font-bold">{{ __('clinic_views.waiting_patients.refresh') }}</span>
                     </x-filament::button>
                 </div>
             </div>
 
             {{-- Metrics --}}
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
                 <button type="button"
                     @click="tab='waiting'; syncIndicator()"
                     class="metric-card rounded-3xl p-6 md:p-8 text-left"
@@ -333,17 +333,17 @@
                 >
                     <div class="flex items-start justify-between gap-4">
                         <div class="flex-1 min-w-0">
-                            <div class="text-xs font-bold text-gray-600 dark:text-gray-400 mb-3 uppercase tracking-wider">Waiting Room</div>
+                            <div class="text-xs font-bold text-gray-600 dark:text-gray-400 mb-3 uppercase tracking-wider">{{ __('clinic_views.waiting_patients.waiting_room') }}</div>
                             <div class="text-5xl md:text-6xl font-black text-gray-900 dark:text-white metric-number leading-none mb-3">
                                 {{ $waiting->count() }}
                             </div>
                             <div class="text-xs text-gray-500 dark:text-gray-500 font-semibold">
-                                Awaiting acceptance
+                                {{ __('clinic_views.waiting_patients.awaiting_acceptance') }}
                             </div>
                         </div>
 
                         <div class="status-badge bg-gradient-to-br from-amber-100 to-amber-50 text-amber-800 dark:from-amber-950/40 dark:to-amber-950/20 dark:text-amber-400 shrink-0">
-                            Queue
+                            {{ __('clinic_views.waiting_patients.queue') }}
                         </div>
                     </div>
                 </button>
@@ -356,17 +356,17 @@
                 >
                     <div class="flex items-start justify-between gap-4">
                         <div class="flex-1 min-w-0">
-                            <div class="text-xs font-bold text-gray-600 dark:text-gray-400 mb-3 uppercase tracking-wider">Active Treatment</div>
+                            <div class="text-xs font-bold text-gray-600 dark:text-gray-400 mb-3 uppercase tracking-wider">{{ __('clinic_views.waiting_patients.active_treatment') }}</div>
                             <div class="text-5xl md:text-6xl font-black text-gray-900 dark:text-white metric-number leading-none mb-3">
                                 {{ $inProgress->count() }}
                             </div>
                             <div class="text-xs text-gray-500 dark:text-gray-500 font-semibold">
-                                Currently in room
+                                {{ __('clinic_views.waiting_patients.currently_in_room') }}
                             </div>
                         </div>
 
                         <div class="status-badge bg-gradient-to-br from-blue-100 to-blue-50 text-blue-800 dark:from-blue-950/40 dark:to-blue-950/20 dark:text-blue-400 shrink-0">
-                            Active
+                            {{ __('clinic_views.waiting_patients.active') }}
                         </div>
                     </div>
                 </button>
@@ -379,20 +379,39 @@
                 >
                     <div class="flex items-start justify-between gap-4">
                         <div class="flex-1 min-w-0">
-                            <div class="text-xs font-bold text-gray-600 dark:text-gray-400 mb-3 uppercase tracking-wider">Stock Pending</div>
+                            <div class="text-xs font-bold text-gray-600 dark:text-gray-400 mb-3 uppercase tracking-wider">{{ __('clinic_views.waiting_patients.stock_pending') }}</div>
                             <div class="text-5xl md:text-6xl font-black text-gray-900 dark:text-white metric-number leading-none mb-3">
                                 {{ $awaitingStock->count() }}
                             </div>
                             <div class="text-xs text-gray-500 dark:text-gray-500 font-semibold">
-                                Waiting for inventory
+                                {{ __('clinic_views.waiting_patients.waiting_for_inventory') }}
                             </div>
                         </div>
 
                         <div class="status-badge bg-gradient-to-br from-purple-100 to-purple-50 text-purple-800 dark:from-purple-950/40 dark:to-purple-950/20 dark:text-purple-400 shrink-0">
-                            Pending
+                            {{ __('clinic_views.waiting_patients.pending') }}
                         </div>
                     </div>
                 </button>
+
+                {{-- Awaiting Payment (read-only, reception's queue) --}}
+                <div class="metric-card rounded-3xl p-6 md:p-8 text-left cursor-default" style="color: #e11d48; opacity: 0.9;">
+                    <div class="flex items-start justify-between gap-4">
+                        <div class="flex-1 min-w-0">
+                            <div class="text-xs font-bold text-gray-600 dark:text-gray-400 mb-3 uppercase tracking-wider">{{ __('clinic_views.waiting_patients.awaiting_payment') }}</div>
+                            <div class="text-5xl md:text-6xl font-black text-gray-900 dark:text-white metric-number leading-none mb-3">
+                                {{ $awaitingPaymentCount ?? 0 }}
+                            </div>
+                            <div class="text-xs text-gray-500 dark:text-gray-500 font-semibold">
+                                {{ __('clinic_views.waiting_patients.with_reception_post') }}
+                            </div>
+                        </div>
+
+                        <div class="status-badge bg-gradient-to-br from-rose-100 to-rose-50 text-rose-800 dark:from-rose-950/40 dark:to-rose-950/20 dark:text-rose-400 shrink-0">
+                            {{ __('clinic_views.waiting_patients.billing') }}
+                        </div>
+                    </div>
+                </div>
             </div>
 
             {{-- Tabs --}}
@@ -406,7 +425,7 @@
                             :class="tab === 'waiting' ? 'active bg-white/70 dark:bg-white/5' : 'hover:bg-white/50 dark:hover:bg-white/5'"
                         >
                             <span class="flex items-center justify-center gap-3">
-                                <span>Waiting</span>
+                                <span>{{ __('clinic_views.waiting_patients.tab_waiting') }}</span>
                                 <span class="px-2 py-0.5 text-xs font-black rounded-lg bg-gradient-to-br from-amber-100 to-amber-50 text-amber-900 dark:from-amber-950/60 dark:to-amber-950/40 dark:text-amber-300 shadow-sm">
                                     {{ $waiting->count() }}
                                 </span>
@@ -420,7 +439,7 @@
                             :class="tab === 'in_progress' ? 'active bg-white/70 dark:bg-white/5' : 'hover:bg-white/50 dark:hover:bg-white/5'"
                         >
                             <span class="flex items-center justify-center gap-3">
-                                <span>In Progress</span>
+                                <span>{{ __('clinic_views.waiting_patients.tab_in_progress') }}</span>
                                 <span class="px-2 py-0.5 text-xs font-black rounded-lg bg-gradient-to-br from-blue-100 to-blue-50 text-blue-900 dark:from-blue-950/60 dark:to-blue-950/40 dark:text-blue-300 shadow-sm">
                                     {{ $inProgress->count() }}
                                 </span>
@@ -434,7 +453,7 @@
                             :class="tab === 'awaiting_stock' ? 'active bg-white/70 dark:bg-white/5' : 'hover:bg-white/50 dark:hover:bg-white/5'"
                         >
                             <span class="flex items-center justify-center gap-3">
-                                <span>Awaiting Stock</span>
+                                <span>{{ __('clinic_views.waiting_patients.tab_awaiting_stock') }}</span>
                                 <span class="px-2 py-0.5 text-xs font-black rounded-lg bg-gradient-to-br from-purple-100 to-purple-50 text-purple-900 dark:from-purple-950/60 dark:to-purple-950/40 dark:text-purple-300 shadow-sm">
                                     {{ $awaitingStock->count() }}
                                 </span>
@@ -466,8 +485,8 @@
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                                     </svg>
                                 </div>
-                                <div class="text-base font-bold text-gray-900 dark:text-white mb-2">No patients waiting</div>
-                                <div class="text-sm text-gray-500 dark:text-gray-500 font-medium">The waiting room is currently empty</div>
+                                <div class="text-base font-bold text-gray-900 dark:text-white mb-2">{{ __('clinic_views.waiting_patients.empty_waiting_heading') }}</div>
+                                <div class="text-sm text-gray-500 dark:text-gray-500 font-medium">{{ __('clinic_views.waiting_patients.empty_waiting_body') }}</div>
                             </div>
                         @endforelse
                     </div>
@@ -488,8 +507,8 @@
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                                     </svg>
                                 </div>
-                                <div class="text-base font-bold text-gray-900 dark:text-white mb-2">No active treatments</div>
-                                <div class="text-sm text-gray-500 dark:text-gray-500 font-medium">All rooms are currently available</div>
+                                <div class="text-base font-bold text-gray-900 dark:text-white mb-2">{{ __('clinic_views.waiting_patients.empty_in_progress_heading') }}</div>
+                                <div class="text-sm text-gray-500 dark:text-gray-500 font-medium">{{ __('clinic_views.waiting_patients.empty_in_progress_body') }}</div>
                             </div>
                         @endforelse
                     </div>
@@ -510,8 +529,8 @@
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
                                     </svg>
                                 </div>
-                                <div class="text-base font-bold text-gray-900 dark:text-white mb-2">No patients awaiting stock</div>
-                                <div class="text-sm text-gray-500 dark:text-gray-500 font-medium">No pending stock requests right now</div>
+                                <div class="text-base font-bold text-gray-900 dark:text-white mb-2">{{ __('clinic_views.waiting_patients.empty_awaiting_stock_heading') }}</div>
+                                <div class="text-sm text-gray-500 dark:text-gray-500 font-medium">{{ __('clinic_views.waiting_patients.empty_awaiting_stock_body') }}</div>
                             </div>
                         @endforelse
                     </div>

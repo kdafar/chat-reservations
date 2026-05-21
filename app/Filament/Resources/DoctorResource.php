@@ -7,7 +7,6 @@ use App\Models\Branch;
 use App\Models\Doctor;
 use App\Models\Partner;
 use App\Models\RestaurantTable;
-use App\Models\User;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -21,53 +20,96 @@ class DoctorResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-user-plus';
 
-    protected static ?string $navigationGroup = 'Clinic — Setup';
+    protected static ?string $navigationGroup = null;
 
     protected static ?int $navigationSort = 20;
+
+    public static function getNavigationGroup(): ?string
+    {
+        return __('common.nav.clinic_setup');
+    }
+
+    public static function getNavigationLabel(): string
+    {
+        return __('resources.doctor.nav_label');
+    }
+
+    public static function getModelLabel(): string
+    {
+        return __('resources.doctor.label');
+    }
+
+    public static function getPluralModelLabel(): string
+    {
+        return __('resources.doctor.label_plural');
+    }
 
     public static function form(Form $form): Form
     {
         return $form->schema([
-            Forms\Components\Section::make('Professional Profile')
+            Forms\Components\Section::make(__('clinic_doctor.sections.professional_profile'))
                 ->schema([
                     Forms\Components\FileUpload::make('avatar_path')
-                        ->label('Profile Photo')
+                        ->label(__('clinic_doctor.fields.avatar.label'))
                         ->avatar()
                         ->directory('doctors-avatars')
                         ->columnSpanFull(),
 
                     Forms\Components\TextInput::make('name')
-                        ->label('Doctor Name')
+                        ->label(__('clinic_doctor.fields.name.label'))
                         ->required()
-                        ->placeholder('Dr. John Doe'),
+                        ->placeholder(__('clinic_doctor.fields.name.placeholder')),
 
                     Forms\Components\TextInput::make('specialty')
-                        ->label('Specialty')
+                        ->label(__('clinic_doctor.fields.specialty.label'))
                         ->required()
                         ->datalist([
-                            'General Practice', 'Cardiology', 'Dermatology',
-                            'Pediatrics', 'Dentistry', 'Orthopedics',
+                            __('clinic_doctor.options.specialty_suggestions.general_practice'),
+                            __('clinic_doctor.options.specialty_suggestions.cardiology'),
+                            __('clinic_doctor.options.specialty_suggestions.dermatology'),
+                            __('clinic_doctor.options.specialty_suggestions.pediatrics'),
+                            __('clinic_doctor.options.specialty_suggestions.dentistry'),
+                            __('clinic_doctor.options.specialty_suggestions.orthopedics'),
                         ]),
 
                     Forms\Components\TextInput::make('license_number')
-                        ->label('Medical License #'),
+                        ->label(__('clinic_doctor.fields.license_number.label')),
+
+                    Forms\Components\TextInput::make('email')
+                        ->label(__('clinic_doctor.fields.email.label'))
+                        ->email()
+                        ->required(fn (string $operation) => $operation === 'create')
+                        ->disabled(fn (string $operation) => $operation !== 'create')
+                        ->dehydrated(fn (string $operation) => $operation === 'create')
+                        ->helperText(fn (string $operation) => $operation === 'create'
+                            ? __('clinic_doctor.fields.email.helper')
+                            : __('clinic_doctor.fields.email.locked_helper'))
+                        ->rules(fn (?Doctor $record) => [
+                            Rule::unique('users', 'email')
+                                ->ignore($record?->user_id),
+                        ]),
+
+                    Forms\Components\TextInput::make('phone')
+                        ->label(__('clinic_doctor.fields.phone.label'))
+                        ->tel(),
 
                     Forms\Components\TextInput::make('consultation_fee')
-                        ->label('Consultation Fee')
+                        ->label(__('clinic_doctor.fields.consultation_fee.label'))
                         ->numeric()
                         ->prefix('KWD')
-                        ->required()                 // disallow null
-                        ->default(1)                 // optional: avoids 0/null on first load
-                        ->minValue(0.001)            // disallow 0.00
-                        ->rule('gt:0')               // extra server-side guard (greater than 0)
-                        ->helperText('Must be greater than 0.'),
+                        ->step('0.001')
+                        ->required()
+                        ->default(1)
+                        ->minValue(0.001)
+                        ->rule('gt:0')
+                        ->helperText(__('clinic_doctor.fields.consultation_fee.helper')),
                 ])->columns(2),
 
-            Forms\Components\Section::make('Assignment')
-                ->description('Where does this doctor work?')
+            Forms\Components\Section::make(__('clinic_doctor.sections.assignment'))
+                ->description(__('clinic_doctor.sections.assignment_description'))
                 ->schema([
                     Forms\Components\Select::make('partner_id')
-                        ->label('Clinic (Partner)')
+                        ->label(__('clinic_doctor.fields.partner.label'))
                         ->options(Partner::query()->orderBy('name')->pluck('name', 'id')->all())
                         ->searchable()
                         ->preload()
@@ -76,7 +118,7 @@ class DoctorResource extends Resource
                         ->required(),
 
                     Forms\Components\Select::make('branch_id')
-                        ->label('Primary Branch')
+                        ->label(__('clinic_doctor.fields.primary_branch.label'))
                         ->options(function (Forms\Get $get) {
                             $partnerId = $get('partner_id');
                             if (! $partnerId) {
@@ -97,8 +139,8 @@ class DoctorResource extends Resource
                         ->required(),
 
                     Forms\Components\Select::make('restaurant_table_id')
-                        ->label('Room')
-                        ->helperText('Optional. Room must belong to the selected branch. A room can be assigned to only one doctor.')
+                        ->label(__('clinic_doctor.fields.room.label'))
+                        ->helperText(__('clinic_doctor.fields.room.helper'))
                         ->options(function (Forms\Get $get, ?Doctor $record) {
                             $branchId = $get('branch_id');
 
@@ -134,51 +176,42 @@ class DoctorResource extends Resource
                                     ->ignore($record?->id),
                             ];
                         }),
-                    // NEW (add-only): Link doctor to an existing auth user
-                    Forms\Components\Select::make('user_id')
-                        ->label('Linked User (Login)')
-                        ->helperText('Optional. Link this doctor to a system user for permissions and doctor login.')
-                        ->options(fn () => User::query()
-                            // show users not already linked to another doctor
-                            ->whereDoesntHave('doctorProfile')
-                            ->orderBy('name')
-                            ->pluck('name', 'id')
-                            ->all()
-                        )
-                        ->searchable()
-                        ->preload()
-                        ->nullable()
+                    Forms\Components\Placeholder::make('linked_user_info')
+                        ->label(__('clinic_doctor.fields.linked_user.label'))
+                        ->content(fn (?Doctor $record) => $record?->user
+                            ? $record->user->name.' ('.$record->user->email.')'
+                            : __('clinic_doctor.fields.linked_user.auto_create_note'))
                         ->columnSpanFull(),
                 ])->columns(2),
 
-            Forms\Components\Section::make('Work Schedule')
-                ->description('Define the weekly shifts for this doctor.')
+            Forms\Components\Section::make(__('clinic_doctor.sections.work_schedule'))
+                ->description(__('clinic_doctor.sections.work_schedule_description'))
                 ->schema([
                     Forms\Components\Repeater::make('working_hours')
-                        ->label('Weekly Slots')
-                        ->helperText('Tip: Create one day, then click the "Clone" (duplicate) button to quickly copy it to other days.')
+                        ->label(__('clinic_doctor.fields.weekly_slots.label'))
+                        ->helperText(__('clinic_doctor.fields.weekly_slots.helper'))
                         ->schema([
                             Forms\Components\Select::make('day')
                                 ->options([
-                                    1 => 'Monday',
-                                    2 => 'Tuesday',
-                                    3 => 'Wednesday',
-                                    4 => 'Thursday',
-                                    5 => 'Friday',
-                                    6 => 'Saturday',
-                                    0 => 'Sunday',
+                                    1 => __('clinic_doctor.options.days.monday'),
+                                    2 => __('clinic_doctor.options.days.tuesday'),
+                                    3 => __('clinic_doctor.options.days.wednesday'),
+                                    4 => __('clinic_doctor.options.days.thursday'),
+                                    5 => __('clinic_doctor.options.days.friday'),
+                                    6 => __('clinic_doctor.options.days.saturday'),
+                                    0 => __('clinic_doctor.options.days.sunday'),
                                 ])
                                 ->required()
                                 ->columnSpan(1),
 
                             Forms\Components\Group::make([
                                 Forms\Components\TimePicker::make('start')
-                                    ->label('Start Time')
+                                    ->label(__('clinic_doctor.fields.start_time.label'))
                                     ->seconds(false)
                                     ->required(),
 
                                 Forms\Components\TimePicker::make('end')
-                                    ->label('End Time')
+                                    ->label(__('clinic_doctor.fields.end_time.label'))
                                     ->seconds(false)
                                     ->required(),
                             ])->columns(2)->columnSpan(2),
@@ -193,7 +226,7 @@ class DoctorResource extends Resource
                         ),
 
                     Forms\Components\Toggle::make('is_active')
-                        ->label('Doctor is Available for Booking')
+                        ->label(__('clinic_doctor.fields.is_active.label'))
                         ->default(true),
                 ]),
         ]);
@@ -214,17 +247,17 @@ class DoctorResource extends Resource
                     ->description(fn (Doctor $record) => $record->specialty),
 
                 Tables\Columns\TextColumn::make('branch.name')
-                    ->label('Branch')
+                    ->label(__('clinic_doctor.columns.branch'))
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('room.name')
-                    ->label('Room')
+                    ->label(__('clinic_doctor.columns.room'))
                     ->placeholder('-')
                     ->toggleable(),
 
                 // NEW (add-only): show linked user
                 Tables\Columns\TextColumn::make('user.name')
-                    ->label('User')
+                    ->label(__('clinic_doctor.columns.user'))
                     ->placeholder('-')
                     ->formatStateUsing(function ($state, Doctor $record) {
                         $u = $record->user;
@@ -238,7 +271,7 @@ class DoctorResource extends Resource
                     ->toggleable(),
 
                 Tables\Columns\TextColumn::make('working_hours')
-                    ->label('Shifts')
+                    ->label(__('clinic_doctor.columns.shifts'))
                     ->formatStateUsing(function ($state, \App\Models\Doctor $record) {
                         $value = $record->working_hours;
 
@@ -251,7 +284,7 @@ class DoctorResource extends Resource
                             return '-';
                         }
 
-                        return count($value).' days';
+                        return count($value).' '.__('clinic_doctor.columns.days_suffix');
                     })
                     ->tooltip(function (\App\Models\Doctor $record): ?string {
                         $value = $record->working_hours;
@@ -300,10 +333,10 @@ class DoctorResource extends Resource
 
                 Tables\Columns\IconColumn::make('is_active')
                     ->boolean()
-                    ->label('Active'),
+                    ->label(__('clinic_doctor.columns.active')),
 
                 Tables\Columns\TextColumn::make('consultation_fee')
-                    ->label('Fee')
+                    ->label(__('clinic_doctor.columns.fee'))
                     ->prefix('KWD ')
                     ->sortable()
                     ->alignRight()
@@ -311,57 +344,32 @@ class DoctorResource extends Resource
                     ->formatStateUsing(function ($state) {
                         $v = (float) ($state ?? 0);
 
-                        return $v > 0 ? number_format($v, 2) : '-';
+                        return $v > 0 ? number_format($v, 3) : '-';
                     }),
 
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('branch_id')
-                    ->label('Branch')
+                    ->label(__('clinic_doctor.filters.branch'))
                     ->relationship('branch', 'name'),
             ])
             ->actions([
-                // NEW (add-only): quick link/unlink from table without editing
-                Tables\Actions\Action::make('linkUser')
-                    ->label('Link to User')
-                    ->icon('heroicon-o-link')
-                    ->modalHeading('Link Doctor to a User')
-                    ->form([
-                        Forms\Components\Select::make('user_id')
-                            ->label('User')
-                            ->options(fn (Doctor $record) => User::query()
-                                // allow keeping current linked user in options
-                                ->where(function ($q) use ($record) {
-                                    $q->whereDoesntHave('doctorProfile')
-                                        ->orWhere('id', $record->user_id);
-                                })
-                                ->orderBy('name')
-                                ->pluck('name', 'id')
-                                ->all()
-                            )
-                            ->searchable()
-                            ->preload()
-                            ->nullable(),
-                    ])
-                    ->action(function (Doctor $record, array $data): void {
-                        $record->update([
-                            'user_id' => $data['user_id'] ?? null,
-                        ]);
-                    }),
-
-                Tables\Actions\Action::make('unlinkUser')
-                    ->label('Unlink User')
-                    ->icon('heroicon-o-x-mark')
-                    ->color('gray')
-                    ->visible(fn (Doctor $record) => (bool) $record->user_id)
-                    ->requiresConfirmation()
-                    ->action(fn (Doctor $record) => $record->update(['user_id' => null])),
-
                 Tables\Actions\EditAction::make(),
+                Tables\Actions\DeleteAction::make()
+                    ->modalHeading(__('clinic_doctor.actions.delete.modal_heading'))
+                    ->modalDescription(fn (Doctor $record) => $record->user_id
+                        ? __('clinic_doctor.actions.delete.modal_description_with_user', [
+                            'email' => optional($record->user)->email ?: '-',
+                        ])
+                        : __('clinic_doctor.actions.delete.modal_description'))
+                    ->modalSubmitActionLabel(__('clinic_doctor.actions.delete.submit')),
             ])
             ->bulkActions([
                 Tables\Actions\DeleteBulkAction::make(),
-            ]);
+            ])
+            ->emptyStateHeading(__('resources.doctor.empty_heading'))
+            ->emptyStateDescription(__('resources.doctor.empty_description'))
+            ->emptyStateIcon('heroicon-o-academic-cap');
     }
 
     public static function getRelations(): array

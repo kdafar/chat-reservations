@@ -26,9 +26,9 @@ class AdminDashboardRoute extends Page
 
         if ($user->hasRole('doctor') === true) {
             $this->redirect(route('filament.admin.pages.waiting-patients'));
-             return;
+
+            return;
         }
-        
 
         // Admin -> Executive Dashboard (only if they can access it)
         // (Keeps permission logic centralized in ExecutiveDashboard::canAccess())

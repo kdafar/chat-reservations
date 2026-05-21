@@ -23,11 +23,13 @@ class VisitPayment extends Model
         'collected_by_user_id',
         'paid_at',
         'kind',
+        'meta',
     ];
 
     protected $casts = [
         'amount' => 'decimal:3',
         'paid_at' => 'datetime',
+        'meta' => 'array',
     ];
 
     public function visit(): BelongsTo

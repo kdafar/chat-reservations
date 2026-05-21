@@ -6,7 +6,9 @@
 @import "@fortawesome/fontawesome-free/css/all.min.css";
 @import "sweetalert2/dist/sweetalert2.min.css";
 
-
+/* Clinic-wide design system: glass cards, KPI tiles, status badges, etc.
+   See resources/css/clinic-ui.css for the full component list. */
+@import "./clinic-ui.css";
 
 @source "../views/**/*.blade.php";
 @source "../views/filament/**/*.blade.php";

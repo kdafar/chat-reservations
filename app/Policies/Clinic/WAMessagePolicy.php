@@ -4,5 +4,5 @@ namespace App\Policies\Clinic;
 
 class WAMessagePolicy extends BaseClinicFilamentPolicy
 {
-    protected static string $resourceKey = 'WAMessage';
+    protected static string $resourceKey = 'wa_messages';
 }

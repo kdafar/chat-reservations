@@ -26,6 +26,7 @@ class User extends Authenticatable implements MustVerifyEmailContract
         'status',
         'marketing_opt_in',
         'default_address_id',
+        'preferred_locale',
     ];
 
     protected $hidden = [
@@ -84,33 +85,28 @@ class User extends Authenticatable implements MustVerifyEmailContract
     // Gate Partner Panel access
     public function canAccessPanel(Panel $panel): bool
     {
-        // Only apply this rule to the Filament "admin" panel.
-        if ($panel->getId() !== 'admin') {
-            return false;
-        }
-
-        // Optional: keep "status" safety if you use it (won't break if column missing)
-        // If you are sure `status` exists and you want to block inactive users, keep it.
         if (property_exists($this, 'status') || array_key_exists('status', $this->attributes ?? [])) {
             if (($this->status ?? null) !== 'active') {
                 return false;
             }
         }
 
-        // If Spatie roles exist, allow access to anyone with at least one role.
-        if (method_exists($this, 'roles')) {
-            return $this->roles()->exists();
+        if ($panel->getId() === 'partner') {
+            return \DB::table('partner_user')->where('user_id', $this->id)->exists();
         }
 
-        // If your project uses hasRole() helper:
-        if (method_exists($this, 'hasRole')) {
-            // Some implementations might not have roles relation visible, so be safe.
-            // We cannot enumerate roles here; instead require that the roles relation exists.
-            // If hasRole() exists but roles() doesn't, allow login (or tighten if you want).
-            return true;
+        if ($panel->getId() === 'admin') {
+            if (method_exists($this, 'roles')) {
+                return $this->roles()->exists();
+            }
+
+            if (method_exists($this, 'hasRole')) {
+                return true;
+            }
+
+            return false;
         }
 
-        // No role system detected -> default deny (safer).
         return false;
     }
 

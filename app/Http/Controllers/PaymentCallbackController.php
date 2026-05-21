@@ -18,63 +18,107 @@ class PaymentCallbackController extends Controller
     {
         $paymentId = $request->input('paymentId');
         $accountId = $request->input('account_id');
+        $sig = (string) $request->input('sig', '');
 
         if (! $paymentId || ! $accountId) {
             return $this->failed($request, 'Invalid payment link parameters.');
         }
 
-        // 1. Load Credentials securely
+        // 1. Verify the account_id wasn't tampered with on the way back.
+        // Without this, anyone with the callback URL could swap account_id
+        // and trigger an API call against a different merchant's account.
+        $expectedSig = MyFatoorahService::accountSig((string) $accountId);
+        if (! hash_equals($expectedSig, $sig)) {
+            Log::warning('[PaymentCallback] invalid account_id signature', [
+                'payment_id' => $paymentId,
+                'account_id' => $accountId,
+            ]);
+
+            return $this->failed($request, 'Invalid payment link signature.');
+        }
+
+        // 2. Load Credentials securely
         $gatewayAccount = GatewayAccount::find($accountId);
         if (! $gatewayAccount || empty($gatewayAccount->credentials['api_key'])) {
             return $this->failed($request, 'Clinic payment configuration invalid.');
         }
 
-        // 2. Verify Payment with MyFatoorah API via SDK Service
+        // 3. Verify Payment with MyFatoorah API via SDK Service
         $status = $this->checkPaymentStatus($paymentId, $gatewayAccount);
 
         if (! $status['success']) {
             return $this->failed($request, $status['message']);
         }
 
-        // FIX: Use InvoiceValue from root object (Safer than nested Transaction array)
         $paidAmount = $status['data']['InvoiceValue'] ?? 0;
 
-        // 3. Process the Booking
-        // Reference was set as "BKG-{booking_code}"
+        // 4. Process the Booking. Reference was set as "BKG-{booking_code}".
         $bookingCode = str_replace('BKG-', '', $status['data']['CustomerReference'] ?? '');
         $booking = Booking::where('booking_code', $bookingCode)->first();
 
         if (! $booking) {
-            Log::error("Payment Success but Booking not found: $bookingCode");
+            Log::error('[PaymentCallback] booking not found after successful payment', [
+                'payment_id' => $paymentId,
+                'booking_code' => $bookingCode,
+                'account_id' => $accountId,
+                'amount' => $paidAmount,
+            ]);
 
             return $this->failed($request, 'Booking record not found. Please contact the clinic.');
         }
 
-        // 4. Record Payment in Database (Idempotent)
+        // 5. Record Payment in Database.
+        // Idempotency layers:
+        //   - updateOrCreate handles serial duplicates (single thread).
+        //   - the unique (method, reference_no) index added in
+        //     2026_05_20_144820 catches parallel-callback races; we map the
+        //     resulting SQLSTATE 23000 to a no-op success path.
         try {
             DB::transaction(function () use ($booking, $status, $paymentId, $paidAmount) {
-                // Ensure a Visit exists to attach payment to (Aligned with BookingResource logic)
                 $visit = $this->ensureVisit($booking);
 
-                // Prevent duplicate entry
-                $exists = VisitPayment::where('reference_no', $paymentId)->exists();
+                try {
+                    VisitPayment::updateOrCreate(
+                        [
+                            'reference_no' => $paymentId,
+                            'method' => 'myfatoorah',
+                        ],
+                        [
+                            'visit_id' => $visit->id,
+                            'amount' => $paidAmount,
+                            'kind' => 'consultation',
+                            'status' => 'paid',
+                            'paid_at' => Carbon::parse($status['data']['CreatedDate'] ?? now()),
+                            'collected_by_user_id' => null,
+                            'meta' => $status['data'],
+                        ]
+                    );
+                } catch (\Illuminate\Database\QueryException $e) {
+                    // Race: a parallel callback inserted between our existence
+                    // check and our insert. Row IS now in the DB. Treat as
+                    // idempotent success.
+                    if (($e->errorInfo[0] ?? null) === '23000') {
+                        Log::info('[PaymentCallback] duplicate callback (race) — already recorded', [
+                            'payment_id' => $paymentId,
+                            'booking_code' => $booking->booking_code,
+                        ]);
 
-                if (! $exists) {
-                    VisitPayment::create([
-                        'visit_id' => $visit->id,
-                        'amount' => $paidAmount,
-                        'method' => 'myfatoorah',
-                        'kind' => 'consultation',
-                        'status' => 'paid',
-                        'reference_no' => $paymentId,
-                        'paid_at' => Carbon::parse($status['data']['CreatedDate'] ?? now()),
-                        'collected_by_user_id' => null, // System / Online
-                        'meta' => $status['data'], // Store full API response for debugging
-                    ]);
+                        return;
+                    }
+                    throw $e;
                 }
             });
-        } catch (\Exception $e) {
-            Log::error('DB Error saving payment: '.$e->getMessage());
+        } catch (\Throwable $e) {
+            // Money was received from MyFatoorah but our DB write failed.
+            // Log loudly so the row can be reconciled by hand.
+            Log::critical('[PaymentCallback] money received, DB save failed', [
+                'payment_id' => $paymentId,
+                'account_id' => $accountId,
+                'booking_code' => $bookingCode,
+                'amount' => $paidAmount,
+                'error' => $e->getMessage(),
+                'mf_data' => $status['data'] ?? null,
+            ]);
 
             return $this->failed($request, 'Payment received but system update failed. Please show this screen to reception.');
         }

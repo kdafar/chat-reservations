@@ -19,28 +19,44 @@ class BranchBlackoutResource extends Resource
     protected static ?string $navigationIcon = 'heroicon-o-no-symbol';
 
     // UI rename only
-    protected static ?string $navigationGroup = 'Clinic — Scheduling';
+    protected static ?string $navigationGroup = null;
 
     // nicer wording in sidebar
-    protected static ?string $navigationLabel = 'Clinic Closures';
-
-    protected static ?string $modelLabel = 'Clinic Closure';
-
-    protected static ?string $pluralModelLabel = 'Clinic Closures';
+    protected static ?string $navigationLabel = null;
 
     protected static ?string $slug = 'branch-blackouts';
 
     protected static ?int $navigationSort = 30;
 
+    public static function getNavigationGroup(): ?string
+    {
+        return __('common.nav.clinic_scheduling');
+    }
+
+    public static function getNavigationLabel(): string
+    {
+        return __('resources.branch_blackout.nav_label');
+    }
+
+    public static function getModelLabel(): string
+    {
+        return __('resources.branch_blackout.label');
+    }
+
+    public static function getPluralModelLabel(): string
+    {
+        return __('resources.branch_blackout.label_plural');
+    }
+
     public static function form(Form $form): Form
     {
         return $form->schema([
-            Forms\Components\Section::make('Clinic closure / unavailable date')
-                ->description('Block appointment booking for a specific clinic branch on a given date.')
+            Forms\Components\Section::make(__('clinic_misc.branch_blackout.section'))
+                ->description(__('clinic_misc.branch_blackout.section_desc'))
                 ->columns(3)
                 ->schema([
                     Forms\Components\Select::make('branch_id')
-                        ->label('Clinic Branch')
+                        ->label(__('clinic_misc.branch_blackout.branch'))
                         ->relationship('branch', 'id')
                         ->required()
                         ->searchable()
@@ -54,12 +70,12 @@ class BranchBlackoutResource extends Resource
                         ),
 
                     Forms\Components\DatePicker::make('date')
-                        ->label('Closure date')
+                        ->label(__('clinic_misc.branch_blackout.date'))
                         ->required(),
 
                     Forms\Components\TextInput::make('reason')
-                        ->label('Reason (optional)')
-                        ->placeholder('Holiday, maintenance, staff training…')
+                        ->label(__('clinic_misc.branch_blackout.reason'))
+                        ->placeholder(__('clinic_misc.branch_blackout.reason_placeholder'))
                         ->maxLength(120),
                 ]),
         ]);
@@ -131,8 +147,8 @@ class BranchBlackoutResource extends Resource
                     Tables\Actions\DeleteBulkAction::make()->label('Delete selected'),
                 ]),
             ])
-            ->emptyStateHeading('No closures yet')
-            ->emptyStateDescription('Add clinic closures to prevent booking on unavailable dates.');
+            ->emptyStateHeading(__('resources.branch_blackout.empty_heading'))
+            ->emptyStateDescription(__('resources.branch_blackout.empty_description'));
     }
 
     public static function getPages(): array
