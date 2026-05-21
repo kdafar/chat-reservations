@@ -2,6 +2,7 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
@@ -13,6 +14,11 @@ return new class extends Migration
             $t->dateTime('res_end')->nullable()->after('res_start');
             $t->index(['branch_id', 'res_start', 'res_end']);
         });
+
+        // Backfill uses STR_TO_DATE — MySQL-only. Skip on SQLite (test env).
+        if (DB::connection()->getDriverName() !== 'mysql') {
+            return;
+        }
 
         // Optional lightweight backfill for res_start from existing fields
         DB::statement("

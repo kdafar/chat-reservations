@@ -7,14 +7,16 @@ return new class extends Migration
 {
     public function up(): void
     {
-        // 1) Expand allowed values
-        DB::statement("
-            ALTER TABLE `gateway_accounts`
-            MODIFY `owner_type`
-            ENUM('system','partner','branch','service')
-            NOT NULL
-            DEFAULT 'system'
-        ");
+        // 1) Expand allowed values (MySQL-only; SQLite has no ENUM type).
+        if (DB::connection()->getDriverName() === 'mysql') {
+            DB::statement("
+                ALTER TABLE `gateway_accounts`
+                MODIFY `owner_type`
+                ENUM('system','partner','branch','service')
+                NOT NULL
+                DEFAULT 'system'
+            ");
+        }
 
         // 2) Fix any invalid / empty / null values
         DB::statement("
@@ -46,12 +48,14 @@ return new class extends Migration
             END
         ");
 
-        DB::statement("
-            ALTER TABLE `gateway_accounts`
-            MODIFY `owner_type`
-            ENUM('system','partner')
-            NOT NULL
-            DEFAULT 'system'
-        ");
+        if (DB::connection()->getDriverName() === 'mysql') {
+            DB::statement("
+                ALTER TABLE `gateway_accounts`
+                MODIFY `owner_type`
+                ENUM('system','partner')
+                NOT NULL
+                DEFAULT 'system'
+            ");
+        }
     }
 };

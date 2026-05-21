@@ -24,6 +24,12 @@ return new class extends Migration
             $table->timestamp('refreshed_at')->nullable();
         });
 
+        // The data backfill below uses MySQL CTEs + window functions
+        // + @@SESSION.sql_mode. Skip everything below on SQLite (test env).
+        if (DB::connection()->getDriverName() !== 'mysql') {
+            return;
+        }
+
         // --- Relax sql_mode (session-only) to avoid NO_ZERO_DATE tripping mid-insert
         $origMode = (string) (DB::selectOne('SELECT @@SESSION.sql_mode AS m')->m ?? '');
         $relaxed = collect(explode(',', $origMode))

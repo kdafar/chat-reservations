@@ -7,6 +7,12 @@ return new class extends Migration
 {
     public function up(): void
     {
+        // The view body uses REGEXP_REPLACE / STR_TO_DATE / CONCAT — MySQL-only.
+        // Skip on non-MySQL drivers (SQLite test env).
+        if (DB::connection()->getDriverName() !== 'mysql') {
+            return;
+        }
+
         DB::statement('DROP VIEW IF EXISTS vw_audience_metrics');
 
         DB::statement(<<<'SQL'

@@ -11,11 +11,16 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // MySQL ENUM MODIFY — skip on non-MySQL drivers (SQLite test env).
+        if (\DB::connection()->getDriverName() !== 'mysql') {
+            return;
+        }
+
         // We strictly define the new list including OLD values + NEW 'checked_in' value
         \DB::statement("
-            ALTER TABLE bookings 
-            MODIFY COLUMN status 
-            ENUM('pending', 'confirmed', 'cancelled', 'completed', 'checked_in') 
+            ALTER TABLE bookings
+            MODIFY COLUMN status
+            ENUM('pending', 'confirmed', 'cancelled', 'completed', 'checked_in')
             NOT NULL DEFAULT 'pending'
         ");
     }

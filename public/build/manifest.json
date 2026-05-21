@@ -40,7 +40,7 @@
     "src": "node_modules/leaflet/dist/images/marker-shadow.png"
   },
   "resources/css/app.css": {
-    "file": "assets/app-DXSiOol-.css",
+    "file": "assets/app-B6rAGhxL.css",
     "src": "resources/css/app.css",
     "isEntry": true,
     "names": [
@@ -48,7 +48,7 @@
     ]
   },
   "resources/css/filament-dashboard.css": {
-    "file": "assets/filament-dashboard-B7QG2jt9.css",
+    "file": "assets/filament-dashboard-4kMfqIqy.css",
     "src": "resources/css/filament-dashboard.css",
     "isEntry": true,
     "names": [

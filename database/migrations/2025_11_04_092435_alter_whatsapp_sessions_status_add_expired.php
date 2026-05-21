@@ -7,6 +7,11 @@ return new class extends Migration
 {
     public function up(): void
     {
+        // MySQL ENUM MODIFY — skip on non-MySQL drivers (SQLite test env).
+        if (DB::connection()->getDriverName() !== 'mysql') {
+            return;
+        }
+
         // Add 'expired' (and keep existing values)
         DB::statement("
             ALTER TABLE `whatsapp_sessions`

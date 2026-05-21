@@ -23,7 +23,7 @@ return [
         \App\Models\BranchAvailabilityRule::class => 'branch_availability_rule',
         \App\Models\RestaurantTable::class => 'restaurant_table',
         \App\Models\ClinicStockMovement::class => 'clinic_stock_movement',
-        \App\Models\ClinicItemStock::class => 'clinic_item _stock',
+        \App\Models\ClinicItemStock::class => 'clinic_item_stocks',
         \App\Models\User::class => 'user',
         \App\Models\ReservationTerm::class => 'reservation_term',
         \App\Models\Partner::class => 'partner',
@@ -33,18 +33,26 @@ return [
         \App\Models\WhatsappTrigger::class => 'whatsapp_trigger',
         \App\Models\WhatsappFlowState::class => 'whatsapp_flow_state',
         \App\Models\WhatsappContact::class => 'whatsapp_contact',
-        \App\Models\WAMessageLog::class => 'WAMessage_log',
-        \App\Models\WAMessage::class => 'WAMessage',
-        \App\Models\WACommand::class => 'WACommand',
+        \App\Models\WAMessageLog::class => 'wa_message_logs',
+        \App\Models\WAMessage::class => 'wa_messages',
+        \App\Models\WACommand::class => 'wa_commands',
         \App\Models\MessageText::class => 'message_text',
         \App\Models\AudienceMetric::class => 'audience_metric',
         \App\Models\SystemSetting::class => 'system_setting',
-        \App\Models\BulkInviteCampaign::class => 'bulk_invite_Campaign',
+        \App\Models\BulkInviteCampaign::class => 'bulk_invite_campaigns',
         Role::class => 'roles',
         Permission::class => 'permissions',
         \App\Models\VisitStockRequest::class => 'visit_stock_request',
         \App\Models\GatewayAccount::class => 'gateway_account',
         \App\Models\ClinicPackage::class => 'clinic_packages',
+
+        // Accounting layer
+        \App\Models\Accounting\Account::class => 'accounting_accounts',
+        \App\Models\Accounting\JournalEntry::class => 'accounting_journal_entries',
+        \App\Models\Accounting\AccountingPeriod::class => 'accounting_periods',
+        \App\Models\Accounting\Vendor::class => 'accounting_vendors',
+        \App\Models\Accounting\Expense::class => 'accounting_expenses',
+        \App\Models\Accounting\BankReconciliation::class => 'accounting_bank_reconciliations',
     ],
 
     /**
@@ -64,5 +72,12 @@ return [
         'whats-app-rate-limit-settings',
         'waiting_patients',
         'nurse_station',
+
+        // Accounting custom pages
+        'accounting_general_ledger',
+        'accounting_trial_balance',
+        'accounting_balance_sheet',
+        'accounting_profit_and_loss',
+        'accounting_cash_flow',
     ],
 ];

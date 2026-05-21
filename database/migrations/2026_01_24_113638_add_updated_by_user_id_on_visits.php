@@ -12,7 +12,7 @@ return new class extends Migration
             // Doctor accept workflow (add-only)
 
             // 1) visits.updated_by_user_id
-            if (!Schema::hasColumn('visits', 'updated_by_user_id')) {
+            if (! Schema::hasColumn('visits', 'updated_by_user_id')) {
                 $table->unsignedBigInteger('updated_by_user_id')->nullable()->after('accepted_by_user_id');
 
                 $table->index('updated_by_user_id');
@@ -23,7 +23,7 @@ return new class extends Migration
             }
 
             // 2) visits.queued_at (needed by ORDER BY queued_at)
-            if (!Schema::hasColumn('visits', 'queued_at')) {
+            if (! Schema::hasColumn('visits', 'queued_at')) {
                 // place after updated_by_user_id if it exists, otherwise after accepted_by_user_id
                 $after = Schema::hasColumn('visits', 'updated_by_user_id') ? 'updated_by_user_id' : 'accepted_by_user_id';
 
@@ -32,7 +32,7 @@ return new class extends Migration
             }
 
             // Optional: only add if you actually use accepted_at in code
-            if (!Schema::hasColumn('visits', 'accepted_at')) {
+            if (! Schema::hasColumn('visits', 'accepted_at')) {
                 $table->timestamp('accepted_at')->nullable()->after('accepted_by_user_id');
                 $table->index('accepted_at');
             }
@@ -40,7 +40,7 @@ return new class extends Migration
 
         // FIX: query expects visit_stock_requests.updated_by_user_id
         Schema::table('visit_stock_requests', function (Blueprint $table) {
-            if (!Schema::hasColumn('visit_stock_requests', 'updated_by_user_id')) {
+            if (! Schema::hasColumn('visit_stock_requests', 'updated_by_user_id')) {
                 // pick a sensible placement for your table; "after('updated_at')" is usually safe if it exists
                 $after = Schema::hasColumn('visit_stock_requests', 'updated_at') ? 'updated_at' : null;
 

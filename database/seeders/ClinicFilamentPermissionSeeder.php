@@ -39,10 +39,26 @@ class ClinicFilamentPermissionSeeder extends Seeder
         $admin->syncPermissions(Permission::where('guard_name', 'web')->get());
 
         // Optional clinic roles (create now, assign later)
-        Role::firstOrCreate(['name' => 'clinic_admin', 'guard_name' => 'web']);
+        $clinicAdmin = Role::firstOrCreate(['name' => 'clinic_admin', 'guard_name' => 'web']);
         Role::firstOrCreate(['name' => 'clinic_manager', 'guard_name' => 'web']);
         Role::firstOrCreate(['name' => 'clinic_doctor', 'guard_name' => 'web']);
         Role::firstOrCreate(['name' => 'clinic_reception', 'guard_name' => 'web']);
+
+        // Accounting role: full access to all accounting resources + report pages
+        $accountant = Role::firstOrCreate(['name' => 'accountant', 'guard_name' => 'web']);
+
+        $accountingPermissions = Permission::where('guard_name', 'web')
+            ->where(function ($q) {
+                $q->where('name', 'like', '%_accounting_%')
+                    ->orWhere('name', 'like', 'view_accounting_%');
+            })
+            ->get();
+
+        $accountant->syncPermissions($accountingPermissions);
+
+        // clinic_admin also gets full accounting access (merged with anything it already has)
+        $existing = $clinicAdmin->permissions()->pluck('id')->all();
+        $clinicAdmin->syncPermissions(array_unique(array_merge($existing, $accountingPermissions->pluck('id')->all())));
 
         app(PermissionRegistrar::class)->forgetCachedPermissions();
     }
