@@ -1,0 +1,137 @@
+<script setup>
+import { computed, reactive } from 'vue'
+import { Deferred, Head, router, usePage } from '@inertiajs/vue3'
+import AppLayout from '../../../Layouts/AppLayout.vue'
+defineOptions({ layout: AppLayout })
+import Icon from '../../../Components/Icon.vue'
+import PrintHeader from '../../../Components/PrintHeader.vue'
+import Skeleton from '../../../Components/Skeleton.vue'
+import DateTimePicker from '../../../Components/DateTimePicker.vue'
+
+const props = defineProps({ filters: Object, report: Object })
+const pageProps = usePage()
+const locale = computed(() => pageProps.props.locale ?? 'en')
+const isRtl = computed(() => locale.value === 'ar')
+
+const t = computed(() => isRtl.value ? {
+    title: 'الميزانية العمومية', eyebrow: 'تقارير المحاسبة', asOf: 'كما في', print: 'طباعة',
+    assets: 'الأصول', lessContra: 'ناقص: مجمع الإهلاك', totalAssets: 'إجمالي الأصول',
+    liabilities: 'الخصوم', equity: 'حقوق الملكية', retained: 'أرباح محتجزة (الفترة)', totalLiab: 'إجمالي الخصوم',
+    totalEquity: 'إجمالي حقوق الملكية', totalLE: 'إجمالي الخصوم وحقوق الملكية',
+    balanced: 'متوازنة', unbalanced: 'غير متوازنة', empty: 'لا يوجد',
+} : {
+    title: 'Balance Sheet', eyebrow: 'Accounting Reports', asOf: 'As of', print: 'Print',
+    assets: 'Assets', lessContra: 'Less: accumulated depreciation', totalAssets: 'Total assets',
+    liabilities: 'Liabilities', equity: 'Equity', retained: 'Retained earnings (period)', totalLiab: 'Total liabilities',
+    totalEquity: 'Total equity', totalLE: 'Total liabilities & equity',
+    balanced: 'Balanced', unbalanced: 'Out of balance', empty: 'None',
+})
+
+const f = reactive({ as_of: props.filters.as_of })
+function apply() {
+    router.get(route('v2.reports.accounting.balance-sheet'), { as_of: f.as_of }, { preserveState: true, preserveScroll: true, replace: true })
+}
+const fmt = (n) => Number(n ?? 0).toFixed(3)
+const amount = (r) => r.is_parent ? r.rollup : r.own
+</script>
+
+<template>
+    <Head :title="t.title" />
+        <PrintHeader :title="t.title" />
+    <div style="padding:24px; max-width:1080px; margin:0 auto;">
+        <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:16px;">
+            <div>
+                <div class="eyebrow">{{ t.eyebrow }}</div>
+                <h1 style="margin:4px 0 0; font-size:22px; font-weight:700; color:var(--fg);">{{ t.title }}</h1>
+            </div>
+            <button class="btn btn-ghost no-print" onclick="window.print()"><Icon name="printer" :size="14" /><span>{{ t.print }}</span></button>
+        </div>
+
+        <div class="card no-print" style="padding:12px; margin-bottom:16px; display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;">
+            <div><label class="label">{{ t.asOf }}</label><DateTimePicker v-model="f.as_of" :with-time="false" :locale="locale" :width="170" @update:model-value="apply" /></div>
+        </div>
+
+        <Deferred data="report">
+            <template #fallback>
+                <div class="rgrid-2" style="display:grid; grid-template-columns:1fr 1fr; gap:16px;"><Skeleton height="360px" radius="12px" /><Skeleton height="360px" radius="12px" /></div>
+            </template>
+
+            <div class="rgrid-2" style="display:grid; grid-template-columns:1fr 1fr; gap:16px; align-items:start;">
+                <!-- Assets -->
+                <div class="card" style="padding:8px 4px;">
+                    <table class="bs">
+                        <tbody>
+                            <tr class="sec"><td colspan="2">{{ t.assets }}</td></tr>
+                            <tr v-for="r in report.assets_rows" :key="'as'+r.code" :class="r.is_parent ? 'parent' : ''">
+                                <td :style="{ paddingInlineStart: (16 + r.depth*18) + 'px' }"><span class="code mono">{{ r.code }}</span> {{ r.name }}</td>
+                                <td class="num mono">{{ fmt(amount(r)) }}</td>
+                            </tr>
+                            <template v-if="report.contra_assets_rows.length">
+                                <tr class="sec sub"><td colspan="2">{{ t.lessContra }}</td></tr>
+                                <tr v-for="r in report.contra_assets_rows" :key="'ca'+r.code" :class="r.is_parent ? 'parent' : ''">
+                                    <td :style="{ paddingInlineStart: (16 + r.depth*18) + 'px' }"><span class="code mono">{{ r.code }}</span> {{ r.name }}</td>
+                                    <td class="num mono neg">−{{ fmt(amount(r)) }}</td>
+                                </tr>
+                            </template>
+                            <tr class="total"><td>{{ t.totalAssets }}</td><td class="num mono">{{ fmt(report.total_assets) }}</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Liabilities + Equity -->
+                <div class="card" style="padding:8px 4px;">
+                    <table class="bs">
+                        <tbody>
+                            <tr class="sec"><td colspan="2">{{ t.liabilities }}</td></tr>
+                            <tr v-for="r in report.liabilities_rows" :key="'li'+r.code" :class="r.is_parent ? 'parent' : ''">
+                                <td :style="{ paddingInlineStart: (16 + r.depth*18) + 'px' }"><span class="code mono">{{ r.code }}</span> {{ r.name }}</td>
+                                <td class="num mono">{{ fmt(amount(r)) }}</td>
+                            </tr>
+                            <tr v-if="!report.liabilities_rows.length"><td class="muted" style="padding-inline-start:16px;">{{ t.empty }}</td><td></td></tr>
+                            <tr v-for="r in report.contra_liabilities_rows" :key="'cl'+r.code" :class="r.is_parent ? 'parent' : ''">
+                                <td :style="{ paddingInlineStart: (16 + r.depth*18) + 'px' }"><span class="code mono">{{ r.code }}</span> {{ r.name }}</td>
+                                <td class="num mono neg">−{{ fmt(amount(r)) }}</td>
+                            </tr>
+                            <tr class="total sub"><td>{{ t.totalLiab }}</td><td class="num mono">{{ fmt(report.total_liabilities) }}</td></tr>
+
+                            <tr class="sec"><td colspan="2">{{ t.equity }}</td></tr>
+                            <tr v-for="r in report.equity_rows" :key="'eq'+r.code" :class="r.is_parent ? 'parent' : ''">
+                                <td :style="{ paddingInlineStart: (16 + r.depth*18) + 'px' }"><span class="code mono">{{ r.code }}</span> {{ r.name }}</td>
+                                <td class="num mono">{{ fmt(amount(r)) }}</td>
+                            </tr>
+                            <tr><td style="padding-inline-start:16px;">{{ t.retained }}</td><td class="num mono">{{ fmt(report.retained_earnings) }}</td></tr>
+                            <tr class="total sub"><td>{{ t.totalEquity }}</td><td class="num mono">{{ fmt(report.total_equity) }}</td></tr>
+
+                            <tr class="total"><td>{{ t.totalLE }}</td><td class="num mono">{{ fmt(report.total_le) }}</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div style="margin-top:12px; display:flex; justify-content:flex-end;">
+                <span :class="report.balanced ? 'badge-ok' : 'badge-err'">
+                    <Icon :name="report.balanced ? 'check-circle' : 'alert-triangle'" :size="13" style="vertical-align:-2px;" />
+                    {{ report.balanced ? t.balanced : (t.unbalanced + ' (Δ ' + fmt(report.delta) + ')') }}
+                </span>
+            </div>
+        </Deferred>
+    </div>
+</template>
+
+<style scoped>
+.eyebrow { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.06em; color:var(--fg-faint); }
+.label { display:block; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.04em; color:var(--fg-faint); margin-bottom:4px; }
+.bs { width:100%; border-collapse:collapse; font-size:13px; }
+.bs td { padding:7px 16px; }
+.bs .num { text-align:end; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.bs .code { color:var(--fg-faint); font-size:11px; margin-inline-end:6px; }
+.bs .neg { color:var(--err, #dc2626); }
+.bs .muted { color:var(--fg-faint); font-style:italic; }
+.bs tr.parent td { font-weight:600; }
+.bs tr.sec td { font-size:11px; text-transform:uppercase; letter-spacing:0.05em; color:var(--fg-faint); font-weight:700; padding-top:14px; border-bottom:1px solid var(--line); }
+.bs tr.sec.sub td { padding-top:10px; }
+.bs tr.total td { font-weight:700; border-top:2px solid var(--line); }
+.bs tr.total.sub td { font-weight:600; border-top:1px solid var(--line); background:var(--bg-hover); }
+.badge-ok { display:inline-flex; align-items:center; gap:5px; padding:4px 12px; font-size:12px; font-weight:600; border:1px solid var(--ok); color:var(--ok); border-radius:999px; }
+.badge-err { display:inline-flex; align-items:center; gap:5px; padding:4px 12px; font-size:12px; font-weight:600; border:1px solid var(--err, #dc2626); color:var(--err, #dc2626); border-radius:999px; }
+</style>

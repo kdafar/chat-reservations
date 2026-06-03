@@ -131,6 +131,7 @@ class ClinicItemStockResource extends Resource
                     ),
             ])
             ->headerActions([
+                \App\Filament\Exports\ExcelExportActions::header(),
                 Tables\Actions\Action::make('receiveStock')
                     ->label(__('clinic_inventory.clinic_item_stock.actions.receive_stock'))
                     ->icon('heroicon-o-arrow-down-tray')

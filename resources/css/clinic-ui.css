@@ -41,9 +41,11 @@
     background: linear-gradient(135deg, #0a0a0a 0%, #111827 50%, #0a0a0a 100%);
 }
 
-/* Bounded inner column so 4K monitors don't stretch text out. */
+/* Fill the available width so these pages match the panel's maxContentWidth(Full)
+ | and the rest of the resource pages. Previously capped at 2000px + centered,
+ | which left big empty margins on wide screens / when the sidebar was collapsed. */
 .clinic-container {
-    max-width: 2000px;
+    max-width: 100%;
     margin-inline: auto;
 }
 

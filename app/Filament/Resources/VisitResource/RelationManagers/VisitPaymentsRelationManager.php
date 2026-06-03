@@ -2,9 +2,11 @@
 
 namespace App\Filament\Resources\VisitResource\RelationManagers;
 
+use App\Models\Insurance\PatientInsurancePolicy;
 use App\Models\Visit;
 use App\Models\VisitPayment;
 use App\Services\Clinic\VisitCostingService;
+use App\Services\Insurance\InsuranceService;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
@@ -12,6 +14,9 @@ use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\HtmlString;
 
 class VisitPaymentsRelationManager extends RelationManager
 {
@@ -241,6 +246,278 @@ class VisitPaymentsRelationManager extends RelationManager
                             ->title('Payment recorded')
                             ->success()
                             ->send();
+                    }),
+
+                // -----------------------------------------------------------------
+                // Apply Insurance — integration point with the Insurance module.
+                // Auto-creates VisitPayment rows for the insurer's portion across
+                // covered kinds, then (optionally) drafts a claim. Spec'd to be
+                // additive only — does not touch the existing Add Payment flow.
+                // -----------------------------------------------------------------
+                Tables\Actions\Action::make('applyInsurance')
+                    ->label('Apply Insurance')
+                    ->icon('heroicon-o-shield-check')
+                    ->color('info')
+                    ->modalHeading('Apply Insurance Coverage')
+                    ->modalSubmitActionLabel('Apply')
+                    ->modalWidth('4xl')
+                    ->visible(function (RelationManager $livewire): bool {
+                        if (! (auth()->user()?->can('insurance_manage_policies') ?? false)) {
+                            return false;
+                        }
+
+                        $visit = $livewire->getOwnerRecord();
+                        if (! $visit instanceof Visit) {
+                            return false;
+                        }
+
+                        return ! empty($visit->patient_id);
+                    })
+                    ->disabled(function (RelationManager $livewire): bool {
+                        $visit = $livewire->getOwnerRecord();
+                        if (! $visit instanceof Visit || empty($visit->patient_id)) {
+                            return true;
+                        }
+
+                        return PatientInsurancePolicy::query()
+                            ->where('patient_id', $visit->patient_id)
+                            ->active()
+                            ->count() === 0;
+                    })
+                    ->tooltip(function (RelationManager $livewire): ?string {
+                        $visit = $livewire->getOwnerRecord();
+                        if (! $visit instanceof Visit || empty($visit->patient_id)) {
+                            return null;
+                        }
+
+                        $count = PatientInsurancePolicy::query()
+                            ->where('patient_id', $visit->patient_id)
+                            ->active()
+                            ->count();
+
+                        return $count === 0 ? 'No active policies on file' : null;
+                    })
+                    ->form(function (RelationManager $livewire): array {
+                        $visit = $livewire->getOwnerRecord();
+                        $estimate = ['by_kind' => [], 'totals' => ['gross' => 0, 'patient_total' => 0, 'insurer_total' => 0]];
+                        $policies = collect();
+
+                        if ($visit instanceof Visit && $visit->patient_id) {
+                            $policies = PatientInsurancePolicy::query()
+                                ->where('patient_id', $visit->patient_id)
+                                ->active()
+                                ->with(['insurer', 'plan'])
+                                ->orderBy('priority')
+                                ->get();
+
+                            try {
+                                $estimate = app(InsuranceService::class)->estimateForVisit($visit);
+                            } catch (\Throwable $e) {
+                                Log::error('[VisitPaymentsRelationManager.applyInsurance] estimate failed', [
+                                    'visit_id' => $visit->id,
+                                    'msg' => $e->getMessage(),
+                                ]);
+                            }
+                        }
+
+                        // Build the read-only summary HTML inline so we don't
+                        // have to ship a new Blade view for this first pass.
+                        $policiesHtml = '<div class="text-sm">';
+                        if ($policies->isEmpty()) {
+                            $policiesHtml .= '<em>No active policies.</em>';
+                        } else {
+                            $policiesHtml .= '<table class="w-full text-left text-xs"><thead><tr>'
+                                .'<th class="py-1 pr-3">Priority</th>'
+                                .'<th class="py-1 pr-3">Insurer</th>'
+                                .'<th class="py-1 pr-3">Plan</th>'
+                                .'<th class="py-1 pr-3">Policy #</th>'
+                                .'</tr></thead><tbody>';
+                            foreach ($policies as $p) {
+                                $policiesHtml .= '<tr>'
+                                    .'<td class="py-1 pr-3">'.e((string) ($p->priority ?? '-')).'</td>'
+                                    .'<td class="py-1 pr-3">'.e($p->insurer?->name ?? '-').'</td>'
+                                    .'<td class="py-1 pr-3">'.e($p->plan?->name ?? '-').'</td>'
+                                    .'<td class="py-1 pr-3">'.e((string) ($p->policy_number ?? '-')).'</td>'
+                                    .'</tr>';
+                            }
+                            $policiesHtml .= '</tbody></table>';
+                        }
+                        $policiesHtml .= '</div>';
+
+                        $byKind = $estimate['by_kind'] ?? [];
+                        $coverageHtml = '<div class="text-sm">';
+                        if (empty($byKind)) {
+                            $coverageHtml .= '<em>No coverage estimate available.</em>';
+                        } else {
+                            $coverageHtml .= '<table class="w-full text-left text-xs"><thead><tr>'
+                                .'<th class="py-1 pr-3">Kind</th>'
+                                .'<th class="py-1 pr-3">Gross</th>'
+                                .'<th class="py-1 pr-3">Insurer Portion</th>'
+                                .'<th class="py-1 pr-3">Patient Copay</th>'
+                                .'</tr></thead><tbody>';
+                            foreach ($byKind as $kind => $bucket) {
+                                $gross = (float) ($bucket['gross'] ?? 0);
+                                $insurer = round((float) array_sum(array_column($bucket['insurer_portions'] ?? [], 'amount')), 3);
+                                $copay = (float) ($bucket['patient_copay'] ?? 0);
+                                $coverageHtml .= '<tr>'
+                                    .'<td class="py-1 pr-3">'.e(ucfirst((string) $kind)).'</td>'
+                                    .'<td class="py-1 pr-3">'.number_format($gross, 3).'</td>'
+                                    .'<td class="py-1 pr-3">'.number_format($insurer, 3).'</td>'
+                                    .'<td class="py-1 pr-3">'.number_format($copay, 3).'</td>'
+                                    .'</tr>';
+                            }
+                            $totals = $estimate['totals'] ?? [];
+                            $coverageHtml .= '<tr class="font-semibold border-t">'
+                                .'<td class="py-1 pr-3">Total</td>'
+                                .'<td class="py-1 pr-3">'.number_format((float) ($totals['gross'] ?? 0), 3).'</td>'
+                                .'<td class="py-1 pr-3">'.number_format((float) ($totals['insurer_total'] ?? 0), 3).'</td>'
+                                .'<td class="py-1 pr-3">'.number_format((float) ($totals['patient_total'] ?? 0), 3).'</td>'
+                                .'</tr>';
+                            $coverageHtml .= '</tbody></table>';
+                        }
+                        $coverageHtml .= '</div>';
+
+                        // Only offer kinds where the insurer actually pays >0.
+                        $checkboxOptions = [];
+                        $defaultKinds = [];
+                        foreach ($byKind as $kind => $bucket) {
+                            $insurer = round((float) array_sum(array_column($bucket['insurer_portions'] ?? [], 'amount')), 3);
+                            if ($insurer > 0) {
+                                $checkboxOptions[$kind] = ucfirst((string) $kind).' ('.number_format($insurer, 3).' KWD)';
+                                $defaultKinds[] = $kind;
+                            }
+                        }
+
+                        return [
+                            Forms\Components\Section::make('Patient Policies')
+                                ->schema([
+                                    Forms\Components\Placeholder::make('policies_summary')
+                                        ->label('')
+                                        ->content(new HtmlString($policiesHtml)),
+                                ]),
+                            Forms\Components\Section::make('Coverage Estimate')
+                                ->schema([
+                                    Forms\Components\Placeholder::make('coverage_summary')
+                                        ->label('')
+                                        ->content(new HtmlString($coverageHtml)),
+                                ]),
+                            Forms\Components\Section::make('Confirm Split')
+                                ->schema([
+                                    Forms\Components\CheckboxList::make('apply_kinds')
+                                        ->label('Apply insurer payment for these kinds')
+                                        ->options($checkboxOptions)
+                                        ->default($defaultKinds)
+                                        ->columns(2)
+                                        ->helperText(empty($checkboxOptions)
+                                            ? 'No kinds have an insurer portion > 0.'
+                                            : 'Uncheck any kind you do not want to record an insurer payment for.'),
+                                    Forms\Components\Toggle::make('create_claim')
+                                        ->label('Also create a draft claim')
+                                        ->default(true),
+                                    Forms\Components\Textarea::make('notes')
+                                        ->label('Notes (optional)')
+                                        ->rows(2)
+                                        ->nullable(),
+                                ]),
+                        ];
+                    })
+                    ->action(function (array $data, RelationManager $livewire) {
+                        try {
+                            $visit = $livewire->getOwnerRecord();
+                            if (! $visit instanceof Visit) {
+                                Notification::make()->title('Visit not found.')->danger()->send();
+
+                                return;
+                            }
+
+                            $user = auth()->user();
+                            $service = app(InsuranceService::class);
+                            $estimate = $service->estimateForVisit($visit);
+                            $primary = $service->primaryPolicyFor($visit->patient);
+
+                            if (! $primary) {
+                                Notification::make()->title('No active primary policy.')->danger()->send();
+
+                                return;
+                            }
+
+                            $byKind = $estimate['by_kind'] ?? [];
+                            $kindsToApply = $data['apply_kinds'] ?? array_keys($byKind);
+                            $createdPayments = 0;
+
+                            DB::transaction(function () use ($visit, $byKind, $kindsToApply, $user, $service, $primary, $data, &$createdPayments) {
+                                foreach ($kindsToApply as $kind) {
+                                    $bucket = $byKind[$kind] ?? null;
+                                    if (! $bucket) {
+                                        continue;
+                                    }
+                                    $insurerAmount = array_sum(array_column($bucket['insurer_portions'] ?? [], 'amount'));
+                                    $insurerAmount = round((float) $insurerAmount, 3);
+                                    if ($insurerAmount <= 0) {
+                                        continue;
+                                    }
+
+                                    // Skip if a VisitPayment already exists for
+                                    // (visit, kind, method=insurance, status in paid/pending)
+                                    $exists = VisitPayment::query()
+                                        ->where('visit_id', $visit->id)
+                                        ->where('kind', $kind)
+                                        ->where('method', 'insurance')
+                                        ->whereIn('status', ['paid', 'pending'])
+                                        ->exists();
+                                    if ($exists) {
+                                        continue;
+                                    }
+
+                                    VisitPayment::create([
+                                        'visit_id' => $visit->id,
+                                        'amount' => $insurerAmount,
+                                        'method' => 'insurance',
+                                        'kind' => $kind,
+                                        'status' => 'paid',
+                                        'paid_at' => now(),
+                                        'collected_by_user_id' => $user?->id,
+                                        'meta' => [
+                                            'insurance' => [
+                                                'policy_id' => $primary->id,
+                                                'insurer_id' => $primary->insurer_id,
+                                                'plan_id' => $primary->plan_id,
+                                                'note' => $data['notes'] ?? null,
+                                            ],
+                                        ],
+                                    ]);
+                                    $createdPayments++;
+                                }
+
+                                // Recompute visit totals so the relation manager
+                                // refreshes paid/balance values.
+                                app(VisitCostingService::class)
+                                    ->compute($visit->fresh(), (int) (auth()->id() ?? 0));
+
+                                if (! empty($data['create_claim'])) {
+                                    $service->createClaimFromVisit($visit->fresh(), $primary, $user);
+                                }
+                            });
+
+                            Notification::make()
+                                ->title("Applied insurance: {$createdPayments} payment row(s) created.")
+                                ->success()
+                                ->send();
+
+                            $livewire->dispatch('refresh');
+                        } catch (\Throwable $e) {
+                            Log::error('[VisitPaymentsRelationManager.applyInsurance] failed', [
+                                'visit_id' => $livewire->getOwnerRecord()?->id,
+                                'msg' => $e->getMessage(),
+                                'trace' => $e->getTraceAsString(),
+                            ]);
+
+                            Notification::make()
+                                ->title('Apply Insurance failed')
+                                ->body($e->getMessage())
+                                ->danger()
+                                ->send();
+                        }
                     }),
             ])
             ->actions([

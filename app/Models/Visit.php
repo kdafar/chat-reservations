@@ -12,6 +12,13 @@ class Visit extends Model
     protected $guarded = [];
 
     use \App\Models\Concerns\BelongsToBranchScope;
+    use \App\Models\Concerns\LogsClinicActivity;
+
+    protected $activityLogName = 'visits';
+
+    // Vitals/prescriptions/lab_requests are large arrays — keep them out of
+    // the diff or every save dumps a wall of JSON into the audit log.
+    protected $activityLogExcept = ['vitals', 'prescriptions', 'lab_requests', 'updated_at'];
 
     public const STATUS_CREATED = 'created';
 
@@ -42,12 +49,15 @@ class Visit extends Model
         'is_labs_printed' => 'boolean',
         'fees_total' => 'decimal:3',
         'discount_total' => 'decimal:3',
+        'discount_value' => 'decimal:3',
+        'coupon_id' => 'integer',
         'items_cost_total' => 'decimal:3',
         'items_price_total' => 'decimal:3',
         'packages_price_total' => 'decimal:3',
         'profit_total' => 'decimal:3',
         'computed_at' => 'datetime',
         'service_started_at' => 'datetime',
+        'insurance_claim_skipped_at' => 'datetime',
         'accepted_at' => 'datetime',
         'queued_at' => 'datetime',
     ];
@@ -187,5 +197,25 @@ class Visit extends Model
     public function visitCharges()
     {
         return $this->hasMany(VisitCharge::class);
+    }
+
+    public function coupon(): BelongsTo
+    {
+        return $this->belongsTo(ClinicCoupon::class, 'coupon_id');
+    }
+
+    public function preauthorizations(): HasMany
+    {
+        return $this->hasMany(\App\Models\Insurance\InsurancePreauthorization::class, 'visit_id');
+    }
+
+    public function labOrders(): HasMany
+    {
+        return $this->hasMany(\App\Models\Lab\LabOrder::class, 'visit_id');
+    }
+
+    public function insuranceClaims(): HasMany
+    {
+        return $this->hasMany(\App\Models\Insurance\InsuranceClaim::class, 'visit_id');
     }
 }

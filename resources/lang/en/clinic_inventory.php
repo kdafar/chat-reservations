@@ -8,6 +8,15 @@ return [
             'inventory_units' => 'Inventory & Units',
             'inventory_units_description' => 'Configure how this item is stocked and consumed.',
             'pricing' => 'Pricing (Per Usage Unit)',
+            'bom' => 'Consumables Used (Bill of Materials)',
+            'bom_description' => 'Items deducted from stock each time this service is performed on a visit.',
+        ],
+        'bom' => [
+            'add' => 'Add consumable',
+            'item' => 'Item',
+            'qty_base' => 'Qty (base units)',
+            'is_optional' => 'Optional',
+            'is_optional_help' => 'Listed but NOT auto-deducted — the clinician adds it manually when used.',
         ],
         'fields' => [
             'branch' => 'Branch',
@@ -46,6 +55,7 @@ return [
         'types' => [
             'consumable' => 'Consumable',
             'service' => 'Service',
+            'product' => 'Product',
         ],
         'shared' => 'Shared',
         'filter_stockable' => 'Stockable',

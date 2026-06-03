@@ -323,9 +323,13 @@ class BookingService
 
     protected function uniqueBookingCode(): string
     {
+        // booking_code is GLOBALLY unique. withoutGlobalScopes() so the
+        // uniqueness check spans every clinic/branch — under BelongsToBranchScope
+        // a non-admin would only check their own branch and could approve a code
+        // already used elsewhere, tripping the unique index on insert.
         do {
             $code = strtoupper(Str::random(6));
-        } while (Booking::where('booking_code', $code)->exists());
+        } while (Booking::withoutGlobalScopes()->where('booking_code', $code)->exists());
 
         return $code;
     }

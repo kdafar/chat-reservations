@@ -5,6 +5,7 @@ namespace App\Http\Middleware;
 use Closure;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Route;
 
 class EnsureCustomer
 {
@@ -15,7 +16,12 @@ class EnsureCustomer
                 return response()->json(['message' => 'Unauthenticated.'], 401);
             }
             session()->put('url.intended', $request->fullUrl());
-            $login = route()->has('login') ? route('login') : url('/login');
+            // Prefer the customer portal login if it's registered; otherwise
+            // fall back to the staff admin login (the only login when the
+            // customer portal is disabled).
+            $login = Route::has('login')
+                ? route('login')
+                : route('filament.admin.auth.login');
 
             return redirect()->to($login);
         }

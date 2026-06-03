@@ -658,6 +658,7 @@ class VisitResource extends Resource
                     }),
             ])
             ->bulkActions([
+                \App\Filament\Exports\ExcelExportActions::bulk(),
                 Tables\Actions\DeleteBulkAction::make(),
             ])
             ->emptyStateHeading(__('resources.visit.empty_heading'))
@@ -674,9 +675,13 @@ class VisitResource extends Resource
     public static function getRelations(): array
     {
         return [
+            \App\Filament\Resources\VisitResource\RelationManagers\VisitChargesRelationManager::class,
             \App\Filament\Resources\VisitResource\RelationManagers\VisitItemsRelationManager::class,
+            \App\Filament\Resources\VisitResource\RelationManagers\LabOrdersRelationManager::class,
             \App\Filament\Resources\VisitResource\RelationManagers\VisitPaymentsRelationManager::class,
+            \App\Filament\Resources\VisitResource\RelationManagers\VisitPreauthorizationsRelationManager::class,
             \App\Filament\Resources\VisitResource\RelationManagers\FollowUpPlansRelationManager::class,
+            \App\Filament\Resources\Concerns\ActivityRelationManager::class,
         ];
     }
 

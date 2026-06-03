@@ -117,6 +117,10 @@ trait BelongsToBranchScope
                     'doctor_shifts',
                     'follow_up_plans',
                     'visits',
+                    // Newer HR + lab tables — doctors only see their own.
+                    'staff_leaves',
+                    'staff_attendances',
+                    'lab_orders',
                 ];
 
                 if (in_array($table, $doctorIdTables, true) && self::bbsHasColumn($table, 'doctor_id')) {

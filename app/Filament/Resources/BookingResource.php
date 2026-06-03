@@ -104,7 +104,10 @@ class BookingResource extends Resource
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()
-            ->with(['branch', 'doctor', 'table', 'patient', 'contact']);
+            ->with(['branch', 'doctor', 'table', 'patient', 'contact'])
+            ->withoutGlobalScopes([
+                \Illuminate\Database\Eloquent\SoftDeletingScope::class,
+            ]);
     }
 
     public static function form(Form $form): Form
@@ -964,6 +967,8 @@ class BookingResource extends Resource
                         ->whereNotNull('res_end')
                         ->where('res_end', '<', Carbon::now(config('app.timezone', 'Asia/Kuwait')))
                     ),
+
+                Tables\Filters\TrashedFilter::make(),
             ])
             ->actions([
                 Tables\Actions\ViewAction::make()->label(__('clinic_booking.actions.view')),
@@ -971,6 +976,12 @@ class BookingResource extends Resource
                 Tables\Actions\EditAction::make()
                     ->label(__('clinic_booking.actions.edit'))
                     ->visible(fn (Booking $r) => is_null($r->checked_in_at) && ! self::isTerminal($r)),
+
+                Tables\Actions\DeleteAction::make()
+                    ->visible(fn (Booking $r) => is_null($r->deleted_at) && ! self::isTerminal($r)),
+                Tables\Actions\RestoreAction::make(),
+                Tables\Actions\ForceDeleteAction::make()
+                    ->visible(fn () => auth()->user()?->hasRole(['admin', 'super_admin']) ?? false),
 
                 ActionGroup::make([
                     Tables\Actions\Action::make('open_whatsapp')
@@ -2262,6 +2273,7 @@ class BookingResource extends Resource
             ])
 
             ->bulkActions([
+                \App\Filament\Exports\ExcelExportActions::bulk(),
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\BulkAction::make('bulk_resend')
                         ->label('Resend confirmations')
@@ -2403,6 +2415,9 @@ class BookingResource extends Resource
                         }),
 
                     Tables\Actions\DeleteBulkAction::make(),
+                    Tables\Actions\RestoreBulkAction::make(),
+                    Tables\Actions\ForceDeleteBulkAction::make()
+                        ->visible(fn () => auth()->user()?->hasRole(['admin', 'super_admin']) ?? false),
                 ]),
             ])
             ->emptyStateHeading(__('resources.booking.empty_heading'))

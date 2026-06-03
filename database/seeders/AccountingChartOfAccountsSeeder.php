@@ -70,7 +70,11 @@ class AccountingChartOfAccountsSeeder extends Seeder
             // ===== EXPENSES (6xxx) =====
             ['6000', 'Operating Expenses',                    Account::TYPE_EXPENSE, null, true],
             ['6010', 'Doctor Compensation Expense',           Account::TYPE_EXPENSE, '6000', true],
-            ['6020', 'Staff Salaries',                        Account::TYPE_EXPENSE, '6000', false],
+            // 6020 was historically 'Staff Salaries'; repurposed to 'Bad Debt Expense'
+            // by migration 2026_05_24_100010 to back the insurance claims write-off
+            // auto-posting. Staff Salaries moved to 6015 to free the slot.
+            ['6015', 'Staff Salaries',                        Account::TYPE_EXPENSE, '6000', false],
+            ['6020', 'Bad Debt Expense',                      Account::TYPE_EXPENSE, '6000', true],
             ['6030', 'Rent',                                  Account::TYPE_EXPENSE, '6000', false],
             ['6040', 'Utilities',                             Account::TYPE_EXPENSE, '6000', false],
             ['6050', 'Insurance',                             Account::TYPE_EXPENSE, '6000', false],

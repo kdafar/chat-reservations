@@ -5,10 +5,19 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Patient extends Model
 {
+    use SoftDeletes;
+    use \App\Models\Concerns\LogsClinicActivity;
+    use \App\Models\Concerns\BelongsToPartnerScope;
+
     protected $guarded = [];
+
+    protected $activityLogName = 'patients';
+
+    protected $activityLogExcept = ['meta', 'updated_at'];
 
     protected $casts = [
         'dob' => 'date',
@@ -22,6 +31,11 @@ class Patient extends Model
     public function visits(): HasMany
     {
         return $this->hasMany(Visit::class);
+    }
+
+    public function files(): HasMany
+    {
+        return $this->hasMany(\App\Models\PatientFile::class);
     }
 
     // Connects to your existing Booking system

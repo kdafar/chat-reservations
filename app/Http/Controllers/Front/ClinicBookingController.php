@@ -12,6 +12,7 @@ use App\Models\WhatsappSession;
 use App\Services\AvailabilityService;
 use App\Services\BookingService;
 use App\Services\MessageCatalog;
+use App\Services\OtpService;
 use App\Services\QrPassService;
 use App\Services\WhatsAppApiServiceFactory;
 use App\Services\WhatsAppSender;
@@ -131,13 +132,60 @@ class ClinicBookingController extends Controller
         return response()->json($slots);
     }
 
+    /**
+     * Request a WhatsApp OTP code for a msisdn that's about to be used in
+     * a public booking. No-op (returns ok) when the gate is disabled so
+     * the frontend can probe the flag.
+     */
+    public function requestOtp(Request $request, OtpService $otp): JsonResponse
+    {
+        $data = $request->validate([
+            'msisdn' => 'required|string',
+        ]);
+
+        if (! (bool) config('clinic.booking_otp_enabled', false)) {
+            return response()->json([
+                'ok' => true,
+                'enabled' => false,
+            ]);
+        }
+
+        try {
+            $expiresAt = $otp->request(
+                channel: OtpService::CHANNEL_WHATSAPP,
+                purpose: \App\Models\OtpCode::PURPOSE_BOOKING,
+                recipient: (string) $data['msisdn'],
+                ip: $request->ip(),
+            );
+        } catch (\RuntimeException $e) {
+            return response()->json([
+                'ok' => false,
+                'message' => $e->getMessage(),
+            ], 429);
+        } catch (\Throwable $e) {
+            Log::error('OTP request failed', ['msisdn' => $data['msisdn'], 'err' => $e->getMessage()]);
+
+            return response()->json([
+                'ok' => false,
+                'message' => 'Could not send verification code. Try again.',
+            ], 500);
+        }
+
+        return response()->json([
+            'ok' => true,
+            'enabled' => true,
+            'expires_in_seconds' => max(0, $expiresAt->getTimestamp() - now()->getTimestamp()),
+        ]);
+    }
+
     // 6. API: Create Booking (UPDATED to use BookingService)
     public function store(
         Request $request,
         BookingService $bookingService,
         WhatsAppApiServiceFactory $waFactory,
         QrPassService $qrService,
-        MessageCatalog $messages
+        MessageCatalog $messages,
+        OtpService $otp
     ) {
         $data = $request->validate([
             'branch_id' => 'required|exists:branches,id',
@@ -150,12 +198,40 @@ class ClinicBookingController extends Controller
             'notes' => 'nullable|string',
             // keep optional fields if frontend sends them later
             'email' => 'nullable|string',
+            'otp_code' => 'nullable|string|max:8',
         ]);
 
         // Normalize msisdn (same idea you used in BookingService; keep it stable here too)
         $msisdn = trim((string) $data['msisdn']);
         $msisdnDigits = $msisdn !== '' ? preg_replace('/\D+/', '', $msisdn) : '';
         $msisdnFinal = $msisdnDigits ?: $msisdn;
+
+        // OTP gate (only on web bookings; WA-originated bookings skip).
+        if ((bool) config('clinic.booking_otp_enabled', false)) {
+            $submittedCode = trim((string) ($data['otp_code'] ?? ''));
+
+            if ($submittedCode === '') {
+                return response()->json([
+                    'ok' => false,
+                    'message' => 'Verification code required. Please request one and try again.',
+                    'code' => 'otp_required',
+                ], 422);
+            }
+
+            $verified = $otp->verify(
+                purpose: \App\Models\OtpCode::PURPOSE_BOOKING,
+                recipient: $msisdnFinal,
+                code: $submittedCode,
+            );
+
+            if (! $verified) {
+                return response()->json([
+                    'ok' => false,
+                    'message' => 'Verification code is invalid or expired.',
+                    'code' => 'otp_invalid',
+                ], 422);
+            }
+        }
 
         // Normalize date/time (match BookingService expectations)
         $date = preg_replace('/\s.*/', '', trim((string) $data['res_date'])) ?: (string) $data['res_date'];
@@ -228,6 +304,18 @@ class ClinicBookingController extends Controller
                 'ok' => false,
                 'message' => 'Failed to create booking. Please try another time slot.',
             ], 422);
+        }
+
+        // Burn the verified OTP so it can't be reused for a second booking.
+        if ((bool) config('clinic.booking_otp_enabled', false)) {
+            try {
+                $otp->consume(\App\Models\OtpCode::PURPOSE_BOOKING, $msisdnFinal);
+            } catch (\Throwable $e) {
+                Log::warning('OTP consume failed (booking still created)', [
+                    'booking_id' => $booking->id,
+                    'err' => $e->getMessage(),
+                ]);
+            }
         }
 
         // Keep existing behavior: attempt WhatsApp confirmation

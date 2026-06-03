@@ -117,7 +117,10 @@ class UserResource extends Resource
 
     public static function getRelations(): array
     {
-        return []; // you can add relation managers later if needed
+        return [
+            \App\Filament\Resources\UserResource\RelationManagers\LeavesRelationManager::class,
+            \App\Filament\Resources\UserResource\RelationManagers\AttendanceRelationManager::class,
+        ];
     }
 
     public static function getPages(): array

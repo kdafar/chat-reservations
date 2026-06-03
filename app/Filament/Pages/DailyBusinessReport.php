@@ -96,7 +96,7 @@ class DailyBusinessReport extends Page
         // Note: Using the role names from your database dump
         $isDoctor = $user->hasRole('clinic_doctor');
         $isReception = $user->hasRole('clinic_reception');
-        $isOwner = $user->hasRole(['partner_owner', 'admin', 'clinic_manager']);
+        $isOwner = $user->hasRole(['partner_owner', 'admin', 'clinic_admin']);
 
         // 2. Fetch Data
         $this->reportData = [

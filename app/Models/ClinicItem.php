@@ -47,4 +47,18 @@ class ClinicItem extends Model
     {
         return $this->hasMany(VisitStockRequestLine::class, 'clinic_item_id');
     }
+
+    /**
+     * Bill-of-materials lines: the consumables/products this service uses each
+     * time it is performed. Only meaningful when type === 'service'.
+     */
+    public function components()
+    {
+        return $this->hasMany(ClinicItemComponent::class, 'service_item_id');
+    }
+
+    public function isService(): bool
+    {
+        return $this->type === 'service';
+    }
 }

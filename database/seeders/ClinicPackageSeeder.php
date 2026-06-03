@@ -6,212 +6,196 @@ use App\Models\Branch;
 use App\Models\ClinicItem;
 use App\Models\ClinicPackage;
 use App\Models\ClinicPackageItem;
+use App\Models\VisitPackage;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Schema;
 
+/**
+ * Demo packages — the MODERN model: a package is a priced BUNDLE OF SERVICES
+ * (and optionally a retail product). Each service brings its own consumables
+ * through its bill of materials (see ServiceBomDemoSeeder), so packages no
+ * longer relist consumables.
+ *
+ * This seeder also RETIRES the old flat-consumable "procedure packages"
+ * (Botox/Facial/Laser/etc. that duplicated services) so the demo only shows the
+ * new model: it deletes the legacy packages where possible, or deactivates them
+ * when visit history references them (FK is restrictOnDelete).
+ *
+ * Idempotent.
+ */
 class ClinicPackageSeeder extends Seeder
 {
+    /** Legacy package codes this seeder used to create — now retired. */
+    private const LEGACY_CODES = [
+        'CONSULT_DERM', 'LASER_SESSION_STD', 'FACIAL_BASIC', 'CHEMICAL_PEEL_LIGHT',
+        'INJ_BOTOX_SMALL', 'INJ_FILLER_1ML', 'OPS_ROOM_CONSUMABLES_PACK',
+    ];
+
+    /** Legacy EN names (covers installs without a code column). */
+    private const LEGACY_NAMES_EN = [
+        'Consultation (Dermatology)', 'Laser Session (Standard)', 'Facial (Basic)',
+        'Chemical Peel (Light)', 'Botox (Small Area)', 'Filler (1ml)', 'Room Consumables Pack',
+    ];
+
     public function run(): void
     {
-        // Include ALL branches, no matter active or not
         $branches = Branch::query()->orderBy('id')->get();
-        if ($branches->isEmpty()) {
-            $this->command?->warn('No Branch found; skipping ClinicPackageSeeder.');
-
-            return;
-        }
-
-        // Include ALL clinic items, no matter active or not
-        $items = ClinicItem::query()
-            ->orderBy('id')
-            ->get()
-            ->keyBy('id');
-
-        if ($items->isEmpty()) {
-            $this->command?->warn('No ClinicItem found; skipping ClinicPackageSeeder.');
+        $items = ClinicItem::query()->get();
+        if ($branches->isEmpty() || $items->isEmpty()) {
+            $this->command?->warn('ClinicPackageSeeder: no branches/items; skipping.');
 
             return;
         }
 
         $hasCode = Schema::hasColumn((new ClinicPackage)->getTable(), 'code');
 
-        // A helper to find item IDs by partial English/Arabic name (very forgiving).
-        // If nothing matches, returns null and that line will be skipped.
-        $findItemId = function (array $needles) use ($items): ?int {
-            $needles = collect($needles)->filter()->map(fn ($s) => mb_strtolower(trim((string) $s)))->values();
-            if ($needles->isEmpty()) {
-                return null;
-            }
+        // Resolve a catalog item by a name fragment, optionally constrained to a type.
+        $find = function (string $needle, ?string $type = null) use ($items): ?ClinicItem {
+            $needle = mb_strtolower($needle);
 
-            foreach ($items as $it) {
-                $nameArr = (array) ($it->name ?? []);
-                $en = mb_strtolower((string) ($nameArr['en'] ?? ''));
-                $ar = mb_strtolower((string) ($nameArr['ar'] ?? ''));
-
-                foreach ($needles as $n) {
-                    if ($n !== '' && (str_contains($en, $n) || str_contains($ar, $n))) {
-                        return (int) $it->id;
-                    }
+            return $items->first(function (ClinicItem $it) use ($needle, $type) {
+                if ($type && $it->type !== $type) {
+                    return false;
                 }
-            }
+                $n = (array) ($it->name ?? []);
 
-            return null;
+                return str_contains(mb_strtolower((string) ($n['en'] ?? '')), $needle)
+                    || str_contains(mb_strtolower((string) ($n['ar'] ?? '')), $needle);
+            });
         };
 
-        // Define packages (Boutique Clinic baseline Kuwait)
-        // qty_base must align with your base unit convention (pcs/ml/etc.)
-        $packages = [
+        // New-model bundles. Each line: [name-needle, type, qty].
+        $bundles = [
             [
-                'code' => 'CONSULT_DERM',
-                'name' => ['en' => 'Consultation (Dermatology)', 'ar' => 'استشارة (جلدية)'],
-                'price' => 10.000,
+                'code' => 'BUNDLE_SIGNATURE_GLOW',
+                'name' => ['en' => 'Signature Glow Package', 'ar' => 'باقة الإشراقة المميزة'],
+                'price' => 60.000,
                 'lines' => [
-                    // Minimal consumables used per consultation (if you track them)
-                    ['needles' => ['gloves', 'قفازات'], 'qty_base' => 1.0000, 'is_consumable' => true],
-                    ['needles' => ['mask', 'كمام'], 'qty_base' => 1.0000, 'is_consumable' => true],
-                    ['needles' => ['alcohol', 'كحول', 'spirit'], 'qty_base' => 1.0000, 'is_consumable' => true],
+                    ['hydrafacial', 'service', 1],
+                    ['chemical peel', 'service', 1],
+                    ['vit c serum', 'product', 1],
                 ],
             ],
             [
-                'code' => 'LASER_SESSION_STD',
-                'name' => ['en' => 'Laser Session (Standard)', 'ar' => 'جلسة ليزر (عادي)'],
-                'price' => 25.000,
+                'code' => 'BUNDLE_BRIDAL',
+                'name' => ['en' => 'Bridal Radiance Package', 'ar' => 'باقة إشراقة العروس'],
+                'price' => 180.000,
                 'lines' => [
-                    ['needles' => ['gel', 'جل'], 'qty_base' => 1.0000, 'is_consumable' => true],
-                    ['needles' => ['gloves', 'قفازات'], 'qty_base' => 1.0000, 'is_consumable' => true],
-                    ['needles' => ['wipes', 'مناديل', 'wipe'], 'qty_base' => 1.0000, 'is_consumable' => true],
+                    ['hydrafacial', 'service', 1],
+                    ['microneedling', 'service', 1],
+                    ['botox', 'service', 1],
                 ],
             ],
             [
-                'code' => 'FACIAL_BASIC',
-                'name' => ['en' => 'Facial (Basic)', 'ar' => 'تنظيف بشرة (أساسي)'],
-                'price' => 15.000,
+                'code' => 'COURSE_ACNE_PEEL',
+                'name' => ['en' => 'Acne Care Course (3 Peels)', 'ar' => 'برنامج علاج حب الشباب (٣ جلسات)'],
+                'price' => 75.000,
                 'lines' => [
-                    ['needles' => ['cleanser', 'غسول'], 'qty_base' => 1.0000, 'is_consumable' => true],
-                    ['needles' => ['toner', 'تونر'], 'qty_base' => 1.0000, 'is_consumable' => true],
-                    ['needles' => ['mask', 'ماسك'], 'qty_base' => 1.0000, 'is_consumable' => true],
-                    ['needles' => ['gloves', 'قفازات'], 'qty_base' => 1.0000, 'is_consumable' => true],
+                    ['chemical peel', 'service', 3],
                 ],
             ],
             [
-                'code' => 'CHEMICAL_PEEL_LIGHT',
-                'name' => ['en' => 'Chemical Peel (Light)', 'ar' => 'تقشير كيميائي (خفيف)'],
-                'price' => 30.000,
+                'code' => 'BUNDLE_REJUV_DUO',
+                'name' => ['en' => 'Skin Rejuvenation Duo', 'ar' => 'ثنائي تجديد البشرة'],
+                'price' => 130.000,
                 'lines' => [
-                    ['needles' => ['acid', 'peel', 'تقشير'], 'qty_base' => 1.0000, 'is_consumable' => true],
-                    ['needles' => ['neutralizer', 'معادل'], 'qty_base' => 1.0000, 'is_consumable' => true],
-                    ['needles' => ['gloves', 'قفازات'], 'qty_base' => 1.0000, 'is_consumable' => true],
-                    ['needles' => ['cotton', 'قطن'], 'qty_base' => 1.0000, 'is_consumable' => true],
+                    ['microneedling', 'service', 1],
+                    ['prp', 'service', 1],
                 ],
             ],
             [
-                'code' => 'INJ_BOTOX_SMALL',
-                'name' => ['en' => 'Botox (Small Area)', 'ar' => 'بوتوكس (منطقة صغيرة)'],
-                'price' => 90.000,
+                'code' => 'BUNDLE_NEW_SKIN',
+                'name' => ['en' => 'New Skin Starter', 'ar' => 'باقة بداية البشرة'],
+                'price' => 35.000,
                 'lines' => [
-                    ['needles' => ['syringe', 'سرنجة', 'needle', 'إبرة'], 'qty_base' => 1.0000, 'is_consumable' => true],
-                    ['needles' => ['alcohol', 'كحول'], 'qty_base' => 1.0000, 'is_consumable' => true],
-                    ['needles' => ['gloves', 'قفازات'], 'qty_base' => 1.0000, 'is_consumable' => true],
-                    // If you track botox vial as an item:
-                    ['needles' => ['botox'], 'qty_base' => 1.0000, 'is_consumable' => true],
-                ],
-            ],
-            [
-                'code' => 'INJ_FILLER_1ML',
-                'name' => ['en' => 'Filler (1ml)', 'ar' => 'فيلر (١ مل)'],
-                'price' => 120.000,
-                'lines' => [
-                    ['needles' => ['cannula', 'كانيولا'], 'qty_base' => 1.0000, 'is_consumable' => true],
-                    ['needles' => ['syringe', 'سرنجة', 'needle', 'إبرة'], 'qty_base' => 1.0000, 'is_consumable' => true],
-                    ['needles' => ['alcohol', 'كحول'], 'qty_base' => 1.0000, 'is_consumable' => true],
-                    ['needles' => ['gloves', 'قفازات'], 'qty_base' => 1.0000, 'is_consumable' => true],
-                    ['needles' => ['filler'], 'qty_base' => 1.0000, 'is_consumable' => true],
-                ],
-            ],
-
-            // Ops / workflow helper package: “Room Setup / Consumables Pack”
-            // Useful when your staff just wants to request standard room consumables quickly.
-            [
-                'code' => 'OPS_ROOM_CONSUMABLES_PACK',
-                'name' => ['en' => 'Room Consumables Pack', 'ar' => 'باك مستهلكات الغرفة'],
-                'price' => 0.000,
-                'lines' => [
-                    ['needles' => ['gloves', 'قفازات'], 'qty_base' => 2.0000, 'is_consumable' => true],
-                    ['needles' => ['mask', 'كمام'], 'qty_base' => 2.0000, 'is_consumable' => true],
-                    ['needles' => ['wipes', 'مناديل', 'wipe'], 'qty_base' => 2.0000, 'is_consumable' => true],
-                    ['needles' => ['alcohol', 'كحول'], 'qty_base' => 2.0000, 'is_consumable' => true],
-                    ['needles' => ['cotton', 'قطن'], 'qty_base' => 2.0000, 'is_consumable' => true],
+                    ['dermatology consultation', 'service', 1],
+                    ['hydrafacial', 'service', 1],
                 ],
             ],
         ];
 
-        $createOrUpdatePackage = function (int $branchId, array $pkg) use ($hasCode) {
-            $identity = ['branch_id' => $branchId];
-
-            if ($hasCode) {
-                $identity['code'] = (string) $pkg['code'];
-            } else {
-                // Fallback: use EN name as the stable key (works fine if you don't rename EN names)
-                $identity['name->en'] = (string) $pkg['name']['en'];
+        // Pre-resolve each bundle's line items once (catalog is shared across branches).
+        $resolved = [];
+        foreach ($bundles as $b) {
+            $lines = [];
+            foreach ($b['lines'] as [$needle, $type, $qty]) {
+                if ($item = $find($needle, $type)) {
+                    $lines[] = [$item, (float) $qty];
+                }
             }
-
-            /** @var ClinicPackage $p */
-            $p = ClinicPackage::query()->updateOrCreate(
-                $identity,
-                [
-                    'branch_id' => $branchId,
-                    'name' => ['en' => (string) $pkg['name']['en'], 'ar' => (string) $pkg['name']['ar']],
-                    'is_active' => true,
-                    'default_price' => (float) $pkg['price'],
-                ]
-            );
-
-            return $p;
-        };
-
-        foreach ($branches as $branch) {
-            $branchId = (int) $branch->id;
-
-            foreach ($packages as $pkg) {
-                /** @var ClinicPackage $p */
-                $p = $createOrUpdatePackage($branchId, $pkg);
-
-                // Build package items by name matching; skip missing items quietly.
-                $keepItemIds = [];
-
-                foreach (($pkg['lines'] ?? []) as $ln) {
-                    $itemId = $findItemId((array) ($ln['needles'] ?? []));
-                    if (! $itemId) {
-                        continue;
-                    }
-
-                    $keepItemIds[] = (int) $itemId;
-
-                    ClinicPackageItem::query()->updateOrCreate(
-                        [
-                            'clinic_package_id' => (int) $p->id,
-                            'clinic_item_id' => (int) $itemId,
-                        ],
-                        [
-                            'qty_base' => (float) ($ln['qty_base'] ?? 1),
-                            'is_consumable' => (bool) ($ln['is_consumable'] ?? true),
-                        ]
-                    );
-                }
-
-                // Remove old lines not in current definition (keeps seeder idempotent)
-                if (! empty($keepItemIds)) {
-                    ClinicPackageItem::query()
-                        ->where('clinic_package_id', (int) $p->id)
-                        ->whereNotIn('clinic_item_id', array_values(array_unique($keepItemIds)))
-                        ->delete();
-                } else {
-                    // If no lines matched, do NOT delete existing lines (protect manual config)
-                    // This prevents a bad match wiping a branch package.
-                }
+            if (count($lines) >= 1) {
+                $resolved[] = $b + ['resolvedLines' => $lines];
+            } else {
+                $this->command?->warn("ClinicPackageSeeder: bundle {$b['code']} matched no catalog items; skipped.");
             }
         }
 
-        $this->command?->info('ClinicPackageSeeder: seeded Boutique Clinic packages for ALL branches (including inactive), using ALL clinic items.');
+        $created = 0;
+        foreach ($branches as $branch) {
+            foreach ($resolved as $b) {
+                $identity = $hasCode
+                    ? ['branch_id' => $branch->id, 'code' => $b['code']]
+                    : ['branch_id' => $branch->id, 'name->en' => $b['name']['en']];
+
+                $pkg = ClinicPackage::updateOrCreate($identity, [
+                    'branch_id' => $branch->id,
+                    'name' => $b['name'],
+                    'is_active' => true,
+                    'default_price' => (float) $b['price'],
+                ]);
+
+                $keep = [];
+                foreach ($b['resolvedLines'] as [$item, $qty]) {
+                    $keep[] = (int) $item->id;
+                    ClinicPackageItem::updateOrCreate(
+                        ['clinic_package_id' => $pkg->id, 'clinic_item_id' => $item->id],
+                        // Services/products manage their own stock (BOM / direct);
+                        // the per-line flag only matters for standalone consumables.
+                        ['qty_base' => (float) $qty, 'is_consumable' => false],
+                    );
+                }
+                $pkg->items()->whereNotIn('clinic_item_id', $keep)->delete();
+                $created++;
+            }
+        }
+
+        $retired = $this->retireLegacy($hasCode);
+
+        $this->command?->info("ClinicPackageSeeder: {$created} service-bundle packages upserted; {$retired} legacy procedure-packages retired.");
+    }
+
+    /**
+     * Remove legacy flat-consumable packages. Delete when unreferenced; otherwise
+     * deactivate (visit history FK is restrictOnDelete) so they vanish from the
+     * active demo without losing past records.
+     */
+    private function retireLegacy(bool $hasCode): int
+    {
+        $query = ClinicPackage::query()->where(function ($w) use ($hasCode) {
+            if ($hasCode) {
+                $w->whereIn('code', self::LEGACY_CODES);
+            }
+            foreach (self::LEGACY_NAMES_EN as $name) {
+                $w->orWhere('name->en', $name);
+            }
+        });
+
+        $count = 0;
+        foreach ($query->get() as $pkg) {
+            if (VisitPackage::query()->where('clinic_package_id', $pkg->id)->exists()) {
+                if ($pkg->is_active) {
+                    $pkg->update(['is_active' => false]);
+                    $count++;
+                }
+
+                continue;
+            }
+
+            $pkg->items()->delete();
+            $pkg->delete();
+            $count++;
+        }
+
+        return $count;
     }
 }

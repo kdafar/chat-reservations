@@ -191,7 +191,14 @@ class VisitPackageService
 
                 $delta = $qtyBase * $pkgQty;
 
-                $acc[$itemId] = (float) ($acc[$itemId] ?? 0) + $delta;
+                // A service line in a package contributes its own consumables
+                // (its bill of materials), not the service itself. Consumables
+                // and products contribute themselves. Keeps stock deduction
+                // consistent with adding the service directly to a visit.
+                foreach (app(ServiceBomService::class)->requirementsForItem($itemId, $delta) as $req) {
+                    $cid = (int) $req['clinic_item_id'];
+                    $acc[$cid] = (float) ($acc[$cid] ?? 0) + (float) $req['qty_base'];
+                }
             }
         }
 

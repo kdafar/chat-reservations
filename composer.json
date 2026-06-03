@@ -13,6 +13,7 @@
         "flowframe/laravel-trend": "^0.4.0",
         "giggsey/libphonenumber-for-php": "^8.0",
         "hasnayeen/themes": "^3.0",
+        "inertiajs/inertia-laravel": "^3.1",
         "intervention/image": "^3",
         "intervention/image-laravel": "^1",
         "laravel/framework": "^12.0",
@@ -32,7 +33,8 @@
         "spatie/laravel-multitenancy": "^4.0",
         "spatie/laravel-permission": "^6.0",
         "spatie/laravel-translatable": "^6.11",
-        "spatie/simple-excel": "^3.0"
+        "spatie/simple-excel": "^3.0",
+        "tightenco/ziggy": "^2.6"
     },
     "require-dev": {
         "fakerphp/faker": "^1.23",

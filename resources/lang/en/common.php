@@ -17,6 +17,8 @@ return [
         'clinic_tools' => 'Clinic — Tools',
         'clinic_compliance' => 'Clinic — Compliance',
         'accounting' => 'Accounting',
+        'insurance' => 'Insurance',
+        'inpatient' => 'Inpatient',
     ],
 
     'actions' => [

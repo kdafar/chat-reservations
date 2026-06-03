@@ -6,12 +6,19 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Doctor extends Model
 {
     protected $guarded = [];
 
+    use SoftDeletes;
     use \App\Models\Concerns\BelongsToBranchScope;
+    use \App\Models\Concerns\LogsClinicActivity;
+
+    protected $activityLogName = 'doctors';
+
+    protected $activityLogExcept = ['working_hours', 'updated_at'];
 
     protected $casts = [
         'working_hours' => 'array', // Automatically handles the JSON schedule
@@ -52,6 +59,16 @@ class Doctor extends Model
     public function shifts()
     {
         return $this->hasMany(DoctorShift::class);
+    }
+
+    public function leaves(): HasMany
+    {
+        return $this->hasMany(StaffLeave::class);
+    }
+
+    public function attendances(): HasMany
+    {
+        return $this->hasMany(StaffAttendance::class);
     }
 
     /**

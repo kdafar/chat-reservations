@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import {
   ArrowRight, ArrowLeft, Building2, Calendar, CalendarDays,
   Check, Info, Loader2, User, AlertCircle, FileText, Trash2,
-  MapPin, Clock, Stethoscope, ChevronRight
+  MapPin, Clock, Stethoscope, ChevronRight, MessageCircle, X
 } from 'lucide-react'
 import { Api, getLocale, t, formatDateDisplay, formatTimeDisplay } from '../api'
 import { PhoneInput } from './Shared'
@@ -39,6 +39,23 @@ export default function ClinicBookingWidget() {
   })
   const [phoneState, setPhoneState] = useState({ code: '+965', number: '' })
   const [bookingRef, setBookingRef] = useState('')
+
+  // OTP modal state. Opens when handleSubmit confirms the server requires an OTP.
+  const [otp, setOtp] = useState({
+    open: false,
+    code: '',
+    sending: false,
+    verifying: false,
+    error: null,
+    cooldown: 0, // seconds until resend allowed
+  })
+
+  // Resend cooldown tick. Self-clearing when it hits 0.
+  useEffect(() => {
+    if (!otp.open || otp.cooldown <= 0) return
+    const t = setTimeout(() => setOtp(p => ({ ...p, cooldown: Math.max(0, p.cooldown - 1) })), 1000)
+    return () => clearTimeout(t)
+  }, [otp.open, otp.cooldown])
 
   // -- Data Loading Effects (Preserved Logic) --
   useEffect(() => {
@@ -99,6 +116,22 @@ export default function ClinicBookingWidget() {
     }
   }
 
+  const fullMsisdn = () => `${phoneState.code}${phoneState.number}`
+
+  // Submit the booking with (optionally) an OTP code. Used by both the
+  // "no OTP required" path and the modal "Verify & Confirm" flow.
+  const submitBookingWith = async (otpCode = null) => {
+    const payload = { ...formData, msisdn: fullMsisdn() }
+    if (otpCode) payload.otp_code = otpCode
+    const response = await Api.submitBooking(payload)
+    if (response?.ok || response?.booking) {
+      setCompletedBooking(response.booking || response)
+      setStep(5)
+      return true
+    }
+    throw new Error(response?.message || 'Unable to complete booking. Please try again.')
+  }
+
   const handleSubmit = async () => {
     if (phoneState.number.length < 5) {
       setError("Please enter a valid mobile number.")
@@ -106,19 +139,58 @@ export default function ClinicBookingWidget() {
     }
     setLoading(true)
     setError(null)
-    const payload = { ...formData, msisdn: `${phoneState.code}${phoneState.number}` }
     try {
-      const response = await Api.submitBooking(payload)
-      if (response?.ok || response?.booking) {
-        setCompletedBooking(response.booking || response)
-        setStep(5)
-      } else {
-        setError(response?.message || 'Unable to complete booking. Please try again.')
+      // Probe the OTP flag. If disabled, the endpoint returns { enabled:false }
+      // and we submit immediately. If enabled, the WA code is on its way.
+      const probe = await Api.requestBookingOtp(fullMsisdn())
+      if (probe?.enabled === false) {
+        await submitBookingWith(null)
+        return
       }
+      // OTP required — open the modal and let the user enter the code.
+      setOtp({
+        open: true,
+        code: '',
+        sending: false,
+        verifying: false,
+        error: null,
+        cooldown: 60,
+      })
     } catch (e) {
       setError(e.message || 'An unexpected error occurred. Please try again.')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleVerifyOtp = async () => {
+    if ((otp.code || '').length !== 6) {
+      setOtp(p => ({ ...p, error: 'Enter the full 6-digit code we sent on WhatsApp.' }))
+      return
+    }
+    setOtp(p => ({ ...p, verifying: true, error: null }))
+    try {
+      await submitBookingWith(otp.code.trim())
+      setOtp(p => ({ ...p, open: false, verifying: false, code: '' }))
+    } catch (e) {
+      const msg = e.code === 'otp_invalid'
+        ? 'That code is invalid or expired. Try again or resend.'
+        : (e.message || 'Verification failed. Please try again.')
+      setOtp(p => ({ ...p, verifying: false, error: msg }))
+    }
+  }
+
+  const handleResendOtp = async () => {
+    if (otp.cooldown > 0 || otp.sending) return
+    setOtp(p => ({ ...p, sending: true, error: null }))
+    try {
+      await Api.requestBookingOtp(fullMsisdn())
+      setOtp(p => ({ ...p, sending: false, cooldown: 60, code: '' }))
+    } catch (e) {
+      const msg = e.status === 429
+        ? (e.message || 'Please wait before requesting another code.')
+        : 'Could not resend the code. Please try again in a moment.'
+      setOtp(p => ({ ...p, sending: false, error: msg }))
     }
   }
 
@@ -156,6 +228,71 @@ export default function ClinicBookingWidget() {
   }
 
   // -- Render Components --
+  const renderOtpModal = () => {
+    if (!otp.open) return null
+    const masked = `${phoneState.code} •••• ${phoneState.number.slice(-3)}`
+    return (
+      <div className="absolute inset-0 z-[60] flex items-center justify-center p-6 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="bg-white rounded-3xl p-6 shadow-2xl w-full max-w-sm border border-slate-100 animate-in zoom-in-95 duration-200 relative">
+          <button
+            onClick={() => setOtp(p => ({ ...p, open: false }))}
+            className="absolute top-4 right-4 text-slate-400 hover:text-slate-700 transition-colors"
+            disabled={otp.verifying}
+            aria-label="Close"
+          >
+            <X size={20} />
+          </button>
+
+          <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mb-4 mx-auto ring-4 ring-emerald-50/50">
+            <MessageCircle size={24} />
+          </div>
+          <h3 className="text-xl font-bold text-slate-900 text-center mb-1">Verify on WhatsApp</h3>
+          <p className="text-slate-500 text-center mb-6 leading-relaxed text-sm">
+            We sent a 6-digit code to <span className="font-semibold text-slate-700">{masked}</span>.
+          </p>
+
+          <input
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            autoFocus
+            value={otp.code}
+            onChange={e => setOtp(p => ({ ...p, code: e.target.value.replace(/\D/g, '').slice(0, 6), error: null }))}
+            className="w-full h-14 px-4 rounded-xl bg-white border-2 border-slate-200 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 font-bold text-center text-2xl tracking-[0.5em] text-slate-900 outline-none transition-all placeholder:text-slate-300 placeholder:tracking-normal placeholder:font-normal placeholder:text-base"
+            placeholder="Enter 6-digit code"
+            maxLength={6}
+          />
+
+          {otp.error && (
+            <p className="text-red-600 text-xs mt-2 text-center font-medium">{otp.error}</p>
+          )}
+
+          <button
+            onClick={handleVerifyOtp}
+            disabled={otp.verifying || otp.code.length !== 6}
+            className="w-full mt-5 py-3.5 rounded-xl bg-teal-600 text-white font-bold hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg shadow-teal-200 active:scale-95 duration-150 flex items-center justify-center gap-2"
+          >
+            {otp.verifying ? <Loader2 className="animate-spin" size={20} /> : 'Verify & Confirm Booking'}
+          </button>
+
+          <div className="text-center mt-4">
+            {otp.cooldown > 0 ? (
+              <span className="text-slate-400 text-xs">Resend code in {otp.cooldown}s</span>
+            ) : (
+              <button
+                onClick={handleResendOtp}
+                disabled={otp.sending}
+                className="text-teal-600 text-xs font-semibold hover:text-teal-700 disabled:opacity-50"
+              >
+                {otp.sending ? 'Sending…' : 'Resend code'}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   const renderErrorModal = () => {
     if (!error) return null;
     return (
@@ -571,6 +708,7 @@ export default function ClinicBookingWidget() {
   return (
     <div className="bg-white rounded-[2.5rem] shadow-2xl shadow-slate-900/10 border border-slate-100 overflow-hidden w-full max-w-[550px] mx-auto min-h-[750px] flex flex-col relative z-20 font-sans">
       {renderErrorModal()}
+      {renderOtpModal()}
       {step < 5 && renderHeader()}
       <div className="flex-1 relative bg-white h-full flex flex-col">
         {view === 'manage' ? renderManage() : (

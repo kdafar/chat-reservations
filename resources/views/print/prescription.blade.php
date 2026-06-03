@@ -25,7 +25,7 @@
 
         .page {
             width: 210mm;
-            min-height: 297mm;
+            min-height: 290mm;
             padding: 15mm 20mm;
             margin: 0 auto;
             background: white;
@@ -177,6 +177,40 @@
             display: block;
         }
 
+        /* Free-text prescription list (v2 format) */
+        .rx-symbol {
+            font-family: 'Georgia', 'Times New Roman', serif;
+            font-size: 30pt;
+            font-weight: 700;
+            color: #0d9488;
+            line-height: 1;
+            margin-bottom: 6px;
+        }
+        .rx-list { margin-bottom: 20px; }
+        .rx-item {
+            display: flex;
+            gap: 14px;
+            align-items: baseline;
+            padding: 13px 4px;
+            border-bottom: 1px solid #f3f4f6;
+        }
+        .rx-num {
+            flex-shrink: 0;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: #f0fdfa;
+            color: #0d9488;
+            font-size: 10pt;
+            font-weight: 700;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .rx-body { flex: 1; }
+        .rx-drug { font-weight: 700; font-size: 12pt; color: #111827; display: block; }
+        .rx-sig { color: #374151; font-size: 11pt; margin-top: 3px; display: block; }
+
         .instructions-box {
             background: #fff;
             border: 1px dashed #cbd5e1;
@@ -291,41 +325,67 @@
         </div>
         @endif
 
-        <!-- PRESCRIPTION TABLE -->
-        <table class="rx-table">
-            <thead>
-                <tr>
-                    <th width="40%">Medication</th>
-                    <th width="15%">Dosage</th>
-                    <th width="15%">Frequency</th>
-                    <th width="15%">Duration</th>
-                    <th width="15%">Route/Note</th>
-                </tr>
-            </thead>
-            <tbody>
-                @if($visit->prescriptions)
-                    @foreach($visit->prescriptions as $rx)
+        <!-- PRESCRIPTION -->
+        @php
+            // v2 stores `prescriptions` as free text (one drug per line); the legacy
+            // admin stored a structured array of rows. Detect which we have.
+            $rxRaw = $visit->prescriptions;
+            $rxStructured = is_array($rxRaw) && isset($rxRaw[0]) && is_array($rxRaw[0]);
+            $rxLines = [];
+            if (! $rxStructured) {
+                $rxText = is_array($rxRaw) ? implode("\n", array_map(fn ($r) => is_string($r) ? $r : '', $rxRaw)) : (string) $rxRaw;
+                $rxLines = array_values(array_filter(array_map('trim', preg_split('/\r\n|\r|\n/', $rxText)), fn ($l) => $l !== ''));
+            }
+        @endphp
+
+        @if($rxStructured)
+            <table class="rx-table">
+                <thead>
+                    <tr>
+                        <th width="40%">Medication</th>
+                        <th width="15%">Dosage</th>
+                        <th width="15%">Frequency</th>
+                        <th width="15%">Duration</th>
+                        <th width="15%">Route/Note</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach($rxRaw as $rx)
                         <tr>
-                            <td>
-                                <span class="medicine-name">{{ $rx['medicine'] }}</span>
-                            </td>
+                            <td><span class="medicine-name">{{ $rx['medicine'] ?? ($rx['name'] ?? '-') }}</span></td>
                             <td>{{ $rx['dosage'] ?? '-' }}</td>
                             <td>{{ $rx['frequency'] ?? '-' }}</td>
                             <td>{{ $rx['duration'] ?? '-' }}</td>
-                            <td>
-                                <span class="medicine-instr">{{ $rx['instruction'] ?? '' }}</span>
-                            </td>
+                            <td><span class="medicine-instr">{{ $rx['instruction'] ?? '' }}</span></td>
                         </tr>
                     @endforeach
-                @else
-                    <tr>
-                        <td colspan="5" style="text-align: center; padding: 40px; color: #9ca3af; font-style: italic;">
-                            No medications prescribed during this visit.
-                        </td>
-                    </tr>
-                @endif
-            </tbody>
-        </table>
+                </tbody>
+            </table>
+        @elseif(count($rxLines))
+            <div class="rx-symbol">℞</div>
+            <div class="rx-list">
+                @foreach($rxLines as $i => $line)
+                    @php
+                        // Split "Name 500mg form — sig × dur (note)" into a bold drug
+                        // head and a lighter signa, when the em-dash separator exists.
+                        $parts = preg_split('/\s+—\s+/u', $line, 2);
+                        $rxHead = $parts[0];
+                        $rxSig = $parts[1] ?? null;
+                    @endphp
+                    <div class="rx-item">
+                        <span class="rx-num">{{ $i + 1 }}</span>
+                        <div class="rx-body">
+                            <span class="rx-drug">{{ $rxHead }}</span>
+                            @if($rxSig)<span class="rx-sig">{{ $rxSig }}</span>@endif
+                        </div>
+                    </div>
+                @endforeach
+            </div>
+        @else
+            <div style="text-align: center; padding: 40px; color: #9ca3af; font-style: italic; border-bottom: 1px solid #f3f4f6;">
+                No medications prescribed during this visit.
+            </div>
+        @endif
 
         <!-- PATIENT ADVICE -->
         @if($visit->patient_instructions)
@@ -345,10 +405,6 @@
         <div class="footer">
             <div style="font-size: 9pt; color: #6b7280; max-width: 60%;">
                 {{ $visit->doctor->partner->footer_text ?? 'This prescription is valid for 3 days from the date of issue unless otherwise specified.' }}
-                <br><br>
-                @if($visit->doctor->partner->website) 
-                    🌐 {{ $visit->doctor->partner->website }}
-                @endif
             </div>
             
             <div class="signature-block">

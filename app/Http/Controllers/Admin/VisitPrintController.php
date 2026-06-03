@@ -41,4 +41,14 @@ class VisitPrintController extends Controller
             ->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
             ->header('Pragma', 'no-cache');
     }
+
+    public function medicalLeave(Request $request, Visit $visit): Response
+    {
+        $visit->loadMissing(['patient', 'doctor.partner', 'branch']);
+
+        return response()
+            ->view('print.medical-leave', compact('visit'))
+            ->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+            ->header('Pragma', 'no-cache');
+    }
 }

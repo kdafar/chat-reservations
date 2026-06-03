@@ -898,5 +898,623 @@ return [
             ],
         ],
 
+        // ── Patients ────────────────────────────────────────────────
+        'list_patient_files' => [
+            'what' => [
+                'heading' => 'What is this?',
+                'body' => 'Documents and medical files attached to patients — scans, lab reports, ID copies, consent forms and any other attachment. Each file belongs to one patient and shows up on that patient\'s profile.',
+            ],
+            'how' => [
+                'heading' => 'How to use it',
+                'items' => [
+                    'Click "Upload" to attach a file to a patient; pick the patient, a category and the document itself.',
+                    'Open a file to preview or download it; every download is recorded.',
+                    'Files also appear under the "Files" tab inside the patient\'s profile, so you can work from either place.',
+                    'Archive a file you no longer need — it is hidden but recoverable, not destroyed.',
+                ],
+            ],
+            'faq' => [
+                'heading' => 'Common questions',
+                'items' => [
+                    ['q' => 'Who can see a patient\'s files?', 'a' => 'Access is permission-based and every open/download is written to the access log, so you can always see who viewed a document and when.'],
+                    ['q' => 'Why can\'t I permanently delete a file?', 'a' => 'Force-delete is blocked while a file is still referenced. Archive it instead — this keeps the medical record intact for audit and legal reasons.'],
+                    ['q' => 'Where do these files come from?', 'a' => 'They are uploaded here or from the patient profile. They are not the same as lab results, which live on the visit\'s lab order.'],
+                ],
+            ],
+        ],
+
+        // ── Inpatient ───────────────────────────────────────────────
+        'inpatient_bed_board' => [
+            'what' => [
+                'heading' => 'What is this?',
+                'body' => 'A live map of every bed across all wards, colour-coded by status — occupied, free, or being cleaned. It is the fastest way to see where there is space and which patient is in which bed right now.',
+            ],
+            'how' => [
+                'heading' => 'How to use it',
+                'items' => [
+                    'Scan the board to find a free bed before admitting a patient.',
+                    'Click an occupied bed to jump to that admission and its patient.',
+                    'Use it during handover to get an instant picture of ward occupancy.',
+                    'Beds turn free automatically the moment a patient is discharged.',
+                ],
+            ],
+            'faq' => [
+                'heading' => 'Common questions',
+                'items' => [
+                    ['q' => 'A bed shows occupied but the patient left — why?', 'a' => 'The bed only frees up when the admission is formally discharged on the Admissions page. Complete the discharge and the board updates immediately.'],
+                    ['q' => 'How do I add or remove beds from the board?', 'a' => 'Beds and their wards are managed on the Beds and Wards pages. The board only displays what is set up there.'],
+                    ['q' => 'Why is a bed greyed out?', 'a' => 'It is marked unavailable (e.g. being cleaned or out of service) and cannot be assigned until it is freed.'],
+                ],
+            ],
+        ],
+        'inpatient_admissions' => [
+            'what' => [
+                'heading' => 'What is this?',
+                'body' => 'The record of patients admitted to a bed. Admitting starts the stay and occupies a bed; transferring moves the patient to another bed; discharging ends the stay, frees the bed, and finalises the room charges.',
+            ],
+            'how' => [
+                'heading' => 'How to use it',
+                'items' => [
+                    'Click "Admit" to put a patient into a free bed — this immediately marks that bed occupied on the Bed Board.',
+                    'Use "Transfer" to move an admitted patient to a different bed or ward without ending the stay.',
+                    'Use "Discharge" when the patient leaves — it frees the bed and stops daily bed charges.',
+                    'Open an admission to see its length of stay, accumulated bed charges and linked patient.',
+                ],
+            ],
+            'faq' => [
+                'heading' => 'Common questions',
+                'items' => [
+                    ['q' => 'What happens to billing when I admit a patient?', 'a' => 'Daily bed charges accrue based on the bed\'s daily rate for every day of the stay, and flow into the patient\'s billing alongside any services and items.'],
+                    ['q' => 'Does discharging affect insurance?', 'a' => 'Yes — if the patient has an active policy, completing the stay can feed the insurance claim, just like an outpatient visit.'],
+                    ['q' => 'Can two patients share one bed?', 'a' => 'No. A bed can hold only one active admission; you must discharge or transfer the current patient first.'],
+                ],
+            ],
+        ],
+        'inpatient_wards' => [
+            'what' => [
+                'heading' => 'What is this?',
+                'body' => 'The wards and departments that group your beds — for example General, ICU or Maternity. Every bed belongs to exactly one ward, and admitted patients are organised by ward across the system.',
+            ],
+            'how' => [
+                'heading' => 'How to use it',
+                'items' => [
+                    'Click "New ward" to create a department, then add beds to it on the Beds page.',
+                    'Edit a ward to rename it or change which branch it belongs to.',
+                    'Use wards to keep the Bed Board and inpatient reports organised by area.',
+                ],
+            ],
+            'faq' => [
+                'heading' => 'Common questions',
+                'items' => [
+                    ['q' => 'Can I delete a ward that has beds?', 'a' => 'Remove or reassign its beds first. A ward that still owns beds (or active admissions) should not be deleted, to avoid orphaning patients.'],
+                    ['q' => 'How do wards relate to beds?', 'a' => 'A ward is the container; beds live inside it. Set up the ward here, then create its beds on the Beds page.'],
+                ],
+            ],
+        ],
+        'inpatient_beds' => [
+            'what' => [
+                'heading' => 'What is this?',
+                'body' => 'The individual beds patients are admitted to. Each bed belongs to a ward, has a daily rate, and an availability status. The daily rate is what drives the room charges on every admission.',
+            ],
+            'how' => [
+                'heading' => 'How to use it',
+                'items' => [
+                    'Click "New bed", assign it to a ward and set its daily rate.',
+                    'Mark a bed unavailable when it is being cleaned or serviced so it cannot be assigned.',
+                    'Edit the daily rate to change what future admissions to this bed will be charged.',
+                ],
+            ],
+            'faq' => [
+                'heading' => 'Common questions',
+                'items' => [
+                    ['q' => 'If I change a bed\'s daily rate, does it change existing bills?', 'a' => 'No. The new rate applies to charges going forward; charges already accrued on a current admission are not rewritten.'],
+                    ['q' => 'Why can\'t I delete a bed?', 'a' => 'A bed with a current or past admission cannot be removed. Mark it unavailable instead so it stays out of use without losing its history.'],
+                    ['q' => 'Where do I see if a bed is free?', 'a' => 'The Bed Board shows live status. This page is for setting beds up and pricing them.'],
+                ],
+            ],
+        ],
+        'inpatient_reports' => [
+            'what' => [
+                'heading' => 'What is this?',
+                'body' => 'Management reports for the inpatient department — bed occupancy, average length of stay (ALOS), admissions over time, and revenue per ward. The numbers are derived from your admissions and beds.',
+            ],
+            'how' => [
+                'heading' => 'How to use it',
+                'items' => [
+                    'Review occupancy to see how fully your wards are being used.',
+                    'Track ALOS to understand how long patients typically stay.',
+                    'Use revenue-per-ward to see which areas earn the most.',
+                ],
+            ],
+            'faq' => [
+                'heading' => 'Common questions',
+                'items' => [
+                    ['q' => 'Can I edit anything here?', 'a' => 'No — this page is read-only. To change the figures, work on the Admissions, Beds and Wards pages; the reports recalculate from there.'],
+                    ['q' => 'Why does occupancy look low?', 'a' => 'It reflects actual admissions versus available beds. If beds are marked unavailable or admissions were discharged, occupancy drops accordingly.'],
+                ],
+            ],
+        ],
+
+        // ── Insurance ───────────────────────────────────────────────
+        'list_insurers' => [
+            'what' => [
+                'heading' => 'What is this?',
+                'body' => 'The insurance companies you work with, with their contact and billing details. Insurers sit at the top of the insurance chain — each one offers Plans, which patients hold as Policies.',
+            ],
+            'how' => [
+                'heading' => 'How to use it',
+                'items' => [
+                    'Click "New insurer" to add a company you bill.',
+                    'Once an insurer exists, create its coverage Plans on the Plans page.',
+                    'Edit an insurer to keep contact and settlement details current.',
+                ],
+            ],
+            'faq' => [
+                'heading' => 'Common questions',
+                'items' => [
+                    ['q' => 'Do I add patients\' coverage here?', 'a' => 'No. Add the company here, its Plans on the Plans page, then link a patient to a plan with a Policy on the Policies page.'],
+                    ['q' => 'Can I delete an insurer?', 'a' => 'Not while it still has plans, policies or claims attached — those would lose their parent. Deactivate it instead.'],
+                ],
+            ],
+        ],
+        'list_insurance_plans' => [
+            'what' => [
+                'heading' => 'What is this?',
+                'body' => 'The coverage plans each insurer offers, with their tiers and rules. A plan defines how much is covered; patients are then linked to a plan through a Policy.',
+            ],
+            'how' => [
+                'heading' => 'How to use it',
+                'items' => [
+                    'Click "New plan", choose the insurer it belongs to, and set its coverage rules.',
+                    'Edit a plan to adjust coverage percentages, limits or co-payment rules.',
+                    'Assign the plan to patients by creating Policies on the Policies page.',
+                ],
+            ],
+            'faq' => [
+                'heading' => 'Common questions',
+                'items' => [
+                    ['q' => 'Does changing a plan change existing patients\' coverage?', 'a' => 'New rules apply going forward. Claims already calculated keep the figures they were settled with, so historical records stay accurate.'],
+                    ['q' => 'How does a plan affect a visit?', 'a' => 'When a patient with a policy on this plan is treated, the plan\'s rules drive the coverage calculation on pre-authorizations and claims.'],
+                ],
+            ],
+        ],
+        'list_patient_policies' => [
+            'what' => [
+                'heading' => 'What is this?',
+                'body' => 'Which patient is covered by which plan, including policy and member numbers and validity dates. A policy is the link that lets a patient\'s visits be pre-authorized and claimed against insurance.',
+            ],
+            'how' => [
+                'heading' => 'How to use it',
+                'items' => [
+                    'Click "New policy", pick the patient and the plan, and enter the member/policy number and dates.',
+                    'Mark one policy as primary if a patient has more than one.',
+                    'Keep validity dates current — an expired policy will not drive coverage.',
+                ],
+            ],
+            'faq' => [
+                'heading' => 'Common questions',
+                'items' => [
+                    ['q' => 'Why is the pre-auth tab missing on a visit?', 'a' => 'Pre-authorizations and auto-claims only appear when the patient has an active policy. Add or renew the policy here first.'],
+                    ['q' => 'What does "primary" mean?', 'a' => 'The primary policy is the one used by default when drafting a claim from a completed visit.'],
+                    ['q' => 'Does adding a policy bill anyone?', 'a' => 'No. It only records coverage. Money moves later through claims and the payments recorded against them.'],
+                ],
+            ],
+        ],
+        'list_preauthorizations' => [
+            'what' => [
+                'heading' => 'What is this?',
+                'body' => 'Requests for an insurer to approve treatment before it is carried out. A pre-authorization is tied to a visit and a policy, and its decision (approved, partial or rejected) tells reception how much the insurer will cover.',
+            ],
+            'how' => [
+                'heading' => 'How to use it',
+                'items' => [
+                    'Request a pre-authorization from the visit (the "Pre-authorizations" tab) or here, choosing the services and estimated amounts.',
+                    'Record the insurer\'s decision when it comes back — approved, partial or rejected.',
+                    'Use the approved amount to guide what the patient pays out of pocket.',
+                ],
+            ],
+            'faq' => [
+                'heading' => 'Common questions',
+                'items' => [
+                    ['q' => 'Is a pre-authorization the same as a claim?', 'a' => 'No. A pre-auth approves treatment beforehand; a claim bills the insurer after the visit is completed. They are separate steps in the same flow.'],
+                    ['q' => 'What if the patient has no active policy?', 'a' => 'You cannot raise a pre-auth without one. Add a Policy for the patient first.'],
+                    ['q' => 'Does recording a decision charge anything?', 'a' => 'No. It only records the insurer\'s answer; billing happens through the claim.'],
+                ],
+            ],
+        ],
+        'list_insurance_claims' => [
+            'what' => [
+                'heading' => 'What is this?',
+                'body' => 'The bills you send to insurers for completed visits, and their settlement status. A claim moves through a fixed lifecycle — draft, submitted, decided, paid or written off — and posts the money to the accounting ledger as it goes.',
+            ],
+            'how' => [
+                'heading' => 'How to use it',
+                'items' => [
+                    'Most claims are drafted automatically when a covered visit is completed; you can also draft one from a visit manually.',
+                    'Submit a draft to the insurer, then record their decision when it returns.',
+                    'Record the insurer\'s payment against the claim, choosing the bank or cash account it lands in.',
+                    'Write off an amount the insurer will not pay; void a claim raised in error.',
+                ],
+            ],
+            'faq' => [
+                'heading' => 'Common questions',
+                'items' => [
+                    ['q' => 'Should I change a claim\'s status by hand?', 'a' => 'Always use the actions (submit, decide, record payment, write off). They drive the state machine and post the correct accounting entries — editing status directly would break the books.'],
+                    ['q' => 'Where did this claim come from?', 'a' => 'When a visit with an active policy is marked completed, a claim is auto-drafted from its charges. It will not duplicate if one already exists.'],
+                    ['q' => 'Recording a payment — does it touch accounting?', 'a' => 'Yes. It posts to the chosen bank/cash account and the receivable, so the claim and the ledger always agree.'],
+                ],
+            ],
+        ],
+
+        // ── Laboratory ──────────────────────────────────────────────
+        'list_lab_tests' => [
+            'what' => [
+                'heading' => 'What is this?',
+                'body' => 'The catalogue of laboratory tests you offer, with each test\'s code, specimen, unit, reference range and price. This catalogue is what doctors pick from when they order tests during a visit.',
+            ],
+            'how' => [
+                'heading' => 'How to use it',
+                'items' => [
+                    'Click "New test" to add a test with its specimen, unit, normal reference range and price.',
+                    'Edit a test to update its price or reference range; ordering a test snapshots the price at that moment.',
+                    'Archive a test you no longer run — past results keep showing its name.',
+                ],
+            ],
+            'faq' => [
+                'heading' => 'Common questions',
+                'items' => [
+                    ['q' => 'Where are the actual results entered?', 'a' => 'Results live on the visit\'s lab order, not here. This page is only the catalogue that order lines are built from.'],
+                    ['q' => 'If I change a test\'s price, do past orders change?', 'a' => 'No. Each order line keeps the price captured when it was ordered, so historical billing stays correct.'],
+                    ['q' => 'Why can\'t I delete a test?', 'a' => 'If any past order used it, deletion is blocked so historical results keep their test name. Archive it instead.'],
+                ],
+            ],
+        ],
+
+        // ── HR ──────────────────────────────────────────────────────
+        'list_staff_leaves' => [
+            'what' => [
+                'heading' => 'What is this?',
+                'body' => 'Staff leave requests and their approval status. Each person can request their own leave; HR managers see everyone and can approve or reject. Leave types and date ranges automatically work out the number of days.',
+            ],
+            'how' => [
+                'heading' => 'How to use it',
+                'items' => [
+                    'Click "Request leave", pick the type and the start/end dates — the day count is calculated for you.',
+                    'HR managers use Approve / Reject on pending requests.',
+                    'Everyone can view and manage their own requests; managers see the whole team.',
+                ],
+            ],
+            'faq' => [
+                'heading' => 'Common questions',
+                'items' => [
+                    ['q' => 'Why do I only see my own leave?', 'a' => 'Non-managers are scoped to their own records. HR managers (clinic admin, branch manager) see and act on everyone\'s.'],
+                    ['q' => 'Can I request leave for a colleague?', 'a' => 'No — the person field is locked to you unless you are an HR manager, so requests cannot be filed on someone else\'s behalf.'],
+                    ['q' => 'Does approving leave block their schedule?', 'a' => 'It records the absence for HR. Use the Doctor Schedule and bookings to manage actual availability.'],
+                ],
+            ],
+        ],
+        'list_staff_attendances' => [
+            'what' => [
+                'heading' => 'What is this?',
+                'body' => 'Daily clock-in / clock-out records for staff, with hours worked calculated automatically. Each person has at most one attendance row per day.',
+            ],
+            'how' => [
+                'heading' => 'How to use it',
+                'items' => [
+                    'Use "Clock me in" to start your day; clock out later and the hours are computed for you.',
+                    'HR managers can review and correct attendance across the team.',
+                    'Open a row to see clock-in, clock-out and total hours.',
+                ],
+            ],
+            'faq' => [
+                'heading' => 'Common questions',
+                'items' => [
+                    ['q' => 'It says I already clocked in today — why?', 'a' => 'Only one attendance record is allowed per person per day. If a record was archived, it must be restored rather than re-created.'],
+                    ['q' => 'Why do I only see my own attendance?', 'a' => 'Like leave, attendance is scoped to you unless you are an HR manager, who sees everyone.'],
+                ],
+            ],
+        ],
+        'list_users' => [
+            'what' => [
+                'heading' => 'What is this?',
+                'body' => 'The people who can log in to the system, and the roles that decide what each of them can see and do. A user can be linked to a doctor so that doctor can use the Room Console.',
+            ],
+            'how' => [
+                'heading' => 'How to use it',
+                'items' => [
+                    'Click "New user", set their email and password, and assign one or more roles.',
+                    'Link a user to a doctor record so the doctor can log in and run consultations.',
+                    'Change a user\'s roles to instantly widen or narrow what they can access.',
+                ],
+            ],
+            'faq' => [
+                'heading' => 'Common questions',
+                'items' => [
+                    ['q' => 'How do I control what a user can see?', 'a' => 'Through their roles. Roles carry the permissions, and permissions decide which pages and actions appear — manage them on the Roles & Permissions page.'],
+                    ['q' => 'A doctor cannot log in — why?', 'a' => 'They need a user account here (with the doctor role) and a password, and that user must be linked to their doctor record.'],
+                    ['q' => 'What happens if I deactivate a user?', 'a' => 'They can no longer sign in, but their history (who did what) stays in the activity log for audit.'],
+                ],
+            ],
+        ],
+
+        // ── Platform ────────────────────────────────────────────────
+        'list_partners' => [
+            'what' => [
+                'heading' => 'What is this?',
+                'body' => 'The clinics or partner organisations operating on the platform. A partner owns its branches, and most data in the system is scoped to the partner it belongs to.',
+            ],
+            'how' => [
+                'heading' => 'How to use it',
+                'items' => [
+                    'Click "New clinic" to onboard a partner organisation.',
+                    'Add the partner\'s physical locations on the Branches page.',
+                    'Edit a partner to update its profile and settings.',
+                ],
+            ],
+            'faq' => [
+                'heading' => 'Common questions',
+                'items' => [
+                    ['q' => 'How do partners relate to branches?', 'a' => 'A partner is the organisation; branches are its physical locations. Patients, bookings and visits are scoped to the partner and branch they belong to.'],
+                    ['q' => 'Who can manage clinics?', 'a' => 'This is a platform-level page, limited to system administrators.'],
+                ],
+            ],
+        ],
+        'list_gateway_accounts' => [
+            'what' => [
+                'heading' => 'What is this?',
+                'body' => 'The payment gateway accounts used to collect online and card payments. These credentials connect the booking and payment flows to your payment provider.',
+            ],
+            'how' => [
+                'heading' => 'How to use it',
+                'items' => [
+                    'Click "New account" and enter the credentials your payment provider gave you.',
+                    'Assign the account to the branch or flow that should use it.',
+                    'Keep keys current — an invalid key will cause online payments to fail.',
+                ],
+            ],
+            'faq' => [
+                'heading' => 'Common questions',
+                'items' => [
+                    ['q' => 'Online payments are failing — where do I look first?', 'a' => 'Check that the gateway account here is active and its keys are valid. Expired or wrong credentials are the usual cause.'],
+                    ['q' => 'Does this affect cash payments?', 'a' => 'No. Gateways only handle online/card collection; cash is recorded directly on the visit or booking.'],
+                ],
+            ],
+        ],
+        'list_roles' => [
+            'what' => [
+                'heading' => 'What is this?',
+                'body' => 'Roles and the permissions inside them. Roles are the single switch that controls what every user can see and do — assign a role to a user and they get exactly that access, with no code changes.',
+            ],
+            'how' => [
+                'heading' => 'How to use it',
+                'items' => [
+                    'Open a role to tick or untick the permissions it grants.',
+                    'Create a new role when a group of staff needs a distinct set of access.',
+                    'Assign roles to people on the Users page; changes take effect on their next page load.',
+                ],
+            ],
+            'faq' => [
+                'heading' => 'Common questions',
+                'items' => [
+                    ['q' => 'I changed a role but a user still cannot see a page — why?', 'a' => 'Permissions are read per session. Have the user reload or sign in again, and confirm the role actually carries that permission.'],
+                    ['q' => 'Is it safer to change a role or a single user?', 'a' => 'Changing a role affects everyone who has it. For a one-off, consider a dedicated role rather than widening a shared one.'],
+                    ['q' => 'Why are some sidebar items hidden for a user?', 'a' => 'The sidebar mirrors permissions — items a role cannot open are hidden, so the menu never shows a link that would be denied.'],
+                ],
+            ],
+        ],
+        'system_settings' => [
+            'what' => [
+                'heading' => 'What is this?',
+                'body' => 'System-wide configuration that controls how the whole application behaves — toggles, defaults and integration keys. Changes here can affect every page and every user.',
+            ],
+            'how' => [
+                'heading' => 'How to use it',
+                'items' => [
+                    'Adjust a setting and save; it takes effect across the system.',
+                    'Secret values are masked and only change when you re-enter them — leaving a secret blank keeps the existing value.',
+                    'Change one setting at a time when troubleshooting, so you can see its effect.',
+                ],
+            ],
+            'faq' => [
+                'heading' => 'Common questions',
+                'items' => [
+                    ['q' => 'Why is a secret field showing dots?', 'a' => 'Stored secrets are masked for safety. They are only overwritten if you type a new value; an empty field leaves the saved secret untouched.'],
+                    ['q' => 'A change here affected another page — is that expected?', 'a' => 'Yes. Settings are global by design, which is why they are limited to administrators and best changed deliberately.'],
+                ],
+            ],
+        ],
+        'activity_log' => [
+            'what' => [
+                'heading' => 'What is this?',
+                'body' => 'An immutable audit trail of who changed what, and when, across the system — patients, visits, claims, stock and more. It is read-only and exists for accountability and troubleshooting.',
+            ],
+            'how' => [
+                'heading' => 'How to use it',
+                'items' => [
+                    'Filter by user, date or record type to trace a specific change.',
+                    'Open an entry to see the before/after values that were recorded.',
+                    'Use it to answer "who changed this?" when a record looks wrong.',
+                ],
+            ],
+            'faq' => [
+                'heading' => 'Common questions',
+                'items' => [
+                    ['q' => 'Can I edit or delete log entries?', 'a' => 'No — the log is read-only by design. That is what makes it trustworthy as an audit record.'],
+                    ['q' => 'Why is an action not showing?', 'a' => 'Only audited models record here, and only meaningful changes (not empty saves). Read-only views are not logged.'],
+                    ['q' => 'Who can see the activity log?', 'a' => 'It is restricted to administrators, since it spans every patient and record in the system.'],
+                ],
+            ],
+        ],
+
+        // ── WhatsApp ────────────────────────────────────────────────
+        'wa_triggers' => [
+            'what' => [
+                'heading' => 'What is this?',
+                'body' => 'Automations that fire a WhatsApp interaction when a keyword or event occurs — for example a patient texting "book" starts the booking flow. Triggers link an incoming signal to the flow or message that should respond.',
+            ],
+            'how' => [
+                'heading' => 'How to use it',
+                'items' => [
+                    'Create a trigger, set the keyword or event, and choose the flow/version it launches.',
+                    'Use priority to decide which trigger wins when more than one could match.',
+                    'Turn "use latest published" on to always run the newest version of a flow.',
+                ],
+            ],
+            'faq' => [
+                'heading' => 'Common questions',
+                'items' => [
+                    ['q' => 'A keyword is not starting the flow — why?', 'a' => 'Check the trigger is active, the keyword matches exactly, and its priority is not being beaten by another trigger.'],
+                    ['q' => 'How do triggers relate to Templates and Logs?', 'a' => 'Triggers decide what to send; approved Templates are what gets sent; the Logs page records every message that went out.'],
+                ],
+            ],
+        ],
+        'wa_campaigns' => [
+            'what' => [
+                'heading' => 'What is this?',
+                'body' => 'Bulk WhatsApp messages sent to a chosen audience, with delivery tracking. Campaigns use approved templates and respect rate limits so you stay within WhatsApp\'s rules.',
+            ],
+            'how' => [
+                'heading' => 'How to use it',
+                'items' => [
+                    'Create a campaign, pick the audience and the approved template to send.',
+                    'Launch it and watch delivery progress on the campaign detail.',
+                    'Review the Logs page to see per-message delivery status.',
+                ],
+            ],
+            'faq' => [
+                'heading' => 'Common questions',
+                'items' => [
+                    ['q' => 'Will sending a campaign cost money?', 'a' => 'Yes — WhatsApp charges per message. Confirm the audience size before launching, and note campaigns may be disabled in non-production environments to avoid charges.'],
+                    ['q' => 'Why was a message not delivered?', 'a' => 'Open the Logs page; it shows the provider\'s delivery status and any error per recipient.'],
+                ],
+            ],
+        ],
+        'wa_commands' => [
+            'what' => [
+                'heading' => 'What is this?',
+                'body' => 'The keywords patients can text and the canned reply the chatbot sends for each — for example "hi", "reset" or "help". Commands are the simple, one-step responses; multi-step journeys are flows started by Triggers.',
+            ],
+            'how' => [
+                'heading' => 'How to use it',
+                'items' => [
+                    'Add a command with its keyword and the reply it should send.',
+                    'Use the order/priority to control which command matches first.',
+                    'Keep replies short and clear — they are the patient\'s first impression.',
+                ],
+            ],
+            'faq' => [
+                'heading' => 'Common questions',
+                'items' => [
+                    ['q' => 'Command vs Trigger — what is the difference?', 'a' => 'A command gives a single canned reply. A trigger launches a whole flow (a multi-step conversation). Use commands for quick answers.'],
+                    ['q' => 'Two commands share a keyword — which wins?', 'a' => 'The one matched first by priority/order. Give each keyword a clear, distinct priority to avoid surprises.'],
+                ],
+            ],
+        ],
+        'wa_messages' => [
+            'what' => [
+                'heading' => 'What is this?',
+                'body' => 'The approved WhatsApp message templates used for notifications and replies. WhatsApp requires templates to be approved by Meta before they can be sent; this is where you manage them.',
+            ],
+            'how' => [
+                'heading' => 'How to use it',
+                'items' => [
+                    'Register a template here using the exact name approved in Meta.',
+                    'Map your data into the template\'s placeholders so each message is personalised.',
+                    'Reference the template from Triggers and Campaigns to send it.',
+                ],
+            ],
+            'faq' => [
+                'heading' => 'Common questions',
+                'items' => [
+                    ['q' => 'Why must the name match exactly?', 'a' => 'WhatsApp sends by template name. A mismatch with the Meta-approved name means the message will be rejected.'],
+                    ['q' => 'Can I send free text instead?', 'a' => 'Only inside an open session window. Outside it, WhatsApp requires an approved template — which is why they are managed here.'],
+                ],
+            ],
+        ],
+        'wa_message_texts' => [
+            'what' => [
+                'heading' => 'What is this?',
+                'body' => 'A catalogue of reusable message wording you can reference across flows, commands and triggers. It keeps your phrasing consistent and lets you update wording in one place.',
+            ],
+            'how' => [
+                'heading' => 'How to use it',
+                'items' => [
+                    'Add a text entry with a key and its wording (in each language you use).',
+                    'Reference the entry wherever that wording is needed, instead of retyping it.',
+                    'Edit the entry once to update every place that uses it.',
+                ],
+            ],
+            'faq' => [
+                'heading' => 'Common questions',
+                'items' => [
+                    ['q' => 'How is this different from Templates?', 'a' => 'Templates are Meta-approved formats for outbound notifications. Message texts are your own reusable snippets for the chatbot\'s conversation.'],
+                    ['q' => 'Does editing wording affect live flows?', 'a' => 'Yes — anything referencing the entry uses the updated wording immediately, which is the point of keeping it central.'],
+                ],
+            ],
+        ],
+        'wa_logs' => [
+            'what' => [
+                'heading' => 'What is this?',
+                'body' => 'Every WhatsApp message sent and received, with its delivery status. This is your record of what the system actually communicated with patients.',
+            ],
+            'how' => [
+                'heading' => 'How to use it',
+                'items' => [
+                    'Filter by patient, status or date to find a specific message.',
+                    'Check delivery status when a patient says they did not receive something.',
+                    'Use it to confirm a reminder or campaign message actually went out.',
+                ],
+            ],
+            'faq' => [
+                'heading' => 'Common questions',
+                'items' => [
+                    ['q' => 'A message shows failed — what now?', 'a' => 'The status reflects the provider\'s response. Common causes are an invalid number, a closed session window, or an unapproved template.'],
+                    ['q' => 'Can I resend from here?', 'a' => 'The log is a record. Resend by re-running the trigger or campaign that produced the message.'],
+                ],
+            ],
+        ],
+        'wa_sessions' => [
+            'what' => [
+                'heading' => 'What is this?',
+                'body' => 'The open WhatsApp conversations currently in progress with patients, and where each one is in its flow. A session tracks the live state of a chatbot conversation.',
+            ],
+            'how' => [
+                'heading' => 'How to use it',
+                'items' => [
+                    'Review active sessions to see which patients are mid-conversation.',
+                    'Open a session to see its current screen/state and data.',
+                    'Use it to diagnose a patient who seems stuck in a flow.',
+                ],
+            ],
+            'faq' => [
+                'heading' => 'Common questions',
+                'items' => [
+                    ['q' => 'Why does a patient seem stuck?', 'a' => 'Their session may be paused or waiting on input. The session state shows where they are; a reset command usually starts them over.'],
+                    ['q' => 'What is the "session window"?', 'a' => 'WhatsApp only allows free-text replies for 24 hours after the patient\'s last message. Outside it, you must use an approved template.'],
+                ],
+            ],
+        ],
+        'wa_audience_metrics' => [
+            'what' => [
+                'heading' => 'What is this?',
+                'body' => 'Metrics on how many people you reach on WhatsApp and how they engage — useful for judging the impact of reminders and campaigns.',
+            ],
+            'how' => [
+                'heading' => 'How to use it',
+                'items' => [
+                    'Review reach and engagement to see how your messaging is performing.',
+                    'Compare periods to spot trends after a campaign.',
+                    'Use the insight to refine who you target and how often.',
+                ],
+            ],
+            'faq' => [
+                'heading' => 'Common questions',
+                'items' => [
+                    ['q' => 'Where does this data come from?', 'a' => 'It is aggregated from the message logs and campaign deliveries, so it reflects what was actually sent and received.'],
+                    ['q' => 'Can I change the numbers here?', 'a' => 'No — this page is read-only reporting. Activity on Campaigns, Triggers and Logs is what moves the metrics.'],
+                ],
+            ],
+        ],
+
     ],
 ];

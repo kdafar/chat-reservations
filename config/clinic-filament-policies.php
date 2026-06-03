@@ -45,6 +45,8 @@ return [
         \App\Models\VisitStockRequest::class => 'visit_stock_request',
         \App\Models\GatewayAccount::class => 'gateway_account',
         \App\Models\ClinicPackage::class => 'clinic_packages',
+        \App\Models\ClinicalPhrase::class => 'clinical_phrases',
+        \App\Models\Medication::class => 'medications',
 
         // Accounting layer
         \App\Models\Accounting\Account::class => 'accounting_accounts',
@@ -53,6 +55,37 @@ return [
         \App\Models\Accounting\Vendor::class => 'accounting_vendors',
         \App\Models\Accounting\Expense::class => 'accounting_expenses',
         \App\Models\Accounting\BankReconciliation::class => 'accounting_bank_reconciliations',
+
+        // Inpatient layer
+        \App\Models\Inpatient\Ward::class => 'wards',
+        \App\Models\Inpatient\Bed::class => 'beds',
+        \App\Models\Inpatient\Admission::class => 'admissions',
+
+        // Insurance layer
+        \App\Models\Insurance\Insurer::class => 'insurers',
+        \App\Models\Insurance\InsurancePlan::class => 'insurance_plans',
+        \App\Models\Insurance\PatientInsurancePolicy::class => 'patient_insurance_policies',
+        \App\Models\Insurance\InsurancePreauthorization::class => 'insurance_preauthorizations',
+        \App\Models\Insurance\InsuranceClaim::class => 'insurance_claims',
+
+        // Patient files (shared module)
+        \App\Models\PatientFile::class => 'patient_files',
+
+        // Visit financial children (per-line charges + payments)
+        \App\Models\VisitCharge::class => 'visit_charges',
+        \App\Models\VisitPayment::class => 'visit_payments',
+
+        // HR layer (any staff — not just doctors)
+        \App\Models\StaffLeave::class => 'staff_leaves',
+        \App\Models\StaffAttendance::class => 'staff_attendances',
+
+        // Laboratory layer
+        \App\Models\Lab\LabTest::class => 'lab_tests',
+        \App\Models\Lab\LabOrder::class => 'lab_orders',
+        \App\Models\Lab\LabOrderItem::class => 'lab_order_items',
+
+        // Platform / audit
+        \Spatie\Activitylog\Models\Activity::class => 'activity_log',
     ],
 
     /**

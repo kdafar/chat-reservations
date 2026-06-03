@@ -68,20 +68,21 @@ class ClinicItemResource extends Resource
                         ->options([
                             'consumable' => __('clinic_inventory.clinic_item.types.consumable'),
                             'service' => __('clinic_inventory.clinic_item.types.service'),
+                            'product' => __('clinic_inventory.clinic_item.types.product'),
                         ])
                         ->native(false)
                         ->required()
                         ->live()
                         ->afterStateUpdated(function ($state, Set $set) {
-                            // Sensible default: consumables are usually stockable; services are not
-                            if ($state === 'consumable') {
-                                $set('is_stockable', true);
-                            } else {
+                            // Services never hold stock; consumables and products do.
+                            if ($state === 'service') {
                                 $set('is_stockable', false);
                                 $set('stock_unit', null);
                                 $set('usage_unit', null);
                                 $set('conversion_factor', null);
                                 $set('consume_step', null);
+                            } else {
+                                $set('is_stockable', true);
                             }
                         }),
 
@@ -103,7 +104,7 @@ class ClinicItemResource extends Resource
             Forms\Components\Section::make(__('clinic_inventory.clinic_item.sections.inventory_units'))
                 ->description(__('clinic_inventory.clinic_item.sections.inventory_units_description'))
                 ->collapsible()
-                ->hidden(fn (Get $get) => $get('type') !== 'consumable')
+                ->hidden(fn (Get $get) => $get('type') === 'service')
                 ->columns(3)
                 ->schema([
                     Forms\Components\Toggle::make('is_stockable')
@@ -150,6 +151,47 @@ class ClinicItemResource extends Resource
                     Forms\Components\Toggle::make('is_billable')
                         ->label(__('clinic_inventory.clinic_item.fields.is_billable'))
                         ->default(true),
+                ]),
+
+            // Service bill of materials — the consumables a service uses, which
+            // auto-deduct from stock when the service is performed on a visit.
+            Forms\Components\Section::make(__('clinic_inventory.clinic_item.sections.bom'))
+                ->description(__('clinic_inventory.clinic_item.sections.bom_description'))
+                ->visible(fn (Get $get) => $get('type') === 'service')
+                ->schema([
+                    Forms\Components\Repeater::make('components')
+                        ->relationship('components')
+                        ->label('')
+                        ->addActionLabel(__('clinic_inventory.clinic_item.bom.add'))
+                        ->columns(3)
+                        ->schema([
+                            Forms\Components\Select::make('component_item_id')
+                                ->label(__('clinic_inventory.clinic_item.bom.item'))
+                                ->required()
+                                ->searchable()
+                                ->preload()
+                                ->options(fn () => ClinicItem::query()
+                                    ->where('is_active', 1)
+                                    ->where('type', '!=', 'service')
+                                    ->get()
+                                    ->sortBy(fn (ClinicItem $it) => $it->localized_name)
+                                    ->mapWithKeys(fn (ClinicItem $it) => [$it->id => $it->localized_name])
+                                    ->all()
+                                ),
+
+                            Forms\Components\TextInput::make('qty_base')
+                                ->label(__('clinic_inventory.clinic_item.bom.qty_base'))
+                                ->numeric()
+                                ->step('0.0001')
+                                ->minValue(0.0001)
+                                ->default(1)
+                                ->required(),
+
+                            Forms\Components\Toggle::make('is_optional')
+                                ->label(__('clinic_inventory.clinic_item.bom.is_optional'))
+                                ->helperText(__('clinic_inventory.clinic_item.bom.is_optional_help'))
+                                ->default(false),
+                        ]),
                 ]),
 
             Forms\Components\Section::make(__('clinic_inventory.clinic_item.sections.pricing'))
@@ -232,6 +274,7 @@ class ClinicItemResource extends Resource
                     ->options([
                         'consumable' => __('clinic_inventory.clinic_item.types.consumable'),
                         'service' => __('clinic_inventory.clinic_item.types.service'),
+                        'product' => __('clinic_inventory.clinic_item.types.product'),
                     ]),
 
                 Tables\Filters\TernaryFilter::make('is_stockable')

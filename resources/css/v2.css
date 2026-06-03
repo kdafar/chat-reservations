@@ -1,0 +1,844 @@
+@import "tailwindcss";
+
+/* =========================================================================
+   Full-width page wrappers
+   -------------------------------------------------------------------------
+   Every v2 page sets an inline `max-width: <960–1280>px; margin: 0 auto`
+   on its root wrapper, which left empty gutters on wide screens and when
+   the sidebar was collapsed. Neutralise that cap on the page root (the sole
+   child of <main>) so pages fill the available width. Inline padding on the
+   wrapper is preserved; child elements with their own intentional max-width
+   are untouched since they aren't direct children of .app-main.
+   ========================================================================= */
+.app-main > * {
+    max-width: none !important;
+    margin-inline: 0 !important;
+}
+
+/* =========================================================================
+   Aleph Clinic Admin — design tokens
+   Ported from the Claude Design bundle (clinic-system/project/styles.css).
+   All colors in oklch, addressable as CSS vars so dark mode + tweaks can
+   rotate them at runtime.
+   ========================================================================= */
+
+:root {
+    /* Surfaces */
+    --bg:         oklch(0.99 0.005 90);
+    --bg-elev:    oklch(1 0 0);
+    --bg-sunken:  oklch(0.975 0.006 85);
+    --bg-hover:   oklch(0.965 0.008 85);
+
+    /* Ink */
+    --fg:         oklch(0.18 0.02 260);
+    --fg-muted:   oklch(0.42 0.015 260);
+    --fg-subtle:  oklch(0.58 0.012 260);
+    --fg-faint:   oklch(0.72 0.008 260);
+
+    /* Lines */
+    --line:        oklch(0.92 0.006 85);
+    --line-strong: oklch(0.86 0.008 85);
+    --ring:        oklch(0.74 0.085 78 / 0.45);
+
+    /* Primary — warm gold (#b19860-ish, tunable) */
+    --gold-h: 82;
+    --gold-c: 0.085;
+    --gold-l: 0.71;
+    --primary:        oklch(var(--gold-l) var(--gold-c) var(--gold-h));
+    --primary-hover:  oklch(calc(var(--gold-l) - 0.04) var(--gold-c) var(--gold-h));
+    --primary-soft:   oklch(0.96 0.025 var(--gold-h));
+    --primary-soft-2: oklch(0.92 0.04 var(--gold-h));
+    --primary-fg:     oklch(0.18 0.02 260);
+    --on-primary:     oklch(0.99 0.005 90);
+
+    /* Status */
+    --success:          oklch(0.66 0.16 152);
+    --success-soft:     oklch(0.94 0.04 152);
+    --warning:          oklch(0.78 0.16 75);
+    --warning-soft:     oklch(0.95 0.05 75);
+    --info:             oklch(0.68 0.14 235);
+    --info-soft:        oklch(0.94 0.035 235);
+    --violet:           oklch(0.62 0.18 295);
+    --violet-soft:      oklch(0.94 0.04 295);
+    --destructive:      oklch(0.64 0.20 18);
+    --destructive-soft: oklch(0.94 0.045 18);
+
+    /* Radii */
+    --radius-card: 12px;
+    --radius-input: 8px;
+    --radius-sm: 6px;
+    --radius-pill: 9999px;
+
+    /* Shadows */
+    --shadow-xs: 0 1px 0 oklch(0.92 0.006 85 / 0.6);
+    --shadow-sm: 0 1px 2px oklch(0.2 0.02 260 / 0.04), 0 1px 0 oklch(1 0 0 / 0.6) inset;
+    --shadow-md: 0 1px 2px oklch(0.2 0.02 260 / 0.05), 0 4px 12px oklch(0.2 0.02 260 / 0.04);
+    --shadow-lg: 0 4px 12px oklch(0.2 0.02 260 / 0.08), 0 16px 40px oklch(0.2 0.02 260 / 0.06);
+    --shadow-card: var(--shadow-sm);
+    --shadow-card-hover: 0 1px 2px oklch(0.2 0.02 260 / 0.05), 0 6px 18px oklch(0.2 0.02 260 / 0.06);
+
+    /* Type */
+    --font-latin:  "Geist", ui-sans-serif, system-ui, -apple-system, sans-serif;
+    --font-arabic: "Tajawal", "IBM Plex Sans Arabic", ui-sans-serif, system-ui, sans-serif;
+    --font-mono:   "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+.dark {
+    --bg:         oklch(0.18 0.012 260);
+    --bg-elev:    oklch(0.22 0.013 260);
+    --bg-sunken:  oklch(0.16 0.011 260);
+    --bg-hover:   oklch(0.25 0.014 260);
+
+    --fg:         oklch(0.96 0.005 90);
+    --fg-muted:   oklch(0.78 0.012 260);
+    --fg-subtle:  oklch(0.62 0.015 260);
+    --fg-faint:   oklch(0.46 0.015 260);
+
+    --line:        oklch(0.30 0.014 260);
+    --line-strong: oklch(0.38 0.016 260);
+    --ring:        oklch(0.74 0.085 78 / 0.55);
+
+    --primary-soft:    oklch(0.30 0.04 var(--gold-h));
+    --primary-soft-2:  oklch(0.36 0.06 var(--gold-h));
+    --primary-fg:      oklch(0.18 0.02 260);
+    --on-primary:      oklch(0.16 0.011 260);
+
+    --success-soft:     oklch(0.28 0.06 152);
+    --warning-soft:     oklch(0.30 0.08 75);
+    --info-soft:        oklch(0.28 0.06 235);
+    --violet-soft:      oklch(0.30 0.07 295);
+    --destructive-soft: oklch(0.32 0.09 18);
+
+    --shadow-xs: 0 1px 0 oklch(0.12 0.012 260 / 0.6);
+    --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.25), 0 1px 0 oklch(1 0 0 / 0.03) inset;
+    --shadow-md: 0 1px 2px oklch(0 0 0 / 0.3), 0 4px 12px oklch(0 0 0 / 0.25);
+    --shadow-lg: 0 4px 12px oklch(0 0 0 / 0.4), 0 16px 40px oklch(0 0 0 / 0.4);
+    --shadow-card: var(--shadow-sm);
+    --shadow-card-hover: 0 1px 2px oklch(0 0 0 / 0.3), 0 6px 18px oklch(0 0 0 / 0.32);
+}
+
+/* =========================================================================
+   Base
+   ========================================================================= */
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; height: 100%; }
+
+html {
+    font-family: var(--font-latin);
+    background: var(--bg);
+    color: var(--fg);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: "cv11", "ss01", "ss03";
+}
+
+html[dir="rtl"] { font-family: var(--font-arabic); }
+html[dir="rtl"] body { letter-spacing: 0; }
+
+body {
+    background: var(--bg);
+    color: var(--fg);
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.tnum { font-variant-numeric: tabular-nums; }
+.num-display { font-variant-numeric: tabular-nums; font-feature-settings: "tnum", "cv11"; letter-spacing: -0.01em; }
+
+::selection { background: var(--primary-soft-2); color: var(--fg); }
+
+:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+}
+:focus:not(:focus-visible) { outline: none; }
+
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+    background: oklch(0.85 0.008 85 / 0.6);
+    border-radius: 8px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover { background: oklch(0.7 0.012 85 / 0.7); background-clip: content-box; }
+.dark *::-webkit-scrollbar-thumb { background: oklch(0.35 0.014 260 / 0.7); background-clip: content-box; }
+
+/* =========================================================================
+   Animations
+   ========================================================================= */
+@keyframes pulseDot {
+    0%, 100% { box-shadow: 0 0 0 0 currentColor; opacity: 1; }
+    50%      { box-shadow: 0 0 0 5px transparent; opacity: 0.85; }
+}
+.pulse-dot {
+    width: 6px; height: 6px; border-radius: 9999px;
+    background: currentColor;
+    animation: pulseDot 1.8s ease-in-out infinite;
+    flex-shrink: 0;
+}
+
+@keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+.skel {
+    background: linear-gradient(90deg,
+        var(--bg-sunken) 0%,
+        var(--bg-hover) 50%,
+        var(--bg-sunken) 100%);
+    background-size: 200% 100%;
+    animation: shimmer 1.6s linear infinite;
+    border-radius: 6px;
+}
+
+@keyframes fadeUp {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+.fade-up { animation: fadeUp 0.35s ease-out both; }
+
+@keyframes sheetIn  { from { transform: translateX(100%); } to { transform: translateX(0); } }
+@keyframes sheetInR { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+@keyframes overlayIn { from { opacity: 0; } to { opacity: 1; } }
+[dir="ltr"] .sheet-enter { animation: sheetIn 0.28s cubic-bezier(.2,.7,.2,1) both; }
+[dir="rtl"] .sheet-enter { animation: sheetInR 0.28s cubic-bezier(.2,.7,.2,1) both; }
+.overlay-enter { animation: overlayIn 0.18s ease-out both; }
+
+@keyframes toastInLTR { from { transform: translate(20px, -10px); opacity: 0; } to { transform: translate(0,0); opacity: 1; } }
+@keyframes toastInRTL { from { transform: translate(-20px, -10px); opacity: 0; } to { transform: translate(0,0); opacity: 1; } }
+[dir="ltr"] .toast-enter { animation: toastInLTR 0.28s cubic-bezier(.2,.7,.2,1) both; }
+[dir="rtl"] .toast-enter { animation: toastInRTL 0.28s cubic-bezier(.2,.7,.2,1) both; }
+
+/* RTL safety */
+.flip-rtl { transform: scaleX(1); }
+[dir="rtl"] .flip-rtl { transform: scaleX(-1); }
+
+/* =========================================================================
+   Components
+   ========================================================================= */
+
+/* Glass strip topbar */
+.glass-strip {
+    background:
+        linear-gradient(180deg, oklch(0.99 0.005 90 / 0.92), oklch(0.99 0.005 90 / 0.78));
+    -webkit-backdrop-filter: blur(14px) saturate(160%);
+    backdrop-filter: blur(14px) saturate(160%);
+}
+.dark .glass-strip {
+    background: linear-gradient(180deg, oklch(0.18 0.012 260 / 0.85), oklch(0.18 0.012 260 / 0.72));
+}
+
+.eyebrow {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 11px; font-weight: 600; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--fg-subtle);
+}
+
+.num-xl { font-size: 32px; line-height: 1; font-weight: 500; letter-spacing: -0.025em; font-variant-numeric: tabular-nums; }
+.num-lg { font-size: 24px; line-height: 1.1; font-weight: 500; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.num-md { font-size: 18px; line-height: 1.2; font-weight: 500; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+
+.avatar-grad {
+    background-image:
+        radial-gradient(120% 120% at 0% 0%, oklch(0.92 0.06 var(--gold-h)) 0%, transparent 60%),
+        radial-gradient(120% 120% at 100% 100%, oklch(0.86 0.04 240) 0%, transparent 60%),
+        linear-gradient(135deg, oklch(0.93 0.025 var(--gold-h)), oklch(0.88 0.02 240));
+}
+
+/* Buttons */
+.btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    height: 36px; padding: 0 14px;
+    font-size: 13px; font-weight: 500;
+    border-radius: var(--radius-input);
+    border: 1px solid transparent;
+    transition: background 0.15s, border-color 0.15s, transform 0.05s, box-shadow 0.15s;
+    cursor: pointer; white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    font-family: inherit; color: inherit;
+}
+.btn:active { transform: translateY(0.5px); }
+.btn-primary {
+    background: var(--primary);
+    color: var(--primary-fg);
+    border-color: oklch(calc(var(--gold-l) - 0.06) var(--gold-c) var(--gold-h));
+    box-shadow: 0 1px 0 oklch(1 0 0 / 0.4) inset, 0 1px 2px oklch(0 0 0 / 0.08);
+}
+.btn-primary:hover { background: var(--primary-hover); }
+.btn-outline {
+    background: var(--bg-elev);
+    color: var(--fg);
+    border-color: var(--line);
+    box-shadow: var(--shadow-xs);
+}
+.btn-outline:hover { background: var(--bg-hover); border-color: var(--line-strong); }
+.btn-ghost {
+    background: transparent;
+    color: var(--fg-muted);
+}
+.btn-ghost:hover { background: var(--bg-hover); color: var(--fg); }
+.btn-sm { height: 30px; padding: 0 10px; font-size: 12px; gap: 6px; border-radius: 6px; }
+.btn-icon { padding: 0; width: 36px; }
+.btn-icon.btn-sm { width: 30px; }
+.btn-destructive {
+    background: var(--destructive); color: white;
+    border-color: oklch(0.54 0.20 18);
+}
+.btn-destructive:hover { background: oklch(0.58 0.21 18); }
+
+/* Inputs */
+.input {
+    height: 36px;
+    padding: 0 12px;
+    border-radius: var(--radius-input);
+    border: 1px solid var(--line);
+    background: var(--bg-elev);
+    color: var(--fg);
+    font-size: 13px;
+    font-family: inherit;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    width: 100%;
+    font-variant-numeric: tabular-nums;
+}
+.input:focus { outline: none; border-color: oklch(calc(var(--gold-l) + 0.02) var(--gold-c) var(--gold-h)); box-shadow: 0 0 0 3px var(--ring); }
+.input::placeholder { color: var(--fg-faint); }
+
+/* Native <select> — match .input, with a custom chevron so it stops looking
+   like a raw browser control. (Long lists are migrated to SearchableSelect,
+   which adds type-to-search; this styles whatever native selects remain.) */
+.select:not([multiple]),
+select.input:not([multiple]) {
+    height: 36px;
+    padding: 0 34px 0 12px;
+    border-radius: var(--radius-input);
+    border: 1px solid var(--line);
+    background-color: var(--bg-elev);
+    color: var(--fg);
+    font-size: 13px;
+    font-family: inherit;
+    line-height: 36px;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 11px center;
+}
+.select:hover,
+select.input:hover { border-color: var(--line-strong); }
+.select:focus,
+select.input:focus { outline: none; border-color: oklch(calc(var(--gold-l) + 0.02) var(--gold-c) var(--gold-h)); box-shadow: 0 0 0 3px var(--ring); }
+[dir="rtl"] .select:not([multiple]),
+[dir="rtl"] select.input:not([multiple]) { padding: 0 12px 0 34px; background-position: left 11px center; }
+
+/* Checkboxes & radios — on-brand, replacing the default browser control. */
+input[type="checkbox"],
+input[type="radio"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    flex-shrink: 0;
+    display: inline-block;
+    vertical-align: middle;
+    border: 1.5px solid var(--line-strong);
+    background: var(--bg-elev);
+    cursor: pointer;
+    transition: background-color 0.12s, border-color 0.12s, box-shadow 0.12s;
+}
+input[type="checkbox"] { border-radius: 5px; }
+input[type="radio"] { border-radius: 50%; }
+input[type="checkbox"]:hover,
+input[type="radio"]:hover { border-color: var(--primary); }
+input[type="checkbox"]:focus-visible,
+input[type="radio"]:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ring); }
+input[type="checkbox"]:checked,
+input[type="radio"]:checked { background-color: var(--primary); border-color: var(--primary); }
+input[type="checkbox"]:checked {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 12px;
+}
+input[type="radio"]:checked { background-image: radial-gradient(circle at center, white 0 38%, transparent 42%); }
+input[type="checkbox"]:disabled,
+input[type="radio"]:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Card */
+.card {
+    background: var(--bg-elev);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card);
+}
+
+/* Segmented */
+.seg {
+    display: inline-flex; padding: 3px; gap: 2px;
+    background: var(--bg-sunken);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-input);
+    height: 36px;
+}
+.seg-sm { height: 30px; padding: 2px; }
+.seg button {
+    appearance: none; border: 0; background: transparent;
+    padding: 0 12px; border-radius: 6px; font-size: 12px;
+    color: var(--fg-muted); font-family: inherit; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px;
+    transition: background 0.15s, color 0.15s;
+    height: 100%;
+}
+.seg button:hover { color: var(--fg); }
+.seg button.is-active {
+    background: var(--bg-elev);
+    color: var(--fg);
+    box-shadow: var(--shadow-xs), 0 0 0 1px var(--line);
+}
+
+/* Badge */
+.badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 22px; padding: 0 9px;
+    border-radius: 9999px;
+    font-size: 11px; font-weight: 500;
+    background: var(--bg-sunken);
+    color: var(--fg-muted);
+    border: 1px solid var(--line);
+    white-space: nowrap;
+}
+.badge .dot { width: 6px; height: 6px; border-radius: 9999px; background: currentColor; flex-shrink: 0; }
+.badge-success    { color: var(--success);     background: var(--success-soft);    border-color: oklch(0.88 0.06 152); }
+.badge-warning    { color: oklch(0.55 0.14 75);  background: var(--warning-soft);    border-color: oklch(0.86 0.07 75); }
+.badge-info       { color: var(--info);        background: var(--info-soft);       border-color: oklch(0.86 0.06 235); }
+.badge-violet     { color: var(--violet);      background: var(--violet-soft);     border-color: oklch(0.86 0.06 295); }
+.badge-destructive{ color: var(--destructive); background: var(--destructive-soft);border-color: oklch(0.85 0.07 18); }
+.badge-gold       { color: oklch(calc(var(--gold-l) - 0.22) var(--gold-c) var(--gold-h));
+                    background: var(--primary-soft); border-color: oklch(0.88 0.04 var(--gold-h)); }
+
+.dark .badge-success    { color: oklch(0.84 0.14 152); border-color: oklch(0.38 0.10 152); }
+.dark .badge-warning    { color: oklch(0.86 0.14 75);  border-color: oklch(0.42 0.12 75); }
+.dark .badge-info       { color: oklch(0.82 0.12 235); border-color: oklch(0.38 0.10 235); }
+.dark .badge-violet     { color: oklch(0.82 0.14 295); border-color: oklch(0.40 0.12 295); }
+.dark .badge-destructive{ color: oklch(0.82 0.16 18);  border-color: oklch(0.42 0.14 18); }
+.dark .badge-gold       { color: oklch(0.88 0.10 var(--gold-h)); border-color: oklch(0.42 0.08 var(--gold-h)); }
+
+/* Sidebar rail */
+.rail { width: 56px; }
+.rail-btn {
+    position: relative;
+    display: flex; align-items: center; justify-content: center;
+    width: 40px; height: 40px;
+    border-radius: 10px;
+    color: var(--fg-subtle);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+    background: transparent;
+    border: 0;
+    font: inherit;
+}
+.rail-btn:hover { background: var(--bg-hover); color: var(--fg); }
+.rail-btn.is-active { background: var(--primary-soft); color: oklch(calc(var(--gold-l) - 0.26) var(--gold-c) var(--gold-h)); }
+.dark .rail-btn.is-active { color: oklch(0.92 0.08 var(--gold-h)); }
+.rail-btn.is-active::before {
+    content: "";
+    position: absolute;
+    inset-inline-start: -8px;
+    top: 8px; bottom: 8px;
+    width: 3px;
+    background: var(--primary);
+    border-radius: 9999px;
+}
+
+.tab-pill {
+    height: 30px; padding: 0 12px;
+    border-radius: 8px;
+    font-size: 12.5px; font-weight: 500;
+    color: var(--fg-subtle);
+    display: inline-flex; align-items: center; gap: 6px;
+    transition: background 0.15s, color 0.15s;
+    cursor: pointer;
+    background: transparent;
+    border: 0;
+    font-family: inherit;
+}
+.tab-pill:hover { color: var(--fg); background: var(--bg-hover); }
+.tab-pill.is-active { color: var(--fg); background: var(--bg-elev); box-shadow: var(--shadow-xs), 0 0 0 1px var(--line); }
+
+.bell-badge {
+    position: absolute;
+    top: 0;
+    inset-inline-end: 0;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    background: oklch(0.6 0.18 22);
+    color: oklch(0.99 0.005 90);
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1;
+    border-radius: 9999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    /* A ring of the topbar bg gives the badge a clean "cut-out" feel without
+       the chunky border that made it look glued on. */
+    box-shadow: 0 0 0 2px var(--bg);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+    pointer-events: none;
+}
+.dark .bell-badge { box-shadow: 0 0 0 2px var(--bg-elev); background: oklch(0.62 0.20 22); }
+
+/* When the unread count fits in a single dot (no number), shrink the chip. */
+.bell-badge.is-dot {
+    min-width: 8px;
+    height: 8px;
+    padding: 0;
+    top: 4px;
+    inset-inline-end: 4px;
+}
+
+.divider { height: 1px; background: var(--line); }
+
+.logo-mark {
+    width: 28px; height: 28px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: linear-gradient(160deg,
+        oklch(calc(var(--gold-l) + 0.04) var(--gold-c) var(--gold-h)) 0%,
+        oklch(calc(var(--gold-l) - 0.10) var(--gold-c) var(--gold-h)) 100%);
+    color: oklch(0.99 0.005 90);
+    border-radius: 8px;
+    font-weight: 600; font-size: 14px;
+    box-shadow: 0 1px 0 oklch(1 0 0 / 0.35) inset, 0 1px 2px oklch(0 0 0 / 0.1);
+    font-family: var(--font-latin);
+}
+[dir="rtl"] .logo-mark { font-family: var(--font-latin); }
+
+.statcard-active {
+    box-shadow: 0 0 0 2px var(--primary), 0 0 0 5px var(--primary-soft);
+}
+
+.empty-illo {
+    width: 64px; height: 64px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 16px;
+    background: var(--bg-sunken);
+    color: var(--fg-subtle);
+    border: 1px solid var(--line);
+}
+
+.sheet-overlay {
+    position: fixed; inset: 0;
+    background: oklch(0.18 0.02 260 / 0.32);
+    -webkit-backdrop-filter: blur(2px);
+    backdrop-filter: blur(2px);
+    z-index: 60;
+}
+.sheet-panel {
+    position: fixed; top: 0; bottom: 0;
+    inset-inline-end: 0;
+    width: min(480px, 100%);
+    background: var(--bg-elev);
+    border-inline-start: 1px solid var(--line);
+    box-shadow: var(--shadow-lg);
+    z-index: 61;
+    display: flex; flex-direction: column;
+}
+
+.toast-stack {
+    position: fixed;
+    top: 72px;
+    inset-inline-end: 16px;
+    z-index: 70;
+    display: flex; flex-direction: column; gap: 10px;
+    pointer-events: none;
+}
+.toast {
+    pointer-events: auto;
+    min-width: 280px; max-width: 360px;
+    background: var(--bg-elev);
+    border: 1px solid var(--line);
+    border-inline-start: 3px solid var(--primary);
+    border-radius: 10px;
+    padding: 12px 14px;
+    box-shadow: var(--shadow-lg);
+    display: flex; align-items: flex-start; gap: 10px;
+    font-size: 13px;
+}
+.toast.toast-success { border-inline-start-color: var(--success); }
+.toast.toast-info    { border-inline-start-color: var(--info); }
+.toast.toast-warning { border-inline-start-color: var(--warning); }
+
+.patient-card {
+    background: var(--bg-elev);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-card);
+    padding: 14px;
+    display: flex; flex-direction: column; gap: 10px;
+    transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+    cursor: pointer;
+    position: relative;
+}
+.patient-card:hover {
+    border-color: var(--line-strong);
+    box-shadow: var(--shadow-card-hover);
+    transform: translateY(-1px);
+}
+.patient-card.compact { padding: 10px 12px; gap: 6px; }
+.patient-card .accent-bar {
+    position: absolute;
+    inset-inline-start: 14px;
+    inset-inline-end: 14px;
+    top: 0;
+    height: 2px;
+    border-radius: 0 0 2px 2px;
+}
+
+.kwd::after { content: " KWD"; font-size: 0.7em; color: var(--fg-subtle); margin-inline-start: 4px; font-weight: 400; }
+
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* StatCard grid — 4 across on desktop, 2 across on tablet, 1 across on mobile. */
+.statgrid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 900px) { .statgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 480px) { .statgrid { grid-template-columns: 1fr; } }
+
+/* ────────────────────────────────────────────────────────────
+   Centered modal dialog chrome — shared by every v2 popup.
+   Used by: Patients/Profile (upload, edit), Bookings/Index
+   (cancel/reschedule/rooms/collect), Visit/Console (add item,
+   add payment), and any new modal that follows the same pattern.
+   ──────────────────────────────────────────────────────────── */
+.cd-overlay {
+    position: fixed; inset: 0;
+    background: oklch(0.18 0.02 260 / 0.45);
+    -webkit-backdrop-filter: blur(3px);
+    backdrop-filter: blur(3px);
+    z-index: 90;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+}
+.cd-panel {
+    width: min(560px, 100%);
+    max-height: calc(100vh - 32px);
+    background: var(--bg-elev);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    box-shadow: var(--shadow-lg);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.overlay-enter { animation: overlayIn 0.18s ease both; }
+@keyframes overlayIn { from { opacity: 0; } to { opacity: 1; } }
+
+/* ----------------------------------------------------------------------------
+ * v2-shared-crud — shared list/CRUD primitives for the v2 admin pages migrated
+ * off Filament (plans, policies, pre-auth, claims, pharmacy, comp, activity…).
+ * Pre-existing pages still carry their own scoped copies; these globals serve
+ * the newer pages so each one needn't repeat the block.
+ * -------------------------------------------------------------------------- */
+.stat-chip { display:inline-flex; flex-direction:column; align-items:flex-start; padding:8px 12px; border-radius:8px; background:var(--bg-elev, var(--bg-hover)); border:1px solid var(--line); min-width:80px; }
+.stat-chip-num { font-size:18px; font-weight:700; color:var(--fg); line-height:1; }
+.stat-chip-lbl { font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:var(--fg-faint); margin-top:4px; }
+.table { width:100%; border-collapse:collapse; font-size:13px; }
+.table th { text-align:start; padding:10px 12px; font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:var(--fg-faint); font-weight:600; border-bottom:1px solid var(--line); }
+.table td { padding:10px 12px; border-bottom:1px solid var(--line); vertical-align:top; }
+.table tr:last-child td { border-bottom:none; }
+.table tbody tr:hover { background:var(--bg-hover); }
+.table tr.is-archived { opacity:0.55; }
+.badge-ok { display:inline-block; padding:2px 8px; font-size:11px; font-weight:600; border:1px solid var(--ok); color:var(--ok); border-radius:999px; }
+.badge-muted { display:inline-block; padding:2px 8px; font-size:11px; font-weight:600; border:1px solid var(--fg-faint); color:var(--fg-faint); border-radius:999px; }
+.label { display:block; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.04em; color:var(--fg-faint); margin-bottom:4px; }
+.err { font-size:11px; color:var(--err, #dc2626); margin-top:4px; font-weight:500; }
+/* Required-field marker — flags a mandatory input the same way across every v2
+   form. Usage: <label class="label">Full name <span class="req">*</span></label>.
+   Element-agnostic, so it works inside .label / .eyebrow / <label> alike. */
+.req { color:var(--destructive); font-weight:700; margin-inline-start:2px; }
+.modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:80; display:flex; align-items:center; justify-content:center; padding:24px; }
+.modal-panel { width:100%; max-width:680px; background:var(--bg); border:1px solid var(--line); border-radius:12px; box-shadow:0 24px 60px rgba(0,0,0,0.25); overflow:hidden; }
+.modal-panel.modal-lg { max-width:860px; }
+
+/* v2-shared-crud — clickable table rows: smoother hover + press affordance.
+ * Rows that open a drawer/console set cursor:pointer inline; this adds the
+ * transition + active state globally so the whole app feels consistent. */
+.table tbody tr { transition: background 0.12s ease; }
+.table tbody tr:active { background: var(--bg-active, var(--bg-hover)); }
+
+/* v2 bulk multi-select — selected row highlight */
+.table tbody tr.is-selected { background: var(--accent-bg, rgba(177,152,96,0.12)); }
+
+/* ============================================================================
+ * PRINT
+ * The v2 app is an SPA shell (sticky top strip + sidebar). A bare window.print()
+ * used to dump the whole UI onto paper. This isolates the page content, forces
+ * an ink-on-paper palette (even in dark mode), and sets up a clean A4 document.
+ *
+ * Conventions used by pages:
+ *   .no-print    → hidden when printing (buttons, filters, interactive bits)
+ *   .print-only  → hidden on screen, shown only when printing (e.g. letterhead)
+ * ========================================================================== */
+
+/* Hidden on screen; revealed only on paper. */
+.print-only { display: none; }
+
+@media print {
+    /* Ink-on-paper palette regardless of the on-screen (light/dark) theme. */
+    html, html.dark, :root, .dark {
+        --bg:         #ffffff;
+        --bg-elev:    #ffffff;
+        --bg-sunken:  #ffffff;
+        --bg-hover:   #f3f4f6;
+        --fg:         #111827;
+        --fg-muted:   #374151;
+        --fg-subtle:  #4b5563;
+        --fg-faint:   #6b7280;
+        --line:        #e5e7eb;
+        --line-strong: #d1d5db;
+        --shadow-card: none;
+        --shadow-sm: none;
+        --shadow-md: none;
+        --shadow-lg: none;
+    }
+
+    html, body { background: #ffffff !important; }
+
+    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+
+    /* Drop the app shell + transient overlays. */
+    .glass-strip,
+    .sidebar,
+    .no-print,
+    .modal-backdrop,
+    .cmdk, .command-palette,
+    .toast, .toasts, .flash-toasts,
+    .notif-popover, .popover { display: none !important; }
+
+    /* Let the page content own the full sheet. */
+    .app-main { flex: 1 1 100% !important; min-width: 0 !important; padding: 0 !important; }
+    .app-main > div { max-width: 100% !important; margin: 0 !important; padding: 0 !important; }
+
+    @page { size: A4 portrait; margin: 14mm 14mm 16mm; }
+
+    /* Flatten cards for print and keep content blocks intact across pages. */
+    .card {
+        break-inside: avoid;
+        box-shadow: none !important;
+        border: 1px solid #e5e7eb !important;
+        background: #fff !important;
+    }
+    .statgrid > *, .stat { break-inside: avoid; }
+    table { width: 100% !important; border-collapse: collapse; }
+    thead { display: table-header-group; }
+    tr { break-inside: avoid; }
+
+    /* Letterhead shown only on paper. */
+    .print-only { display: block !important; }
+
+    .print-letterhead {
+        display: flex !important;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 0 0 12px;
+        margin: 0 0 18px;
+        border-bottom: 2px solid #0d9488;
+    }
+    .print-letterhead .ph-brand { display: flex; align-items: center; gap: 12px; }
+    .print-letterhead .ph-logo { height: 46px; width: auto; object-fit: contain; }
+    .print-letterhead .ph-name { font-size: 17px; font-weight: 800; color: #111827; text-transform: uppercase; letter-spacing: -0.2px; }
+    .print-letterhead .ph-meta { text-align: end; }
+    .print-letterhead .ph-title { font-size: 14px; font-weight: 700; color: #0d9488; }
+    .print-letterhead .ph-sub { font-size: 11px; color: #6b7280; margin-top: 2px; }
+    .print-letterhead .ph-date { font-size: 10px; color: #9ca3af; margin-top: 2px; }
+}
+
+/* ============================================================================
+ * MOBILE / RESPONSIVE  (shell drawer lives in AppLayout.vue)
+ * ----------------------------------------------------------------------------
+ * Every v2 page is a slotted child of <main class="app-main">, so the layout's
+ * scoped styles can't reach page content — these globals make the *content*
+ * comfortable on a phone: tighter gutters, data tables that swipe horizontally
+ * instead of overflowing the viewport, and dialogs that use the small screen.
+ * ========================================================================== */
+@media (max-width: 640px) {
+    /* Pages set their own inline padding (often 24–32px). Reclaim the side
+       gutters on phones; keep whatever vertical rhythm the page chose. */
+    .app-main > * {
+        padding-inline-start: 14px !important;
+        padding-inline-end: 14px !important;
+    }
+
+    /* Wide data tables: turn the table into a horizontally-scrollable strip so
+       columns stay legible and the page itself never overflows sideways. Pages
+       that already wrap their table in an overflow container still work (the
+       inner scroll is just a no-op there). */
+    .table {
+        display: block;
+        overflow-x: auto;
+        white-space: nowrap;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    /* Use the full small screen for centered dialogs. */
+    .modal-backdrop { padding: 12px; }
+    .cd-overlay { padding: 12px; }
+
+    /* Stat chip rows wrap instead of forcing a horizontal scroll. */
+    .stat-chip { flex: 1 1 auto; }
+
+    /* Toasts span the screen (minus gutters) instead of a fixed 360px card that
+       would overflow a narrow phone. */
+    .toast-stack { inset-inline-start: 12px; inset-inline-end: 12px; top: 64px; }
+    .toast { min-width: 0; max-width: none; width: 100%; }
+
+    /* Slide-over sheet uses the whole width on a phone. */
+    .sheet-panel { width: 100%; }
+}
+
+/* ── Responsive grid helpers ───────────────────────────────────────────────
+   v2 pages declare their desktop column layout with an inline
+   `grid-template-columns`. Adding one of these classes alongside that inline
+   style folds the grid down on smaller screens — the `!important` media rules
+   below beat the inline (non-important) value. Pick the class by desktop column
+   count; asymmetric two-pane layouts use `rgrid-split`. Auto-fit/auto-fill
+   grids are already fluid and are left untouched. */
+@media (max-width: 1100px) {
+    .rgrid-5,
+    .rgrid-6 { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+}
+@media (max-width: 980px) {
+    .rgrid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+}
+@media (max-width: 760px) {
+    .rgrid-3,
+    .rgrid-5,
+    .rgrid-6 { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+    .rgrid-split { grid-template-columns: 1fr !important; }
+}
+@media (max-width: 560px) {
+    .rgrid-2,
+    .rgrid-3,
+    .rgrid-4,
+    .rgrid-5,
+    .rgrid-6 { grid-template-columns: 1fr !important; }
+}
+
+/* Account button in the topbar: on phones show just the avatar; the name and
+   branch already appear inside the popover when it opens. */
+@media (max-width: 768px) {
+    .um-id-text,
+    .um-id-chev { display: none !important; }
+}
+
+/* Two-up grids built with inline `grid-template-columns: 1fr 1fr` style markup
+   can't be reached here, but the shared StatCard grid already collapses (see
+   .statgrid above). Tablet width: keep the sidebar drawer but give content the
+   full width it needs. */
+@media (max-width: 1023px) {
+    .app-main { min-width: 0; }
+}

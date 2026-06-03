@@ -405,10 +405,12 @@
         <div class="h-px bg-gray-200 my-4"></div>
         <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">{{ __('Account') }}</h3>
 
+        @if (Route::has('login'))
         <div class="space-y-2">
             <a href="{{ route('login') }}" class="btn btn-outline w-full justify-center">{{ __('Login') }}</a>
             <a href="{{ route('register') }}" class="btn btn-primary w-full justify-center">{{ __('Sign Up') }}</a>
         </div>
+        @endif
     </div>
     @endauth
 

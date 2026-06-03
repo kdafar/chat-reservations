@@ -386,6 +386,197 @@ class AccountingService
         }
     }
 
+    /**
+     * Cash receipt from an insurer paying down a claim AR balance.
+     *
+     *   Dr  Cash / Bank  (deposited_to_account_id, else branch cash via 'transfer')
+     *   Cr  AR - Insurance (1110)
+     *
+     * Idempotent: keyed by (source_type=InsuranceClaimPayment::class, source_id=$payment->id, status=posted)
+     * Errors are logged + swallowed — accounting should never break the payment flow.
+     */
+    public function recordInsurerPayment(\App\Models\Insurance\InsuranceClaimPayment $payment): ?JournalEntry
+    {
+        try {
+            // Idempotency
+            if ($existing = $this->existingFor($payment)) {
+                return $existing;
+            }
+
+            $claim = $payment->claim;
+            if (! $claim) {
+                return null;
+            }
+
+            $amount = (float) $payment->amount;
+            if ($amount <= 0) {
+                return null;
+            }
+
+            // Debit side: explicit deposit account on the payment, else fall back to
+            // a branch-scoped bank account via 'transfer' method (most insurer payouts
+            // arrive by bank wire).
+            $debitAccount = null;
+            if ($payment->deposited_to_account_id) {
+                $debitAccount = \App\Models\Accounting\Account::find($payment->deposited_to_account_id);
+            }
+            if (! $debitAccount) {
+                $debitAccount = $this->coa->cashAccountFor('transfer', (int) $claim->branch_id);
+            }
+
+            $arAccount = $this->coa->resolve('1110'); // AR - Insurance
+
+            if (! $debitAccount || ! $arAccount) {
+                Log::warning('[AccountingService] missing accounts for InsuranceClaimPayment', [
+                    'payment_id' => $payment->id,
+                    'claim_id' => $payment->claim_id,
+                    'deposited_to_account_id' => $payment->deposited_to_account_id,
+                ]);
+
+                return null;
+            }
+
+            return $this->postBalancedEntry(
+                date: $payment->paid_at ?? $payment->created_at ?? now(),
+                narration: "Insurer payment for claim {$claim->claim_number}".
+                    ($payment->reference_no ? ", ref {$payment->reference_no}" : ''),
+                source: $payment,
+                branchId: (int) $claim->branch_id,
+                lines: [
+                    [
+                        'account_id' => $debitAccount->id,
+                        'debit' => $amount,
+                        'credit' => 0,
+                        'description' => "Insurer payment in ({$payment->method})",
+                        'branch_id' => $claim->branch_id,
+                    ],
+                    [
+                        'account_id' => $arAccount->id,
+                        'debit' => 0,
+                        'credit' => $amount,
+                        'description' => "AR-Insurance settled: claim {$claim->claim_number}",
+                        'branch_id' => $claim->branch_id,
+                    ],
+                ],
+                userId: $payment->received_by_user_id,
+            );
+        } catch (\Throwable $e) {
+            Log::error('[AccountingService::recordInsurerPayment] error', [
+                'payment_id' => $payment->id,
+                'msg' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
+    /**
+     * Reverse the journal entry tied to an insurer payment (e.g. on soft-delete / void).
+     * Public wrapper around reverseSourceEntry() so observers can call it without
+     * needing visibility into the service internals.
+     */
+    public function recordInsurerPaymentReversal(\App\Models\Insurance\InsuranceClaimPayment $payment, ?string $reason = null): ?JournalEntry
+    {
+        try {
+            return $this->reverseSourceEntry($payment, $reason ?? 'Insurer payment reversed');
+        } catch (\Throwable $e) {
+            Log::error('[AccountingService::recordInsurerPaymentReversal] error', [
+                'payment_id' => $payment->id,
+                'msg' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
+    /**
+     * Write off an uncollectible insurance balance against bad-debt expense.
+     *
+     *   Dr  Bad Debt Expense (6020)
+     *   Cr  AR - Insurance   (1110)
+     *
+     * Source link: the journal entry is posted with NO source link (source_type/source_id NULL),
+     * because the unique (source_type, source_id, status) index would block a second posted
+     * write-off against the same claim — and a claim may legitimately need multiple partial
+     * write-offs over its lifetime (e.g. successive insurer rejections). The claim is captured
+     * in narration + meta for traceability instead.
+     */
+    public function recordClaimWriteOff(\App\Models\Insurance\InsuranceClaim $claim, float $amount, string $reason, \App\Models\User $user): ?JournalEntry
+    {
+        try {
+            if ($amount <= 0) {
+                return null;
+            }
+
+            $expenseAccount = $this->coa->resolve('6020'); // Bad Debt Expense
+            $arAccount = $this->coa->resolve('1110');      // AR - Insurance
+
+            if (! $expenseAccount || ! $arAccount) {
+                Log::warning('[AccountingService] missing accounts for claim write-off', [
+                    'claim_id' => $claim->id,
+                ]);
+
+                return null;
+            }
+
+            // We post without a source-link to dodge the (source_type, source_id, status)
+            // unique index — multiple write-offs per claim must be allowed. Traceability
+            // lives in meta + narration.
+            $entryDate = now();
+
+            return DB::transaction(function () use ($entryDate, $claim, $amount, $reason, $user, $expenseAccount, $arAccount) {
+                $entry = JournalEntry::create([
+                    'entry_date' => $entryDate->toDateString(),
+                    'narration' => "Write-off claim {$claim->claim_number}: {$reason}",
+                    'status' => JournalEntry::STATUS_DRAFT,
+                    'source_type' => null,
+                    'source_id' => null,
+                    'branch_id' => $claim->branch_id,
+                    'currency' => 'KWD',
+                    'meta' => [
+                        'writeoff_claim_id' => $claim->id,
+                        'writeoff_claim_number' => $claim->claim_number,
+                        'writeoff_amount' => $amount,
+                        'writeoff_reason' => $reason,
+                        'writeoff_user_id' => $user->id,
+                        'writeoff_at' => $entryDate->toIso8601String(),
+                    ],
+                ]);
+
+                JournalEntryLine::create([
+                    'journal_entry_id' => $entry->id,
+                    'account_id' => $expenseAccount->id,
+                    'debit' => $amount,
+                    'credit' => 0,
+                    'description' => "Bad debt: claim {$claim->claim_number}",
+                    'branch_id' => $claim->branch_id,
+                    'currency' => 'KWD',
+                ]);
+                JournalEntryLine::create([
+                    'journal_entry_id' => $entry->id,
+                    'account_id' => $arAccount->id,
+                    'debit' => 0,
+                    'credit' => $amount,
+                    'description' => "AR-Insurance written off: claim {$claim->claim_number}",
+                    'branch_id' => $claim->branch_id,
+                    'currency' => 'KWD',
+                ]);
+
+                $entry->post($user->id);
+
+                return $entry->refresh();
+            });
+        } catch (\Throwable $e) {
+            Log::error('[AccountingService::recordClaimWriteOff] error', [
+                'claim_id' => $claim->id,
+                'amount' => $amount,
+                'msg' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
     // -------------------------------------------------------------------------
     // INTERNAL HELPERS
     // -------------------------------------------------------------------------

@@ -66,6 +66,16 @@ class User extends Authenticatable implements MustVerifyEmailContract
         return $this->belongsToMany(Partner::class, 'partner_user');
     }
 
+    public function leaves(): HasMany
+    {
+        return $this->hasMany(StaffLeave::class);
+    }
+
+    public function attendances(): HasMany
+    {
+        return $this->hasMany(StaffAttendance::class);
+    }
+
     // branches via a second pivot (we’ll add migration below)
     public function partnerBranches()
     {

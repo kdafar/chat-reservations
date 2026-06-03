@@ -9,6 +9,11 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 class VisitPayment extends Model
 {
     use SoftDeletes;
+    use \App\Models\Concerns\LogsClinicActivity;
+
+    protected $activityLogName = 'visit_payments';
+
+    protected $activityLogExcept = ['meta', 'updated_at'];
 
     public const KIND_CONSULTATION = 'consultation';
 

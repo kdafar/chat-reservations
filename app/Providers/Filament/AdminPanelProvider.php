@@ -42,6 +42,10 @@ class AdminPanelProvider extends PanelProvider
                 \Filament\View\PanelsRenderHook::TOPBAR_END,
                 fn (): string => view('filament.hooks.user-branch-badge')->render(),
             )
+            ->renderHook(
+                \Filament\View\PanelsRenderHook::TOPBAR_END,
+                fn (): string => view('filament.hooks.v2-switch')->render(),
+            )
             ->sidebarFullyCollapsibleOnDesktop()
             ->maxContentWidth(\Filament\Support\Enums\MaxWidth::Full)
             ->colors([
@@ -79,6 +83,7 @@ class AdminPanelProvider extends PanelProvider
                 // --- New Clinic Resources ---
                 \App\Filament\Resources\DoctorResource::class,
                 \App\Filament\Resources\PatientResource::class,
+                \App\Filament\Resources\PatientFileResource::class,
                 \App\Filament\Resources\VisitResource::class,
                 \App\Filament\Resources\ClinicItemResource::class,
                 \App\Filament\Resources\DoctorCompensationProfileResource::class,
@@ -98,8 +103,33 @@ class AdminPanelProvider extends PanelProvider
                 \App\Filament\Resources\Accounting\ExpenseResource::class,
                 \App\Filament\Resources\Accounting\AccountingPeriodResource::class,
                 \App\Filament\Resources\Accounting\BankReconciliationResource::class,
+
+                // --- Insurance ---
+                \App\Filament\Resources\Insurance\InsurerResource::class,
+                \App\Filament\Resources\Insurance\InsurancePlanResource::class,
+                \App\Filament\Resources\Insurance\PatientInsurancePolicyResource::class,
+                \App\Filament\Resources\Insurance\InsurancePreauthorizationResource::class,
+                \App\Filament\Resources\Insurance\InsuranceClaimResource::class,
+                \App\Filament\Resources\Inpatient\WardResource::class,
+                \App\Filament\Resources\Inpatient\BedResource::class,
+                \App\Filament\Resources\Inpatient\AdmissionResource::class,
+
+                // --- HR ---
+                \App\Filament\Resources\StaffLeaveResource::class,
+                \App\Filament\Resources\StaffAttendanceResource::class,
+
+                // --- Lab ---
+                \App\Filament\Resources\Lab\LabTestResource::class,
+
+                // --- Clinical Library (quick phrases + drug formulary) ---
+                \App\Filament\Resources\ClinicalPhraseResource::class,
+                \App\Filament\Resources\MedicationResource::class,
+
+                // --- Platform ---
+                \App\Filament\Resources\ActivityResource::class,
             ])
             ->pages([
+                \App\Filament\Pages\Inpatient\InpatientReports::class,
                 \App\Filament\Pages\AdminDashboardRoute::class,
                 \App\Filament\Pages\ClinicReportingDashboard::class,
                 // AdminDashboard::class,
@@ -140,6 +170,7 @@ class AdminPanelProvider extends PanelProvider
                 \App\Filament\Widgets\Clinic\ClinicDoctorCutTrend::class,
                 \App\Filament\Widgets\Clinic\ClinicTopDoctors::class,
                 \App\Filament\Widgets\Clinic\ClinicTopItems::class,
+                \App\Filament\Widgets\Inpatient\BedOccupancyWidget::class,
             ])
 
             // ORDER GROUPS HERE (TOP → BOTTOM)
@@ -152,6 +183,8 @@ class AdminPanelProvider extends PanelProvider
                 NavigationGroup::make()->label(fn () => __('common.nav.clinic_reports')),
                 NavigationGroup::make()->label(fn () => __('common.nav.clinic_finance')),
                 NavigationGroup::make()->label(fn () => __('common.nav.accounting')),
+                NavigationGroup::make()->label(fn () => __('common.nav.insurance')),
+                NavigationGroup::make()->label(fn () => __('common.nav.inpatient')),
                 NavigationGroup::make()->label(fn () => __('common.nav.clinic_tools')),
                 NavigationGroup::make()->label(fn () => __('common.nav.clinic_compliance')),
 

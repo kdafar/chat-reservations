@@ -111,7 +111,32 @@ export const Api = {
     })
 
     const data = await res.json()
-    if (!res.ok) throw new Error(data.message || 'Booking Failed')
+    if (!res.ok) {
+      const err = new Error(data.message || 'Booking Failed')
+      err.status = res.status
+      err.code = data.code || null
+      throw err
+    }
+    return data
+  },
+
+  requestBookingOtp: async (msisdn) => {
+    const res = await fetch('/clinic/api/bookings/request-otp', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-CSRF-TOKEN': Api.getCsrfToken()
+      },
+      body: JSON.stringify({ msisdn })
+    })
+
+    const data = await res.json()
+    if (!res.ok) {
+      const err = new Error(data.message || 'Failed to send verification code')
+      err.status = res.status
+      throw err
+    }
     return data
   },
 

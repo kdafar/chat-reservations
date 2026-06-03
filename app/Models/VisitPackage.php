@@ -19,6 +19,7 @@ class VisitPackage extends Model
         'qty' => 'decimal:3',
         'unit_price_snapshot' => 'decimal:3',
         'line_total' => 'decimal:3',
+        'discount_amount' => 'decimal:3',
         'added_by_user_id' => 'integer',
     ];
 

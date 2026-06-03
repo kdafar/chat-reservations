@@ -114,6 +114,15 @@ class VisitItemsRelationManager extends RelationManager
                     $set('line_price_total', (string) $totals['line_price_total']);
                 }),
 
+            Forms\Components\TextInput::make('discount_amount')
+                ->label('Line Discount')
+                ->numeric()
+                ->step('0.001')
+                ->minValue(0)
+                ->default(0)
+                ->suffix('KWD')
+                ->helperText('Per-line discount, subtracted from this line\'s gross price. Stacks under Visit-level discount.'),
+
             Forms\Components\TextInput::make('line_cost_total')
                 ->label('Line Cost Total')
                 ->numeric()
@@ -160,6 +169,12 @@ class VisitItemsRelationManager extends RelationManager
                 Tables\Columns\TextColumn::make('line_price_total')
                     ->label('Line Price')
                     ->numeric(3),
+
+                Tables\Columns\TextColumn::make('discount_amount')
+                    ->label('Discount')
+                    ->numeric(3)
+                    ->sortable()
+                    ->money('KWD', divideBy: 1),
             ])
             ->headerActions([
                 Tables\Actions\CreateAction::make()

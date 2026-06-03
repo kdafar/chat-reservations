@@ -9,6 +9,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class VisitCharge extends Model
 {
     use BelongsToBranchScope;
+    use \App\Models\Concerns\LogsClinicActivity;
+
+    protected $activityLogName = 'visit_charges';
 
     protected $guarded = [];
 
@@ -18,8 +21,18 @@ class VisitCharge extends Model
         'qty' => 'decimal:3',
         'unit_price_snapshot' => 'decimal:3',
         'line_total' => 'decimal:3',
+        'discount_amount' => 'decimal:3',
         'added_by_user_id' => 'integer',
     ];
+
+    /**
+     * Net line total after subtracting the per-line discount.
+     * Visit-level discount_total is applied separately on top of this.
+     */
+    public function getNetTotalAttribute(): float
+    {
+        return max(0, (float) $this->line_total - (float) $this->discount_amount);
+    }
 
     public function visit(): BelongsTo
     {

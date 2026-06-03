@@ -376,6 +376,24 @@ class VisitStockRequestService
      *
      * @return array{mode: string, request_id: int}
      */
+    /**
+     * Clinic-item ids that already have an OPEN (pending) stock-request line on
+     * this visit — i.e. dispensing is intended but not yet consumed. Used to
+     * avoid double-deducting an item that is also being requested manually.
+     */
+    public function pendingItemIds(Visit $visit): array
+    {
+        return \App\Models\VisitStockRequestLine::query()
+            ->whereHas('request', fn ($q) => $q
+                ->where('visit_id', $visit->id)
+                ->where('status', VisitStockRequest::STATUS_PENDING))
+            ->pluck('clinic_item_id')
+            ->map(fn ($v) => (int) $v)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
     public function issueOrRequestForVisit(
         Visit $visit,
         array $requirements,

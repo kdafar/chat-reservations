@@ -10,6 +10,7 @@ use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class PatientResource extends Resource
 {
@@ -179,16 +180,103 @@ class PatientResource extends Resource
                 Tables\Filters\SelectFilter::make('partner_id')
                     ->label(__('clinic_patient.fields.clinic'))
                     ->relationship('partner', 'name'),
+
+                Tables\Filters\TrashedFilter::make(),
+            ])
+            ->headerActions([
+                \App\Filament\Imports\ExcelImportAction::make()
+                    ->importer(\App\Filament\Imports\PatientImporter::class)
+                    ->label('Import'),
+                \App\Filament\Exports\ExcelExportActions::header(),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
+                Tables\Actions\DeleteAction::make(),
+                Tables\Actions\RestoreAction::make(),
+                Tables\Actions\ForceDeleteAction::make()
+                    ->visible(fn () => auth()->user()?->hasRole(['admin', 'super_admin']) ?? false)
+                    ->before(function (\App\Models\Patient $record, Tables\Actions\ForceDeleteAction $action) {
+                        $blockers = self::patientDeletionBlockers($record);
+                        if (! empty($blockers)) {
+                            \Filament\Notifications\Notification::make()
+                                ->title('Cannot permanently delete this patient')
+                                ->body('Related records still exist: '.implode(', ', $blockers).'. Delete or reassign those first.')
+                                ->danger()
+                                ->persistent()
+                                ->send();
+                            $action->cancel();
+                        }
+                    }),
             ])
             ->bulkActions([
+                \App\Filament\Exports\ExcelExportActions::bulk(),
                 Tables\Actions\DeleteBulkAction::make(),
+                Tables\Actions\RestoreBulkAction::make(),
+                Tables\Actions\ForceDeleteBulkAction::make()
+                    ->visible(fn () => auth()->user()?->hasRole(['admin', 'super_admin']) ?? false)
+                    ->before(function ($records, Tables\Actions\ForceDeleteBulkAction $action) {
+                        $blocked = [];
+                        foreach ($records as $record) {
+                            $reasons = self::patientDeletionBlockers($record);
+                            if (! empty($reasons)) {
+                                $blocked[] = "#{$record->id} ({$record->name}): ".implode(', ', $reasons);
+                            }
+                        }
+                        if (! empty($blocked)) {
+                            \Filament\Notifications\Notification::make()
+                                ->title('Cannot permanently delete '.count($blocked).' patient(s)')
+                                ->body(implode("\n", $blocked))
+                                ->danger()
+                                ->persistent()
+                                ->send();
+                            $action->cancel();
+                        }
+                    }),
             ])
             ->emptyStateHeading(__('resources.patient.empty_heading'))
             ->emptyStateDescription(__('resources.patient.empty_description'))
             ->emptyStateIcon('heroicon-o-user-group');
+    }
+
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()
+            ->withoutGlobalScopes([
+                \Illuminate\Database\Eloquent\SoftDeletingScope::class,
+            ]);
+    }
+
+    /**
+     * Return human-readable list of relations blocking a hard-delete.
+     * If any are present, ForceDelete is refused to prevent silent data
+     * loss (cascade on visits/admissions) or mid-delete FK violations
+     * (insurance policies/patient files).
+     */
+    public static function patientDeletionBlockers(\App\Models\Patient $p): array
+    {
+        $blockers = [];
+        if ($p->visits()->withTrashed()->exists()) {
+            $blockers[] = $p->visits()->withTrashed()->count().' visits';
+        }
+        if (\App\Models\Booking::query()->where('patient_id', $p->id)->exists()) {
+            $blockers[] = 'bookings';
+        }
+        if (class_exists(\App\Models\Insurance\PatientInsurancePolicy::class)
+            && \App\Models\Insurance\PatientInsurancePolicy::query()->where('patient_id', $p->id)->exists()
+        ) {
+            $blockers[] = 'insurance policies';
+        }
+        if (class_exists(\App\Models\PatientFile::class)
+            && \App\Models\PatientFile::query()->where('patient_id', $p->id)->exists()
+        ) {
+            $blockers[] = 'patient files';
+        }
+        if (class_exists(\App\Models\Inpatient\Admission::class)
+            && \App\Models\Inpatient\Admission::query()->where('patient_id', $p->id)->exists()
+        ) {
+            $blockers[] = 'admissions';
+        }
+        return $blockers;
     }
 
     public static function getRelations(): array
@@ -196,6 +284,8 @@ class PatientResource extends Resource
         return [
             // This allows viewing visits from the patient page
             \App\Filament\Resources\PatientResource\RelationManagers\VisitsRelationManager::class,
+            \App\Filament\Resources\PatientResource\RelationManagers\PatientFilesRelationManager::class,
+            \App\Filament\Resources\Concerns\ActivityRelationManager::class,
         ];
     }
 

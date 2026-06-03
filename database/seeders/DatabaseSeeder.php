@@ -546,5 +546,28 @@ class DatabaseSeeder extends Seeder
             ];
             DB::table('analytics_events')->insert($this->onlyExistingColumns('analytics_events', $ae));
         });
+
+        // ===== Accounting + Insurance bootstrap =====
+        // Accounting must run before insurance (insurance is downstream of it).
+        $this->call([
+            AccountingChartOfAccountsSeeder::class,
+            InsurerSeeder::class,
+            InsurancePlanSeeder::class,
+            InsuranceCoverageRuleSeeder::class,
+            InsuranceDemoSeeder::class,
+            LabTestSeeder::class,
+            // Clinical fast-fill library: quick phrases + drug formulary.
+            ClinicalPhraseSeeder::class,
+            MedicationSeeder::class,
+            PitchDemoSeeder::class,
+            // Service bill-of-materials, then service-bundle packages (which also
+            // retire the legacy flat-consumable procedure packages).
+            ServiceBomDemoSeeder::class,
+            ClinicPackageSeeder::class,
+            ClinicDiscountDemoSeeder::class,
+            // Canonical role structure (nurse role + removing legacy roles).
+            // Idempotent; run after the permission catalog is built.
+            ClinicRoleStructureSeeder::class,
+        ]);
     }
 }

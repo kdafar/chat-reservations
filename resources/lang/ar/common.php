@@ -17,6 +17,8 @@ return [
         'clinic_tools' => 'العيادة — الأدوات',
         'clinic_compliance' => 'العيادة — الامتثال',
         'accounting' => 'المحاسبة',
+        'insurance' => 'التأمين',
+        'inpatient' => 'التنويم',
     ],
 
     'actions' => [

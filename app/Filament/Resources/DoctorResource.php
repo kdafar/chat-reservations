@@ -352,6 +352,14 @@ class DoctorResource extends Resource
                 Tables\Filters\SelectFilter::make('branch_id')
                     ->label(__('clinic_doctor.filters.branch'))
                     ->relationship('branch', 'name'),
+
+                Tables\Filters\TrashedFilter::make(),
+            ])
+            ->headerActions([
+                \App\Filament\Imports\ExcelImportAction::make()
+                    ->importer(\App\Filament\Imports\DoctorImporter::class)
+                    ->label('Import'),
+                \App\Filament\Exports\ExcelExportActions::header(),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
@@ -363,18 +371,35 @@ class DoctorResource extends Resource
                         ])
                         : __('clinic_doctor.actions.delete.modal_description'))
                     ->modalSubmitActionLabel(__('clinic_doctor.actions.delete.submit')),
+                Tables\Actions\RestoreAction::make(),
+                Tables\Actions\ForceDeleteAction::make()
+                    ->visible(fn () => auth()->user()?->hasRole(['admin', 'super_admin']) ?? false),
             ])
             ->bulkActions([
+                \App\Filament\Exports\ExcelExportActions::bulk(),
                 Tables\Actions\DeleteBulkAction::make(),
+                Tables\Actions\RestoreBulkAction::make(),
+                Tables\Actions\ForceDeleteBulkAction::make()
+                    ->visible(fn () => auth()->user()?->hasRole(['admin', 'super_admin']) ?? false),
             ])
             ->emptyStateHeading(__('resources.doctor.empty_heading'))
             ->emptyStateDescription(__('resources.doctor.empty_description'))
             ->emptyStateIcon('heroicon-o-academic-cap');
     }
 
+    public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
+    {
+        return parent::getEloquentQuery()
+            ->withoutGlobalScopes([
+                \Illuminate\Database\Eloquent\SoftDeletingScope::class,
+            ]);
+    }
+
     public static function getRelations(): array
     {
         return [
+            \App\Filament\Resources\DoctorResource\RelationManagers\LeavesRelationManager::class,
+            \App\Filament\Resources\DoctorResource\RelationManagers\AttendanceRelationManager::class,
             \App\Filament\Resources\DoctorResource\RelationManagers\DoctorShiftsRelationManager::class,
             \App\Filament\Resources\DoctorResource\RelationManagers\CompensationProfileRelationManager::class,
         ];

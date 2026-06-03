@@ -52,7 +52,7 @@ class Expense extends Model
     ];
 
     protected $casts = [
-        'expense_date' => 'date',
+        'expense_date' => 'date:Y-m-d',
         'amount' => 'decimal:3',
         'posted_at' => 'datetime',
         'meta' => 'array',

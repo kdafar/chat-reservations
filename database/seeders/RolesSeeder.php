@@ -9,7 +9,10 @@ class RolesSeeder extends Seeder
 {
     public function run(): void
     {
-        foreach (['admin', 'partner_owner', 'branch_manager', 'branch_staff', 'customer'] as $r) {
+        // Canonical base roles. Clinic staff roles (clinic_admin / clinic_doctor /
+        // clinic_reception / clinic_nurse / accountant) and their permissions are
+        // owned by ClinicRoleStructureSeeder.
+        foreach (['admin', 'partner_owner', 'customer'] as $r) {
             Role::firstOrCreate(['name' => $r]);
         }
     }

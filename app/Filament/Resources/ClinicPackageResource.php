@@ -94,13 +94,27 @@ class ClinicPackageResource extends Resource
                                 ->required()
                                 ->searchable()
                                 ->preload()
-                                ->options(fn () => ClinicItem::query()
-                                    ->where('is_active', 1)
-                                    ->orderBy('id', 'desc')
-                                    ->get()
-                                    ->mapWithKeys(fn (ClinicItem $it) => [$it->id => $it->localized_name])
-                                    ->all()
-                                ),
+                                // A package line can be a service, product or
+                                // consumable — show the type and list services
+                                // first so they are not buried under stock items.
+                                ->options(function () {
+                                    $priority = ['service' => 0, 'product' => 1, 'consumable' => 2];
+                                    $typeLabel = fn (string $t) => match ($t) {
+                                        'service' => __('clinic_inventory.clinic_item.types.service'),
+                                        'product' => __('clinic_inventory.clinic_item.types.product'),
+                                        'consumable' => __('clinic_inventory.clinic_item.types.consumable'),
+                                        default => $t,
+                                    };
+
+                                    return ClinicItem::query()
+                                        ->where('is_active', 1)
+                                        ->get()
+                                        ->sortBy(fn (ClinicItem $it) => sprintf('%d|%s', $priority[$it->type] ?? 9, $it->localized_name))
+                                        ->mapWithKeys(fn (ClinicItem $it) => [
+                                            $it->id => $it->localized_name.' — '.$typeLabel($it->type),
+                                        ])
+                                        ->all();
+                                }),
 
                             Forms\Components\TextInput::make('qty_base')
                                 ->label(__('clinic_inventory.clinic_package.fields.qty_base'))
