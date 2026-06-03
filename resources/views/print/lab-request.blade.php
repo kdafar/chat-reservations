@@ -10,6 +10,7 @@
         @media print {
             @page { margin: 0; size: A4; }
             body { -webkit-print-color-adjust: exact; print-color-adjust: exact; margin: 0; padding: 0; }
+            .no-print { display: none !important; }
         }
 
         body { font-family: 'Inter', sans-serif; color: #1f2937; background: #fff; margin: 0; padding: 0; font-size: 12pt; line-height: 1.5; }
@@ -58,6 +59,10 @@
     </style>
 </head>
 <body>
+    <div class="no-print" style="max-width:760px;margin:12px auto;padding:10px 14px;background:#fffbeb;border:1px solid #fde68a;color:#92400e;border-radius:8px;font-size:12px;line-height:1.5;font-family:'Inter',sans-serif;">
+        💡 To hide the page number &amp; web address that your browser adds: in the Print dialog set <strong>Margins → None</strong> or untick <strong>Headers and footers</strong>.<br>
+        <span dir="rtl">لإخفاء رقم الصفحة والرابط الذي يضيفه المتصفح: في نافذة الطباعة اضبط الهوامش إلى «بلا» أو ألغِ «رؤوس وتذييلات الصفحة».</span>
+    </div>
     <div class="page">
         <!-- HEADER -->
         <div class="header">

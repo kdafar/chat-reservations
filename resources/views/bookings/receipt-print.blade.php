@@ -118,6 +118,10 @@
     </style>
 </head>
 <body>
+    <div class="no-print" style="max-width:560px;width:100%;margin:0 auto 12px;padding:10px 14px;background:#fffbeb;border:1px solid #fde68a;color:#92400e;border-radius:8px;font-size:12px;line-height:1.5;">
+        💡 To hide the page number &amp; web address that your browser adds: in the Print dialog set <strong>Margins → None</strong> or untick <strong>Headers and footers</strong>.<br>
+        <span dir="rtl">لإخفاء رقم الصفحة والرابط الذي يضيفه المتصفح: في نافذة الطباعة اضبط الهوامش إلى «بلا» أو ألغِ «رؤوس وتذييلات الصفحة».</span>
+    </div>
     <div class="sheet">
         <div class="head">
             @if($logo)<img src="{{ $logo }}" alt="Logo">@endif
