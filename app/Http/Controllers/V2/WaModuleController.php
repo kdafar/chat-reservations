@@ -141,8 +141,8 @@ class WaModuleController extends Controller
         $this->authorizeAccess($request);
         $tpl = MessageTemplate::findOrFail($template);
 
-        if ($tpl->status === 'APPROVED') {
-            return back()->with('flash', ['type' => 'error', 'message' => 'Approved templates cannot be edited.']);
+        if ($tpl->status === 'APPROVED' || $tpl->local_status === 'published') {
+            return back()->with('flash', ['type' => 'error', 'message' => 'Approved/published templates cannot be edited.']);
         }
 
         $tpl->update($this->validateTemplate($request, $tpl, $whatsapp));
@@ -369,9 +369,15 @@ class WaModuleController extends Controller
 
         // --- header rules ---
         if ($headerType === 'TEXT') {
+            $headerText = (string) ($v['header_text'] ?? '');
+            preg_match_all('/\{\{\s*(\d+)\s*\}\}/', $headerText, $hm);
+            $headerVars = collect($hm[1] ?? [])->map(fn ($n) => (int) $n)->unique()->values()->all();
             if (blank($v['header_text'] ?? null)) {
                 $errors['header_text'] = 'Header text is required for a TEXT header.';
-            } elseif (preg_match('/\{\{\s*1\s*\}\}/', (string) $v['header_text']) && blank($v['header_example'] ?? null)) {
+            } elseif (count($headerVars) > 1 || (count($headerVars) === 1 && $headerVars[0] !== 1)) {
+                // Meta allows at most ONE header variable and it must be {{1}}.
+                $errors['header_text'] = 'A TEXT header may contain only a single variable, {{1}}.';
+            } elseif (count($headerVars) === 1 && blank($v['header_example'] ?? null)) {
                 $errors['header_example'] = 'A sample is required for the header variable.';
             }
         } elseif (in_array($headerType, ['IMAGE', 'VIDEO', 'DOCUMENT'], true)) {
@@ -407,8 +413,8 @@ class WaModuleController extends Controller
             $errors['buttons'] = 'Only one Phone Number button is allowed.';
         } else {
             foreach ($btnRows as $b) {
-                if (($b['type'] ?? '') === 'URL' && ! preg_match('#^https?://#', (string) ($b['url'] ?? ''))) {
-                    $errors['buttons'] = 'URL buttons must have a valid https link.';
+                if (($b['type'] ?? '') === 'URL' && ! preg_match('#^https://#', (string) ($b['url'] ?? ''))) {
+                    $errors['buttons'] = 'URL buttons must use an https:// link.';
                 }
                 if (($b['type'] ?? '') === 'PHONE_NUMBER' && ! preg_match('/^[0-9]{5,20}$/', (string) ($b['phone_number'] ?? ''))) {
                     $errors['buttons'] = 'Phone buttons need digits only (5–20, no +).';
@@ -805,31 +811,43 @@ class WaModuleController extends Controller
      * recipients) then queue all pending+failed recipients — ports the source
      * "Validate & Queue" action.
      */
+    /**
+     * Shared sendability validation (template, header media, body variables).
+     * Returns an error string, or null if the campaign can be sent/tested.
+     */
+    private function campaignNotSendableReason(PromotionalCampaign $c): ?string
+    {
+        if (! config('services.whatsapp.api_token')) {
+            return 'WhatsApp is not configured.';
+        }
+        if (! $c->template_name || ! $c->template_details) {
+            return 'A valid template must be selected.';
+        }
+        $components = (array) data_get($c->template_details, 'components', []);
+        $header = collect($components)->firstWhere('type', 'HEADER');
+        if ($header && in_array(strtoupper((string) ($header['format'] ?? '')), ['IMAGE', 'VIDEO', 'DOCUMENT'], true) && blank($c->header_image_path)) {
+            return 'This template needs a header file, but none is set.';
+        }
+        foreach ($this->templateBodyVarIndexes($components) as $i) {
+            if (blank(data_get($c->template_variables, (string) $i))) {
+                return "Template variable {{{$i}}} is required but empty.";
+            }
+        }
+
+        return null;
+    }
+
     public function sendCampaign(Request $request, int $campaign): RedirectResponse
     {
         $this->authorizeAccess($request);
         $c = PromotionalCampaign::findOrFail($campaign);
         $err = fn ($msg) => back()->with('flash', ['type' => 'error', 'message' => $msg]);
 
-        if (! config('services.whatsapp.api_token')) {
-            return $err('WhatsApp is not configured.');
-        }
-        if (! $c->template_name || ! $c->template_details) {
-            return $err('A valid template must be selected before sending.');
-        }
         if ($c->status === 'completed') {
             return $err('Campaign is already completed.');
         }
-
-        $components = (array) data_get($c->template_details, 'components', []);
-        $header = collect($components)->firstWhere('type', 'HEADER');
-        if ($header && in_array(strtoupper((string) ($header['format'] ?? '')), ['IMAGE', 'VIDEO', 'DOCUMENT'], true) && blank($c->header_image_path)) {
-            return $err('This template needs a header file, but none is set.');
-        }
-        foreach ($this->templateBodyVarIndexes($components) as $i) {
-            if (blank(data_get($c->template_variables, (string) $i))) {
-                return $err("Template variable {{{$i}}} is required but empty.");
-            }
+        if ($reason = $this->campaignNotSendableReason($c)) {
+            return $err($reason);
         }
         $ids = $c->recipients()->whereIn('status', ['pending', 'failed'])->pluck('id');
         if ($ids->isEmpty()) {
@@ -854,8 +872,9 @@ class WaModuleController extends Controller
             'preferred_region' => ['nullable', 'in:KW,SA,AE,QA,BH,OM,EG'],
         ]);
         $c = PromotionalCampaign::findOrFail($campaign);
-        if (! $c->template_details) {
-            return back()->with('flash', ['type' => 'error', 'message' => 'Select a template first.']);
+        // Test send runs the SAME sendability checks as a real send.
+        if ($reason = $this->campaignNotSendableReason($c)) {
+            return back()->with('flash', ['type' => 'error', 'message' => $reason]);
         }
         $e164 = Phone::parseToE164AcrossRegions($data['test_msisdn'], ['KW', 'SA', 'AE', 'QA', 'BH', 'OM', 'EG'], $data['preferred_region'] ?? 'KW', true);
         if (! $e164) {

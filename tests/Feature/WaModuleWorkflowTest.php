@@ -44,9 +44,15 @@ class WaModuleWorkflowTest extends TestCase
         } catch (\Throwable $e) {
             $this->markTestSkipped('wa MySQL connection unavailable: '.$e->getMessage());
         }
+
+        // Never touch Meta from tests: block all outbound HTTP and bind a fake
+        // WhatsAppService so any send() is a harmless no-op.
+        \Illuminate\Support\Facades\Http::preventStrayRequests();
+        \Illuminate\Support\Facades\Http::fake();
+        $this->app->instance(WhatsAppService::class, $this->fakeWa());
     }
 
-    /** A WhatsAppService whose Meta dup-check always returns false. */
+    /** A WhatsAppService that never calls Meta (dup-check false, sends no-op). */
     private function fakeWa(): WhatsAppService
     {
         return new class extends WhatsAppService
@@ -56,6 +62,16 @@ class WaModuleWorkflowTest extends TestCase
             public function doesTemplateExist(string $name): bool
             {
                 return false;
+            }
+
+            public function sendTextMessage(string $to, string $text, bool $withPreview = true): ?array
+            {
+                return ['messages' => [['id' => 'wamid.FAKE']]];
+            }
+
+            public function sendTemplate(string $to, array $payload, ?int $triggerUserId = null): ?array
+            {
+                return ['messages' => [['id' => 'wamid.FAKE']]];
             }
         };
     }
@@ -90,7 +106,7 @@ class WaModuleWorkflowTest extends TestCase
         $this->assertSame(['Sara'], $body['example']['body_text'][0] ?? null);
     }
 
-    /** @dataProvider invalidTemplates */
+    #[\PHPUnit\Framework\Attributes\DataProvider('invalidTemplates')]
     public function test_template_rules_reject_bad_input(array $override, string $needle): void
     {
         try {
@@ -110,8 +126,11 @@ class WaModuleWorkflowTest extends TestCase
             'missing body samples' => [['body_examples' => []], 'sample value for each'],
             'media header without sample' => [['header_type' => 'IMAGE'], 'sample IMAGE is required'],
             'mixed button types' => [['buttons' => [['type' => 'QUICK_REPLY', 'text' => 'Y'], ['type' => 'URL', 'text' => 'Go', 'url' => 'https://x.com']]], 'mix Quick Reply'],
-            'invalid url button' => [['buttons' => [['type' => 'URL', 'text' => 'Go', 'url' => 'nope']]], 'valid https'],
+            'http (not https) url button' => [['buttons' => [['type' => 'URL', 'text' => 'Go', 'url' => 'http://x.com']]], 'https://'],
+            'invalid url button' => [['buttons' => [['type' => 'URL', 'text' => 'Go', 'url' => 'nope']]], 'https://'],
             'footer with variable' => [['footer_text' => 'Bye {{1}}'], 'cannot contain variables'],
+            'multiple header variables' => [['header_type' => 'TEXT', 'header_text' => 'Hi {{1}} {{2}}', 'header_example' => 'a'], 'single variable'],
+            'header variable not 1' => [['header_type' => 'TEXT', 'header_text' => 'Hi {{2}}', 'header_example' => 'a'], 'single variable'],
         ];
     }
 
@@ -166,6 +185,49 @@ class WaModuleWorkflowTest extends TestCase
         $c->recipients()->delete();
         $c->delete();
         $tpl->delete();
+    }
+
+    public function test_published_template_cannot_be_edited(): void
+    {
+        $admin = \App\Models\User::whereHas('roles', fn ($q) => $q->whereIn('name', ['admin', 'super_admin', 'clinic_admin']))->first();
+        if (! $admin) {
+            $this->markTestSkipped('no admin user');
+        }
+        $tpl = \App\Wa\Hub\Models\MessageTemplate::create([
+            'name' => 'wf_locked_en', 'category' => 'MARKETING', 'language' => 'en',
+            'status' => 'PENDING', 'local_status' => 'published', 'body' => 'Hi there!',
+            'components' => [['type' => 'BODY', 'text' => 'Hi there!']],
+        ]);
+
+        $this->actingAs($admin)
+            ->put(route('v2.wa-module.templates.update', $tpl), ['name' => 'wf_locked', 'category' => 'MARKETING', 'language' => 'en', 'body' => 'Changed!', 'body_examples' => [], 'header_type' => 'NONE', 'buttons' => []])
+            ->assertSessionHas('flash.type', 'error');
+
+        $this->assertSame('Hi there!', $tpl->fresh()->body);
+        $tpl->delete();
+    }
+
+    public function test_test_send_runs_same_checks_as_send(): void
+    {
+        $admin = \App\Models\User::whereHas('roles', fn ($q) => $q->whereIn('name', ['admin', 'super_admin', 'clinic_admin']))->first();
+        if (! $admin || ! config('services.whatsapp.api_token')) {
+            $this->markTestSkipped('no admin or not configured');
+        }
+        Queue::fake();
+        // template with a body variable, but the campaign leaves it empty
+        $c = PromotionalCampaign::create([
+            'name' => 'WF Test', 'status' => 'draft', 'default_locale' => 'en',
+            'template_name' => 'wf_test_tpl_en',
+            'template_details' => ['components' => [['type' => 'BODY', 'text' => 'Hi {{1}}']]],
+            'template_variables' => ['1' => ''],
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('v2.wa-module.campaigns.test', $c), ['test_msisdn' => '96599887766', 'preferred_region' => 'KW'])
+            ->assertSessionHas('flash.type', 'error');
+        Queue::assertNotPushed(SendPromotionalCampaignMessage::class);
+
+        $c->delete();
     }
 
     public function test_campaign_pause_resume_transitions(): void
