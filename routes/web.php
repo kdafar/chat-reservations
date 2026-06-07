@@ -734,6 +734,11 @@ Route::middleware([
     // Engagement + smart groups
     Route::post('/wa-module/engagement/refresh', [\App\Http\Controllers\V2\WaModuleController::class, 'refreshEngagement'])->name('wa-module.engagement.refresh');
     Route::post('/wa-module/groups/smart',       [\App\Http\Controllers\V2\WaModuleController::class, 'buildSmartGroup'])->name('wa-module.groups.smart');
+    // Audience builder + contact import/export
+    Route::get('/wa-module/audience',            [\App\Http\Controllers\V2\WaModuleController::class, 'audience'])->name('wa-module.audience');
+    Route::post('/wa-module/audience/to-group',  [\App\Http\Controllers\V2\WaModuleController::class, 'audienceToGroup'])->name('wa-module.audience.to-group');
+    Route::get('/wa-module/contacts/export',     [\App\Http\Controllers\V2\WaModuleController::class, 'exportContacts'])->name('wa-module.contacts.export');
+    Route::post('/wa-module/contacts/import',    [\App\Http\Controllers\V2\WaModuleController::class, 'importContacts'])->name('wa-module.contacts.import');
     // Settings
     Route::get('/wa-module/settings',  [\App\Http\Controllers\V2\WaModuleController::class, 'settings'])->name('wa-module.settings');
     Route::post('/wa-module/settings', [\App\Http\Controllers\V2\WaModuleController::class, 'updateSettings'])->name('wa-module.settings.update');

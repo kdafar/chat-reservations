@@ -5,6 +5,7 @@ import AppLayout from '../../Layouts/AppLayout.vue'
 defineOptions({ layout: AppLayout })
 import Icon from '../../Components/Icon.vue'
 import SearchableSelect from '../../Components/SearchableSelect.vue'
+import FileDrop from '../../Components/FileDrop.vue'
 import { confirm } from '../../Composables/useConfirm.js'
 
 const props = defineProps({ filters: Object, page: Object, groups: Array, can_edit: Boolean })
@@ -16,8 +17,9 @@ const t = computed(() => isRtl.value ? {
     col: { msisdn: 'الهاتف', name: 'الاسم', locale: 'اللغة', created: 'أضيف' }, empty: 'لا توجد جهات اتصال', showing: 'عرض', of: 'من',
     f: { msisdn: 'الهاتف', name: 'الاسم', locale: 'اللغة', gname: 'اسم المجموعة', gdesc: 'الوصف', gtype: 'النوع' }, save: 'حفظ', cancel: 'إلغاء',
     confirmC: 'حذف جهة الاتصال؟', confirmG: 'حذف المجموعة؟',
-    engagement: 'التفاعل', refreshEng: 'تحديث التفاعل', smart: 'مجموعة ذكية', active: 'نشِط',
+    engagement: 'التفاعل', refreshEng: 'تحديث التفاعل', smart: 'مجموعة ذكية', active: 'نشِط', audience: 'بنّاء الجمهور', import: 'استيراد', export: 'تصدير',
     smartTitle: 'إنشاء مجموعة ذكية', smartName: 'اسم المجموعة', smartFilter: 'المعيار', create: 'إنشاء',
+    impTitle: 'استيراد جهات اتصال', impHint: 'الأعمدة: الهاتف، الاسم، اللغة', impHeader: 'يحتوي صف عناوين', impGroup: 'إضافة إلى مجموعة (اختياري)', impBtn: 'استيراد',
     filters: { active: 'نشِط (آخر 30 يوم)', healthy: 'سليم (سُلّم وبدون فشل)', delivered: 'تم التسليم', read: 'تمت القراءة' },
 } : {
     title: 'Contacts', eyebrow: 'WhatsApp Platform', desc: 'Number directory and groups.', searchPh: 'Search phone or name…', clear: 'Clear',
@@ -25,8 +27,9 @@ const t = computed(() => isRtl.value ? {
     col: { msisdn: 'Phone', name: 'Name', locale: 'Locale', created: 'Added' }, empty: 'No contacts', showing: 'Showing', of: 'of',
     f: { msisdn: 'Phone', name: 'Name', locale: 'Locale', gname: 'Group name', gdesc: 'Description', gtype: 'Type' }, save: 'Save', cancel: 'Cancel',
     confirmC: 'Delete this contact?', confirmG: 'Delete this group?',
-    engagement: 'Engagement', refreshEng: 'Refresh engagement', smart: 'Smart group', active: 'Active',
+    engagement: 'Engagement', refreshEng: 'Refresh engagement', smart: 'Smart group', active: 'Active', audience: 'Audience builder', import: 'Import', export: 'Export',
     smartTitle: 'Create smart group', smartName: 'Group name', smartFilter: 'Criteria', create: 'Create',
+    impTitle: 'Import contacts', impHint: 'Columns: phone, name, locale', impHeader: 'Has header row', impGroup: 'Add to group (optional)', impBtn: 'Import',
     filters: { active: 'Active (last 30 days)', healthy: 'Healthy (delivered, ≤1 fail)', delivered: 'Delivered to', read: 'Read by' },
 })
 
@@ -68,6 +71,15 @@ const filterItems = computed(() => [
 ])
 function openSmart() { sForm.reset(); sForm.clearErrors(); showSmart.value = true }
 function saveSmart() { sForm.post(route('v2.wa-module.groups.smart'), { preserveScroll: true, onSuccess: () => { showSmart.value = false } }) }
+
+function gotoAudience() { router.get(route('v2.wa-module.audience')) }
+const exportUrl = computed(() => route('v2.wa-module.contacts.export'))
+
+const showImp = ref(false)
+const impForm = useForm({ file: null, has_header: true, group_id: null })
+function openImp() { impForm.reset(); impForm.clearErrors(); showImp.value = true }
+function doImport() { impForm.post(route('v2.wa-module.contacts.import'), { forceFormData: true, preserveScroll: true, onSuccess: () => { showImp.value = false } }) }
+const groupItems = computed(() => [{ value: null, label: '—' }, ...props.groups.map(g => ({ value: g.id, label: g.name }))])
 </script>
 
 <template>
@@ -76,7 +88,10 @@ function saveSmart() { sForm.post(route('v2.wa-module.groups.smart'), { preserve
         <div style="margin-bottom:16px; display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
             <div><div class="eyebrow">{{ t.eyebrow }}</div><h1 style="margin:4px 0 0; font-size:22px; font-weight:700; color:var(--fg);">{{ t.title }}</h1><p style="margin:6px 0 0; font-size:13px; color:var(--fg-subtle);">{{ t.desc }}</p></div>
             <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                <button class="btn btn-ghost btn-sm" @click="gotoAudience"><Icon name="users-round" :size="14" /> {{ t.audience }}</button>
                 <button class="btn btn-ghost btn-sm" @click="refreshEng"><Icon name="refresh-cw" :size="14" /> {{ t.refreshEng }}</button>
+                <button class="btn btn-ghost btn-sm" @click="openImp"><Icon name="upload" :size="14" /> {{ t.import }}</button>
+                <a :href="exportUrl" class="btn btn-ghost btn-sm"><Icon name="download" :size="14" /> {{ t.export }}</a>
                 <button class="btn btn-ghost btn-sm" @click="openSmart"><Icon name="sparkles" :size="14" /> {{ t.smart }}</button>
                 <button class="btn btn-ghost btn-sm" @click="openG"><Icon name="plus" :size="14" /> {{ t.newG }}</button>
                 <button class="btn btn-primary btn-sm" @click="openC(null)"><Icon name="plus" :size="14" /> {{ t.newC }}</button>
@@ -102,6 +117,7 @@ function saveSmart() { sForm.post(route('v2.wa-module.groups.smart'), { preserve
                                         <span :title="t.active" :style="{ height:'7px', width:'7px', borderRadius:'50%', background: r.eng.active ? '#25D366' : '#cbd5e1' }"></span>
                                         <span style="color:#16a34a;" title="delivered">✓{{ r.eng.delivered }}</span>
                                         <span style="color:#06b6d4;" title="read">👁{{ r.eng.read }}</span>
+                                        <span v-if="r.eng.replied" style="color:#8b5cf6;" title="replied">↩{{ r.eng.replied }}</span>
                                         <span v-if="r.eng.failed" style="color:#dc2626;" title="failed">✕{{ r.eng.failed }}</span>
                                     </div>
                                     <span v-else style="font-size:11px; color:var(--fg-faint);">—</span>
@@ -171,6 +187,18 @@ function saveSmart() { sForm.post(route('v2.wa-module.groups.smart'), { preserve
                     <div><label style="font-size:12px; color:var(--fg-subtle);">{{ t.smartFilter }}</label><SearchableSelect v-model="sForm.filter" :items="filterItems" :nullable="false" /></div>
                 </div>
                 <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:18px;"><button class="btn btn-ghost" @click="showSmart=false">{{ t.cancel }}</button><button class="btn btn-primary" :disabled="sForm.processing || !sForm.name" @click="saveSmart">{{ t.create }}</button></div>
+            </div>
+        </div>
+        <!-- import contacts modal -->
+        <div v-if="showImp" class="modal-backdrop" @click.self="showImp=false">
+            <div class="modal-panel" role="dialog" style="max-width:460px; padding:20px;">
+                <h3 style="margin:0 0 14px; font-size:16px; font-weight:700;">{{ t.impTitle }}</h3>
+                <FileDrop :file="impForm.file" accept=".csv,.txt" @select="f => impForm.file = f" @clear="impForm.file = null" />
+                <div v-if="impForm.errors.file" style="font-size:11px; color:#dc2626; margin-top:4px;">{{ impForm.errors.file }}</div>
+                <div style="font-size:11px; color:var(--fg-faint); margin-top:8px;">{{ t.impHint }}</div>
+                <label style="display:flex; align-items:center; gap:8px; font-size:13px; color:var(--fg); margin-top:10px;"><input type="checkbox" v-model="impForm.has_header" /> {{ t.impHeader }}</label>
+                <div style="margin-top:10px;"><label style="font-size:12px; color:var(--fg-subtle);">{{ t.impGroup }}</label><SearchableSelect v-model="impForm.group_id" :items="groupItems" :nullable="false" /></div>
+                <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:18px;"><button class="btn btn-ghost" @click="showImp=false">{{ t.cancel }}</button><button class="btn btn-primary" :disabled="impForm.processing || !impForm.file" @click="doImport">{{ t.impBtn }}</button></div>
             </div>
         </div>
     </div>

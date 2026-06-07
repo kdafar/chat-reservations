@@ -369,6 +369,7 @@ class WaModuleController extends Controller
                     'delivered' => $c->engagementStat->delivered_count,
                     'read' => $c->engagementStat->read_count,
                     'failed' => $c->engagementStat->failed_count,
+                    'replied' => $c->engagementStat->replied_count,
                     'active' => (bool) $c->engagementStat->is_active,
                 ] : null,
                 'created_at' => optional($c->created_at)->toDateTimeString(),
@@ -1086,6 +1087,179 @@ class WaModuleController extends Controller
         return back()->with('flash', ['type' => 'success', 'message' => "Added {$added} recipients from “{$group->name}”."]);
     }
 
+    /** Build a base Contact query from audience filter params (engagement joined). */
+    private function audienceQuery(Request $request)
+    {
+        $q = Contact::query()
+            ->leftJoin('contact_engagement_stats as es', 'contacts.id', '=', 'es.contact_id')
+            ->select('contacts.*');
+
+        if ($s = trim((string) $request->query('q', ''))) {
+            $q->where(fn ($w) => $w->where('contacts.msisdn', 'like', "%{$s}%")->orWhere('contacts.name', 'like', "%{$s}%"));
+        }
+        if ($loc = $request->query('locale')) {
+            $q->where('contacts.locale', $loc);
+        }
+        if ($request->boolean('active')) {
+            $q->where('es.is_active', true);
+        }
+        if ($request->boolean('delivered')) {
+            $q->where('es.delivered_count', '>', 0);
+        }
+        if ($request->boolean('read')) {
+            $q->where('es.read_count', '>', 0);
+        }
+        if ($request->boolean('replied')) {
+            $q->where('es.replied_count', '>', 0);
+        }
+        if ($request->boolean('healthy')) {
+            $q->where('es.delivered_count', '>', 0)->where('es.failed_count', '<=', 1);
+        }
+        if (($mf = $request->query('max_failed')) !== null && $mf !== '') {
+            $q->where('es.failed_count', '<=', (int) $mf);
+        }
+        if (($d = $request->query('days')) !== null && $d !== '') {
+            $q->where('es.last_activity_at', '>=', now()->subDays((int) $d));
+        }
+        if ($gid = $request->query('in_group')) {
+            $q->whereHas('groups', fn ($g) => $g->whereKey($gid));
+        }
+        if ($gid = $request->query('not_in_group')) {
+            $q->whereDoesntHave('groups', fn ($g) => $g->whereKey($gid));
+        }
+
+        return $q;
+    }
+
+    /** Audience builder: filterable + sortable contacts table with engagement. */
+    public function audience(Request $request)
+    {
+        $this->authorizeAccess($request);
+
+        $sortable = ['msisdn' => 'contacts.msisdn', 'name' => 'contacts.name', 'sent' => 'es.sent_count', 'delivered' => 'es.delivered_count', 'read' => 'es.read_count', 'failed' => 'es.failed_count', 'replied' => 'es.replied_count', 'last' => 'es.last_activity_at'];
+        $sort = $request->query('sort', 'last');
+        $col = $sortable[$sort] ?? 'es.last_activity_at';
+        $dir = $request->query('dir', 'desc') === 'asc' ? 'asc' : 'desc';
+
+        $matched = (clone $this->audienceQuery($request))->count();
+
+        $page = $this->audienceQuery($request)
+            ->with('engagementStat', 'groups:id')
+            ->orderBy($col, $dir)
+            ->paginate(50)
+            ->withQueryString()
+            ->through(fn (Contact $c) => [
+                'id' => $c->id,
+                'msisdn' => $c->msisdn,
+                'name' => $c->name,
+                'locale' => $c->locale,
+                'group_ids' => $c->groups->pluck('id'),
+                'sent' => $c->engagementStat->sent_count ?? 0,
+                'delivered' => $c->engagementStat->delivered_count ?? 0,
+                'read' => $c->engagementStat->read_count ?? 0,
+                'failed' => $c->engagementStat->failed_count ?? 0,
+                'replied' => $c->engagementStat->replied_count ?? 0,
+                'active' => (bool) ($c->engagementStat->is_active ?? false),
+                'last' => optional($c->engagementStat?->last_activity_at)->diffForHumans(null, true),
+            ]);
+
+        $filters = $request->only(['q', 'locale', 'active', 'delivered', 'read', 'replied', 'healthy', 'max_failed', 'days', 'in_group', 'not_in_group', 'sort', 'dir']);
+
+        return Inertia::render('WaModule/Audience', [
+            'filters' => $filters,
+            'page' => $page,
+            'matched' => $matched,
+            'groups' => ContactGroup::orderBy('name')->withCount('contacts')->get()->map(fn ($g) => ['id' => $g->id, 'name' => $g->name, 'count' => $g->contacts_count]),
+        ]);
+    }
+
+    /** Add selected (or all matching) contacts to a group; add or replace. */
+    public function audienceToGroup(Request $request): RedirectResponse
+    {
+        $this->authorizeAccess($request);
+        $data = $request->validate([
+            'group_id' => ['nullable', 'integer'],
+            'new_group' => ['nullable', 'string', 'max:191'],
+            'mode' => ['required', 'in:add,replace'],
+            'all_matching' => ['boolean'],
+            'ids' => ['array'],
+            'ids.*' => ['integer'],
+        ]);
+
+        $group = ! empty($data['group_id'])
+            ? ContactGroup::findOrFail($data['group_id'])
+            : ContactGroup::create(['name' => ($data['new_group'] ?? null) ?: 'New group', 'group_type' => 'static']);
+
+        $ids = $request->boolean('all_matching')
+            ? $this->audienceQuery($request)->pluck('contacts.id')->all()
+            : ($data['ids'] ?? []);
+
+        if (empty($ids)) {
+            return back()->with('flash', ['type' => 'error', 'message' => 'No contacts selected.']);
+        }
+
+        $data['mode'] === 'replace' ? $group->contacts()->sync($ids) : $group->contacts()->syncWithoutDetaching($ids);
+
+        return back()->with('flash', ['type' => 'success', 'message' => count($ids).' contacts '.($data['mode'] === 'replace' ? 'set as' : 'added to')." “{$group->name}”."]);
+    }
+
+    /** Export contacts (respects audience filters) as CSV. */
+    public function exportContacts(Request $request)
+    {
+        $this->authorizeAccess($request);
+        $rows = $this->audienceQuery($request)->with('engagementStat')->limit(50000)->get();
+
+        $out = "phone,name,locale,sent,delivered,read,failed,replied,active\n";
+        foreach ($rows as $c) {
+            $e = $c->engagementStat;
+            $out .= implode(',', [
+                $c->msisdn, '"'.str_replace('"', '""', (string) $c->name).'"', $c->locale,
+                $e->sent_count ?? 0, $e->delivered_count ?? 0, $e->read_count ?? 0, $e->failed_count ?? 0, $e->replied_count ?? 0, ($e->is_active ?? false) ? 1 : 0,
+            ])."\n";
+        }
+
+        return response($out, 200, [
+            'Content-Type' => 'text/csv',
+            'Content-Disposition' => 'attachment; filename="wa-contacts.csv"',
+        ]);
+    }
+
+    /** Import contacts into the directory (optionally into a group) from CSV. */
+    public function importContacts(Request $request): RedirectResponse
+    {
+        $this->authorizeAccess($request);
+        $data = $request->validate([
+            'file' => ['required', 'file', 'mimes:csv,txt', 'max:5120'],
+            'group_id' => ['nullable', 'integer'],
+            'has_header' => ['boolean'],
+        ]);
+
+        $lines = preg_split('/\r\n|\r|\n/', (string) file_get_contents($request->file('file')->getRealPath()));
+        if ($request->boolean('has_header', true)) {
+            array_shift($lines);
+        }
+        $ids = [];
+        $created = 0;
+        foreach ($lines as $line) {
+            if (trim($line) === '') {
+                continue;
+            }
+            [$phone, $name, $locale] = array_pad(str_getcsv($line), 3, null);
+            $phone = preg_replace('/[^\d+]/', '', (string) $phone);
+            if (! $phone) {
+                continue;
+            }
+            $contact = Contact::firstOrCreate(['msisdn' => $phone], ['name' => $name ?: null, 'locale' => in_array($locale, ['en', 'ar']) ? $locale : 'en']);
+            $created += $contact->wasRecentlyCreated ? 1 : 0;
+            $ids[] = $contact->id;
+        }
+        if (! empty($data['group_id']) && $ids) {
+            ContactGroup::find($data['group_id'])?->contacts()->syncWithoutDetaching($ids);
+        }
+
+        return back()->with('flash', ['type' => 'success', 'message' => count($ids).' contacts imported ('.$created.' new).']);
+    }
+
     /** Recompute contact engagement stats from campaign recipient history. */
     public function refreshEngagement(Request $request): RedirectResponse
     {
@@ -1102,23 +1276,37 @@ class WaModuleController extends Controller
                 MAX(GREATEST(COALESCE(read_at,0), COALESCE(delivered_at,0), COALESCE(sent_at,0))) last_activity')
             ->groupBy('msisdn')->get()->keyBy('msisdn');
 
+        // replied_count: inbound messages per phone (joined via the core contact).
+        // selectRaw bypasses the connection prefix, so qualify columns explicitly.
+        $p = (new WaMessage)->getConnection()->getTablePrefix();
+        $replied = WaMessage::query()
+            ->where('wa_messages.direction', 'inbound')
+            ->join('wa_contacts', 'wa_messages.contact_id', '=', 'wa_contacts.id')
+            ->selectRaw("{$p}wa_contacts.phone as phone, COUNT(*) replied, MAX({$p}wa_messages.created_at) last_replied")
+            ->groupBy('wa_contacts.phone')->get()->keyBy('phone');
+
         $touched = 0;
-        Contact::query()->chunkById(500, function ($contacts) use ($agg, &$touched) {
+        Contact::query()->chunkById(500, function ($contacts) use ($agg, $replied, &$touched) {
             foreach ($contacts as $contact) {
                 $a = $agg->get($contact->msisdn);
-                if (! $a) {
+                $rep = $replied->get($contact->msisdn) ?? $replied->get(ltrim((string) $contact->msisdn, '+')) ?? $replied->get('+'.ltrim((string) $contact->msisdn, '+'));
+                if (! $a && ! $rep) {
                     continue;
                 }
-                $last = $a->last_activity && $a->last_activity !== '0' ? $a->last_activity : null;
+                $last = $a && $a->last_activity && $a->last_activity !== '0' ? $a->last_activity : null;
+                $lastReplied = $rep->last_replied ?? null;
+                $lastAct = collect([$last, $lastReplied])->filter()->max();
                 ContactEngagementStat::updateOrCreate(['contact_id' => $contact->id], [
-                    'campaigns_count' => $a->campaigns_count,
-                    'sent_count' => $a->sent_count,
-                    'delivered_count' => $a->delivered_count,
-                    'read_count' => $a->read_count,
-                    'failed_count' => $a->failed_count,
-                    'pending_count' => $a->pending_count,
-                    'last_activity_at' => $last,
-                    'is_active' => $last ? \Illuminate\Support\Carbon::parse($last)->gt(now()->subDays(30)) : false,
+                    'campaigns_count' => $a->campaigns_count ?? 0,
+                    'sent_count' => $a->sent_count ?? 0,
+                    'delivered_count' => $a->delivered_count ?? 0,
+                    'read_count' => $a->read_count ?? 0,
+                    'failed_count' => $a->failed_count ?? 0,
+                    'pending_count' => $a->pending_count ?? 0,
+                    'replied_count' => $rep->replied ?? 0,
+                    'last_replied_at' => $lastReplied,
+                    'last_activity_at' => $lastAct ?: null,
+                    'is_active' => $lastAct ? \Illuminate\Support\Carbon::parse($lastAct)->gt(now()->subDays(30)) : false,
                 ]);
                 $touched++;
             }
