@@ -105,7 +105,7 @@ class User extends Authenticatable implements MustVerifyEmailContract
             return \DB::table('partner_user')->where('user_id', $this->id)->exists();
         }
 
-        if ($panel->getId() === 'admin') {
+        if ($panel->getId() === 'admin' || $panel->getId() === 'whatsapp') {
             if (method_exists($this, 'roles')) {
                 return $this->roles()->exists();
             }

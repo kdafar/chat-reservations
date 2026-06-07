@@ -327,6 +327,7 @@ Route::middleware([
     Route::get('/api/visits/{visit}', [\App\Http\Controllers\V2\VisitConsoleController::class, 'showJson'])->name('api.visits.show');
     Route::post('/api/visits/{visit}/update',   [\App\Http\Controllers\V2\VisitConsoleController::class, 'update'])->name('api.visits.update');
     Route::post('/api/visits/{visit}/start',    [\App\Http\Controllers\V2\VisitConsoleController::class, 'start'])->name('api.visits.start');
+    Route::post('/api/visits/{visit}/reassign-doctor', [\App\Http\Controllers\V2\VisitConsoleController::class, 'reassignDoctor'])->name('api.visits.reassign-doctor');
     Route::post('/api/visits/{visit}/complete', [\App\Http\Controllers\V2\VisitConsoleController::class, 'complete'])->name('api.visits.complete');
     Route::get('/api/visits/{visit}/clinic-items', [\App\Http\Controllers\V2\VisitConsoleController::class, 'clinicItems'])->name('api.visits.clinic-items');
     Route::get('/api/visits/{visit}/clinic-packages', [\App\Http\Controllers\V2\VisitConsoleController::class, 'clinicPackages'])->name('api.visits.clinic-packages');
@@ -345,6 +346,7 @@ Route::middleware([
     Route::get('/api/visits/{visit}/insurance/estimate',       [\App\Http\Controllers\V2\VisitConsoleController::class, 'estimateInsurance'])->name('api.visits.insurance.estimate');
     Route::post('/api/visits/{visit}/insurance/apply',         [\App\Http\Controllers\V2\VisitConsoleController::class, 'applyInsurance'])->name('api.visits.insurance.apply');
     Route::post('/api/visits/{visit}/request-stock', [\App\Http\Controllers\V2\VisitConsoleController::class, 'requestStock'])->name('api.visits.request-stock');
+    Route::post('/api/visits/{visit}/source-from-hub', [\App\Http\Controllers\V2\VisitConsoleController::class, 'sourceFromHub'])->name('api.visits.source-from-hub');
     Route::post('/api/visits/{visit}/fulfill-stock', [\App\Http\Controllers\V2\VisitConsoleController::class, 'fulfillStock'])->name('api.visits.fulfill-stock');
     Route::post('/api/visits/{visit}/discharge', [\App\Http\Controllers\V2\VisitConsoleController::class, 'discharge'])->name('api.visits.discharge');
     Route::post('/api/visits/{visit}/insurance/create-claim', [\App\Http\Controllers\V2\VisitConsoleController::class, 'createInsuranceClaim'])->name('api.visits.insurance.create-claim');
@@ -552,6 +554,12 @@ Route::middleware([
     // Pharmacy — Stock movements (read-only; v2 replacement for ClinicStockMovementResource).
     Route::get('/stock-movements', [\App\Http\Controllers\V2\StockMovementsController::class, 'index'])->name('stock-movements.index');
 
+    // Pharmacy — Inter-branch stock transfers (hub → branch dispatch).
+    Route::get('/stock-transfers',  [\App\Http\Controllers\V2\StockTransfersController::class, 'index'])->name('stock-transfers.index');
+    Route::post('/stock-transfers', [\App\Http\Controllers\V2\StockTransfersController::class, 'store'])->name('stock-transfers.store');
+    Route::post('/stock-transfers/{transfer}/dispatch', [\App\Http\Controllers\V2\StockTransfersController::class, 'dispatchTransfer'])->name('stock-transfers.dispatch');
+    Route::post('/stock-transfers/{transfer}/cancel',   [\App\Http\Controllers\V2\StockTransfersController::class, 'cancel'])->name('stock-transfers.cancel');
+
     // Pharmacy — Visit stock requests (v2 replacement for VisitStockRequestResource).
     Route::get('/visit-stock-requests', [\App\Http\Controllers\V2\VisitStockRequestsController::class, 'index'])->name('visit-stock-requests.index');
     Route::post('/visit-stock-requests/{visitStockRequest}/fulfill', [\App\Http\Controllers\V2\VisitStockRequestsController::class, 'fulfill'])->name('visit-stock-requests.fulfill');
@@ -679,6 +687,18 @@ Route::middleware([
     Route::get('/whatsapp/sessions',          [\App\Http\Controllers\V2\WaLogsController::class, 'sessions'])->name('whatsapp.sessions');
     Route::get('/whatsapp/audience-metrics',  [\App\Http\Controllers\V2\AudienceMetricsController::class, 'index'])->name('whatsapp.audience-metrics.index');
 
+    // WhatsApp Platform (isolated app/Wa module) — native v2 screens driving the
+    // module's own data on the `wa` connection. Distinct from the clinic WhatsApp
+    // routes above. Names: v2.wa-module.*
+    Route::get('/wa-module',                       [\App\Http\Controllers\V2\WaModuleController::class, 'dashboard'])->name('wa-module.dashboard');
+    Route::get('/wa-module/templates',             [\App\Http\Controllers\V2\WaModuleController::class, 'templates'])->name('wa-module.templates');
+    Route::get('/wa-module/contacts',              [\App\Http\Controllers\V2\WaModuleController::class, 'contacts'])->name('wa-module.contacts');
+    Route::get('/wa-module/campaigns',             [\App\Http\Controllers\V2\WaModuleController::class, 'campaigns'])->name('wa-module.campaigns');
+    Route::get('/wa-module/conversations',         [\App\Http\Controllers\V2\WaModuleController::class, 'conversations'])->name('wa-module.conversations');
+    Route::get('/wa-module/conversations/{conversation}', [\App\Http\Controllers\V2\WaModuleController::class, 'conversation'])->name('wa-module.conversation');
+    Route::get('/wa-module/sessions',              [\App\Http\Controllers\V2\WaModuleController::class, 'sessions'])->name('wa-module.sessions');
+    Route::post('/wa-module/send',                 [\App\Http\Controllers\V2\WaModuleController::class, 'sendMessage'])->name('wa-module.send');
+
     // WhatsApp — Triggers (auto-reply builder, v2 replacement for WhatsappTriggerResource). Admin only.
     Route::get('/whatsapp/triggers',                [\App\Http\Controllers\V2\WhatsappTriggersController::class, 'index'])->name('whatsapp.triggers.index');
     Route::post('/whatsapp/triggers',               [\App\Http\Controllers\V2\WhatsappTriggersController::class, 'store'])->name('whatsapp.triggers.store');
@@ -710,6 +730,8 @@ Route::middleware([
     Route::get('/reports/daily-reconciliation', [\App\Http\Controllers\V2\DailyReconciliationController::class, 'index'])->name('reports.daily-reconciliation');
     Route::get('/reports/executive',      [\App\Http\Controllers\V2\ExecutiveDashboardController::class, 'index'])->name('reports.executive');
     Route::get('/inpatient/reports',      [\App\Http\Controllers\V2\InpatientReportsController::class, 'index'])->name('inpatient.reports');
+    // Doctor self-service: my own daily earnings, for end-of-day closing.
+    Route::get('/my-earnings',            [\App\Http\Controllers\V2\MyEarningsController::class, 'index'])->name('my-earnings');
 
     // Styled .xlsx exports (plain file downloads, not Inertia). Collision-free paths.
     // Each mirrors its list's current filters; selection-capable lists also pass ids.

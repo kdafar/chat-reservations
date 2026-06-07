@@ -80,6 +80,7 @@ function userCan(perm) {
 const navGates = {
     dashboard:              { perm: 'view_clinic_reports' },
     'doctor-schedule':      { roles: ['admin', 'super_admin', 'clinic_admin', 'branch_manager'], flags: ['is_doctor'] },
+    'my-earnings':          { flags: ['is_doctor'] },
     visits:                 { perm: 'view_any_visits' },
     patients:               { perm: 'view_any_patients' },
     checkin:                { flags: ['is_admin', 'is_reception'] },
@@ -100,6 +101,7 @@ const navGates = {
     'clinic-items':         { perm: 'view_any_clinic_items' },
     'clinic-stock':         { perm: 'view_any_clinic_item_stocks' },
     'stock-movements':      { perm: 'view_any_clinic_stock_movement' },
+    'stock-transfers':      { perm: 'view_any_stock_transfers' },
     'stock-requests':       { perm: 'view_any_visit_stock_request' },
     'clinic-packages':      { perm: 'view_any_clinic_packages' },
     leaves:                 { perm: 'view_any_staff_leaves' },
@@ -139,6 +141,12 @@ const navGates = {
     'wa-logs':              { roles: ['admin', 'super_admin'] },
     'wa-sessions':          { roles: ['admin', 'super_admin'] },
     'wa-audience':          { roles: ['admin', 'super_admin'] },
+    'wap-dashboard':        { roles: ['admin', 'super_admin', 'clinic_admin'] },
+    'wap-conversations':    { roles: ['admin', 'super_admin', 'clinic_admin'] },
+    'wap-templates':        { roles: ['admin', 'super_admin', 'clinic_admin'] },
+    'wap-contacts':         { roles: ['admin', 'super_admin', 'clinic_admin'] },
+    'wap-campaigns':        { roles: ['admin', 'super_admin', 'clinic_admin'] },
+    'wap-sessions':         { roles: ['admin', 'super_admin', 'clinic_admin'] },
 }
 function itemVisible(it) {
     const g = navGates[it.id]
@@ -303,6 +311,7 @@ const navSections = computed(() => ([
             { id: 'bookings',  icon: 'calendar-days', label: locale.value === 'ar' ? 'الحجوزات' : 'Bookings', href: '/admin/v2/bookings',         v2: true },
             { id: 'visits',    icon: 'clipboard-list',label: locale.value === 'ar' ? 'الزيارات' : 'Visits',   href: '/admin/v2/visits-list', v2: true },
             { id: 'doctor-schedule', icon: 'calendar-clock', label: locale.value === 'ar' ? 'جدول الأطباء' : 'Doctor Schedule', href: '/admin/v2/doctor-schedule', v2: true },
+            { id: 'my-earnings', icon: 'coins', label: locale.value === 'ar' ? 'أرباحي اليومية' : 'My Earnings', href: '/admin/v2/my-earnings', v2: true },
         ],
     },
     {
@@ -351,9 +360,16 @@ const navSections = computed(() => ([
             { id: 'clinic-stock',    icon: 'package',      label: locale.value === 'ar' ? 'المخزون' : 'Stock',     href: '/admin/v2/clinic-stock', v2: true },
             { id: 'stock-movements', icon: 'truck',        label: locale.value === 'ar' ? 'حركة المخزون' : 'Movements', href: '/admin/v2/stock-movements', v2: true },
             { id: 'stock-requests',  icon: 'inbox',        label: locale.value === 'ar' ? 'طلبات الصرف' : 'Stock Requests', href: '/admin/v2/visit-stock-requests', v2: true },
+            { id: 'stock-transfers', icon: 'arrow-left-right', label: locale.value === 'ar' ? 'تحويلات المخزون' : 'Stock Transfers', href: '/admin/v2/stock-transfers', v2: true },
             { id: 'clinic-packages', icon: 'gift',         label: locale.value === 'ar' ? 'الباقات' : 'Packages', href: '/admin/v2/clinic-packages', v2: true },
-            { id: 'coupons',         icon: 'ticket',       label: locale.value === 'ar' ? 'كوبونات الخصم' : 'Coupons', href: '/admin/v2/coupons', v2: true },
-            { id: 'promotions',      icon: 'badge-percent', label: locale.value === 'ar' ? 'العروض الترويجية' : 'Promotions', href: '/admin/v2/promotions', v2: true },
+        ],
+    },
+    {
+        id: 'discounts', icon: 'badge-percent',
+        label: locale.value === 'ar' ? 'الخصومات والعروض' : 'Discounts & Promotions',
+        items: [
+            { id: 'coupons',    icon: 'ticket',        label: locale.value === 'ar' ? 'كوبونات الخصم' : 'Coupons',    href: '/admin/v2/coupons', v2: true },
+            { id: 'promotions', icon: 'badge-percent', label: locale.value === 'ar' ? 'العروض الترويجية' : 'Promotions', href: '/admin/v2/promotions', v2: true },
         ],
     },
     {
@@ -423,6 +439,18 @@ const navSections = computed(() => ([
             { id: 'wa-logs',      icon: 'inbox',           label: locale.value === 'ar' ? 'السجل' : 'Logs', href: '/admin/v2/whatsapp/logs', v2: true },
             { id: 'wa-sessions',  icon: 'message-circle',  label: locale.value === 'ar' ? 'الجلسات' : 'Sessions', href: '/admin/v2/whatsapp/sessions', v2: true },
             { id: 'wa-audience',  icon: 'users-round',     label: locale.value === 'ar' ? 'مقاييس الجمهور' : 'Audience', href: '/admin/v2/whatsapp/audience-metrics', v2: true },
+        ],
+    },
+    {
+        id: 'wa-platform', icon: 'message-circle',
+        label: locale.value === 'ar' ? 'منصة واتساب' : 'WhatsApp Platform',
+        items: [
+            { id: 'wap-dashboard',     icon: 'layout-dashboard', label: locale.value === 'ar' ? 'اللوحة' : 'Dashboard', href: '/admin/v2/wa-module', v2: true },
+            { id: 'wap-conversations', icon: 'inbox',            label: locale.value === 'ar' ? 'المحادثات' : 'Conversations', href: '/admin/v2/wa-module/conversations', v2: true },
+            { id: 'wap-templates',     icon: 'message-square',   label: locale.value === 'ar' ? 'القوالب' : 'Templates', href: '/admin/v2/wa-module/templates', v2: true },
+            { id: 'wap-contacts',      icon: 'users-round',      label: locale.value === 'ar' ? 'جهات الاتصال' : 'Contacts', href: '/admin/v2/wa-module/contacts', v2: true },
+            { id: 'wap-campaigns',     icon: 'send',             label: locale.value === 'ar' ? 'الحملات' : 'Campaigns', href: '/admin/v2/wa-module/campaigns', v2: true },
+            { id: 'wap-sessions',      icon: 'message-circle',   label: locale.value === 'ar' ? 'الجلسات' : 'Sessions', href: '/admin/v2/wa-module/sessions', v2: true },
         ],
     },
 ].map(section => ({
@@ -517,6 +545,7 @@ const navDescriptions = {
     bookings:         { en: "Create, reschedule and track appointments across doctors and branches, from pending through to completed.", ar: 'أنشئ وأعد جدولة وتابع المواعيد عبر الأطباء والفروع، من قيد الانتظار حتى الاكتمال.' },
     visits:           { en: "Every patient visit — open the consultation console to add clinical notes, services, items and payments.", ar: 'كل زيارة مريض — افتح وحدة الكشف لإضافة الملاحظات السريرية والخدمات والأصناف والمدفوعات.' },
     'doctor-schedule':{ en: "View and manage each doctor's working hours, shifts and availability for bookings.", ar: 'اعرض وأدر ساعات عمل كل طبيب وورديّاته وتوفّره للحجوزات.' },
+    'my-earnings':    { en: "Your own earnings from today's completed visits — a quick per-visit breakdown to reconcile at day close.", ar: 'أرباحك من زيارات اليوم المكتملة — تفصيل سريع لكل زيارة للمطابقة عند إقفال اليوم.' },
     // Patients
     patients:         { en: "The full patient directory — search records, review history and open any patient's profile.", ar: 'دليل المرضى الكامل — ابحث في السجلات، راجع التاريخ، وافتح ملف أي مريض.' },
     'patient-files':  { en: "Documents and medical files uploaded for patients — reports, scans, IDs and other attachments.", ar: 'المستندات والملفات الطبية المرفوعة للمرضى — التقارير والأشعة والهويات والمرفقات الأخرى.' },
@@ -540,6 +569,7 @@ const navDescriptions = {
     'clinic-stock':   { en: "On-hand quantities per branch, with reorder thresholds that trigger low-stock alerts.", ar: 'الكميات المتوفرة لكل فرع، مع حدود إعادة الطلب التي تطلق تنبيهات نقص المخزون.' },
     'stock-movements':{ en: "A full audit of stock in and out — purchases, dispensing, adjustments and transfers.", ar: 'تدقيق كامل لدخول وخروج المخزون — المشتريات والصرف والتسويات والتحويلات.' },
     'stock-requests': { en: "Requests to dispense items for a visit, waiting for the pharmacy to fulfil.", ar: 'طلبات صرف الأصناف لزيارة ما، بانتظار تنفيذ الصيدلية.' },
+    'stock-transfers':{ en: "Move stock between your clinic's branches — the hub dispatches items to a branch that's short.", ar: 'نقل المخزون بين فروع العيادة — يرسل المركز الرئيسي الأصناف إلى الفرع الذي ينقصه.' },
     'clinic-packages':{ en: "Pre-priced bundles of services and items sold together as a single package.", ar: 'حزم مسبقة التسعير من الخدمات والأصناف تُباع معًا كباقة واحدة.' },
     // HR
     leaves:           { en: "Request, review and track staff leave, with the remaining balance for each person.", ar: 'اطلب وراجع وتابع إجازات الموظفين، مع الرصيد المتبقي لكل شخص.' },

@@ -42,6 +42,28 @@ return [
             'synchronous' => null,
         ],
 
+        // Isolated connection for the WhatsApp module (app/Wa). Shares the
+        // clinic's MySQL database but isolates every module table behind the
+        // `wam_` prefix, so module tables (whatsapp_sessions, wa_messages, ...)
+        // never collide with the clinic's same-named tables. Override WA_DB_*
+        // to point at a fully separate database/server in production.
+        'wa' => [
+            'driver' => env('WA_DB_DRIVER', 'mysql'),
+            'url' => env('WA_DB_URL'),
+            'host' => env('WA_DB_HOST', env('DB_HOST', '127.0.0.1')),
+            'port' => env('WA_DB_PORT', env('DB_PORT', '3306')),
+            'database' => env('WA_DB_DATABASE', env('DB_DATABASE', 'forge')),
+            'username' => env('WA_DB_USERNAME', env('DB_USERNAME', 'forge')),
+            'password' => env('WA_DB_PASSWORD', env('DB_PASSWORD', '')),
+            'unix_socket' => env('WA_DB_SOCKET', ''),
+            'charset' => env('WA_DB_CHARSET', 'utf8mb4'),
+            'collation' => env('WA_DB_COLLATION', 'utf8mb4_unicode_ci'),
+            'prefix' => env('WA_DB_PREFIX', 'wam_'),
+            'prefix_indexes' => true,
+            'strict' => true,
+            'foreign_key_constraints' => env('WA_DB_FOREIGN_KEYS', true),
+        ],
+
         'mysql' => [
             'driver' => 'mysql',
             'url' => env('DB_URL'),
