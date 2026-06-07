@@ -4,6 +4,7 @@ import { Head, router, useForm, usePage } from '@inertiajs/vue3'
 import AppLayout from '../../Layouts/AppLayout.vue'
 defineOptions({ layout: AppLayout })
 import Icon from '../../Components/Icon.vue'
+import { confirm } from '../../Composables/useConfirm.js'
 
 const props = defineProps({ filters: Object, page: Object, groups: Array, can_edit: Boolean })
 const pageProps = usePage()
@@ -35,13 +36,13 @@ function saveC() {
     if (editingC.value) cForm.put(route('v2.wa-module.contacts.update', { contact: editingC.value }), opts)
     else cForm.post(route('v2.wa-module.contacts.store'), opts)
 }
-function delC(r) { if (confirm(t.value.confirmC)) router.delete(route('v2.wa-module.contacts.destroy', { contact: r.id }), { preserveScroll: true }) }
+function delC(r) { confirm({ body: t.value.confirmC, tone: 'destructive', onConfirm: () => router.delete(route('v2.wa-module.contacts.destroy', { contact: r.id }), { preserveScroll: true }) }) }
 
 const showG = ref(false)
 const gForm = useForm({ name: '', description: '', group_type: 'static' })
 function openG() { gForm.reset(); gForm.clearErrors(); showG.value = true }
 function saveG() { gForm.post(route('v2.wa-module.groups.store'), { preserveScroll: true, onSuccess: () => { showG.value = false } }) }
-function delG(g) { if (confirm(t.value.confirmG)) router.delete(route('v2.wa-module.groups.destroy', { group: g.id }), { preserveScroll: true }) }
+function delG(g) { confirm({ body: t.value.confirmG, tone: 'destructive', onConfirm: () => router.delete(route('v2.wa-module.groups.destroy', { group: g.id }), { preserveScroll: true }) }) }
 
 function toggleMember(contact, groupId) {
     if (!groupId) return
@@ -106,8 +107,8 @@ function toggleMember(contact, groupId) {
         </div>
 
         <!-- contact modal -->
-        <div v-if="showC" style="position:fixed; inset:0; background:rgba(0,0,0,.4); display:flex; align-items:center; justify-content:center; z-index:50;" @click.self="showC=false">
-            <div class="card" style="width:420px; max-width:100%; padding:20px;">
+        <div v-if="showC" class="modal-backdrop" @click.self="showC=false">
+            <div class="modal-panel" role="dialog" style="max-width:420px; padding:20px;">
                 <h3 style="margin:0 0 14px; font-size:16px; font-weight:700;">{{ editingC ? t.edit : t.newC }}</h3>
                 <div style="display:grid; gap:12px;">
                     <div><label style="font-size:12px; color:var(--fg-subtle);">{{ t.f.msisdn }}</label><input v-model="cForm.msisdn" class="input" placeholder="9655…" /><div v-if="cForm.errors.msisdn" style="font-size:11px; color:#dc2626;">{{ cForm.errors.msisdn }}</div></div>
@@ -118,8 +119,8 @@ function toggleMember(contact, groupId) {
             </div>
         </div>
         <!-- group modal -->
-        <div v-if="showG" style="position:fixed; inset:0; background:rgba(0,0,0,.4); display:flex; align-items:center; justify-content:center; z-index:50;" @click.self="showG=false">
-            <div class="card" style="width:420px; max-width:100%; padding:20px;">
+        <div v-if="showG" class="modal-backdrop" @click.self="showG=false">
+            <div class="modal-panel" role="dialog" style="max-width:420px; padding:20px;">
                 <h3 style="margin:0 0 14px; font-size:16px; font-weight:700;">{{ t.newG }}</h3>
                 <div style="display:grid; gap:12px;">
                     <div><label style="font-size:12px; color:var(--fg-subtle);">{{ t.f.gname }}</label><input v-model="gForm.name" class="input" /><div v-if="gForm.errors.name" style="font-size:11px; color:#dc2626;">{{ gForm.errors.name }}</div></div>

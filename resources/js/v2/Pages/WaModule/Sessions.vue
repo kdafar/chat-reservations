@@ -4,6 +4,8 @@ import { Head, router, usePage } from '@inertiajs/vue3'
 import AppLayout from '../../Layouts/AppLayout.vue'
 defineOptions({ layout: AppLayout })
 import Icon from '../../Components/Icon.vue'
+import Popover from '../../Components/Popover.vue'
+import { confirm } from '../../Composables/useConfirm.js'
 
 defineProps({ page: Object })
 const pageProps = usePage()
@@ -16,7 +18,7 @@ const t = computed(() => isRtl.value ? {
     col: { phone: 'Phone', name: 'Name', status: 'Status', locale: 'Locale', blocked: 'Blocked', last: 'Last interaction', actions: '' }, empty: 'No sessions', showing: 'Showing', of: 'of',
 })
 function toggleBlock(r) { router.post(route('v2.wa-module.sessions.block', { session: r.id }), {}, { preserveScroll: true }) }
-function del(r) { if (confirm(t.value.confirmDel)) router.delete(route('v2.wa-module.sessions.destroy', { session: r.id }), { preserveScroll: true }) }
+function del(r) { confirm({ body: t.value.confirmDel, tone: 'destructive', onConfirm: () => router.delete(route('v2.wa-module.sessions.destroy', { session: r.id }), { preserveScroll: true }) }) }
 </script>
 <template>
     <Head :title="t.title" />
@@ -35,10 +37,16 @@ function del(r) { if (confirm(t.value.confirmDel)) router.delete(route('v2.wa-mo
                         <td>{{ r.is_blocked ? '🚫' : '—' }}</td>
                         <td style="font-size:11px; color:var(--fg-faint);">{{ r.last_interacted_at || '—' }}</td>
                         <td>
-                            <div style="display:flex; gap:4px; justify-content:flex-end;">
-                                <button class="btn btn-ghost btn-sm" :title="r.is_blocked ? t.unblock : t.block" @click="toggleBlock(r)"><Icon :name="r.is_blocked ? 'shield-off' : 'shield'" :size="13" /></button>
-                                <button class="btn btn-ghost btn-sm" :title="t.del" @click="del(r)"><Icon name="trash-2" :size="13" style="color:#dc2626;" /></button>
-                            </div>
+                            <Popover :width="170" align="end">
+                                <template #trigger="{ toggle }"><button class="btn btn-ghost btn-sm btn-icon" @click.stop="toggle"><Icon name="more-horizontal" :size="14" /></button></template>
+                                <template #default="{ hide }">
+                                    <div style="padding:6px;">
+                                        <button class="wa-menu-row" @click="hide(); toggleBlock(r)"><Icon :name="r.is_blocked ? 'shield-off' : 'shield'" :size="13" /><span>{{ r.is_blocked ? t.unblock : t.block }}</span></button>
+                                        <div style="height:1px; background:var(--line); margin:4px 0;"></div>
+                                        <button class="wa-menu-row" @click="hide(); del(r)"><Icon name="trash-2" :size="13" :style="{ color:'var(--destructive)' }" /><span :style="{ color:'var(--destructive)' }">{{ t.del }}</span></button>
+                                    </div>
+                                </template>
+                            </Popover>
                         </td>
                     </tr>
                 </tbody>
@@ -50,3 +58,8 @@ function del(r) { if (confirm(t.value.confirmDel)) router.delete(route('v2.wa-mo
         </div>
     </div>
 </template>
+
+<style scoped>
+.wa-menu-row { display:flex; align-items:center; gap:9px; width:100%; padding:7px 9px; border:0; background:transparent; border-radius:7px; font-size:13px; color:var(--fg); cursor:pointer; text-align:start; }
+.wa-menu-row:hover { background:var(--bg-subtle, rgba(0,0,0,.05)); }
+</style>

@@ -428,8 +428,13 @@ class WaModuleController extends Controller
 
         $templates = MessageTemplate::query()
             ->orderBy('name')
-            ->pluck('language', 'name')
-            ->map(fn ($lang, $name) => ['name' => $name, 'language' => $lang])
+            ->get()
+            ->map(fn (MessageTemplate $t) => array_merge([
+                'name' => $t->name,
+                'language' => $t->language ?: 'en',
+                'body' => $t->body,
+                'var_count' => preg_match_all('/\{\{\s*\d+\s*\}\}/', (string) $t->body),
+            ], $this->templateParts($t)))
             ->values();
 
         return Inertia::render('WaModule/Campaigns', [
