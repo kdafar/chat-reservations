@@ -1034,11 +1034,19 @@ class WaModuleController extends Controller
         if ($activeId) {
             $convo = WaConversation::with('contact')->find($activeId);
             if ($convo) {
+                // 24-hour customer service window: free text only sends within
+                // 24h of the contact's LAST inbound message; otherwise template-only.
+                $lastInbound = WaMessage::where('conversation_id', $convo->id)
+                    ->where('direction', 'inbound')->max('created_at');
+                $windowOpen = $lastInbound && \Illuminate\Support\Carbon::parse($lastInbound)->gt(now()->subDay());
+
                 $active = [
                     'id' => $convo->id,
                     'name' => optional($convo->contact)->name ?: optional($convo->contact)->phone ?: '—',
                     'msisdn' => optional($convo->contact)->phone,
                     'status' => $convo->status,
+                    'window_open' => $windowOpen,
+                    'window_expires' => $windowOpen ? \Illuminate\Support\Carbon::parse($lastInbound)->addDay()->diffForHumans() : null,
                 ];
                 $messages = WaMessage::where('conversation_id', $convo->id)
                     ->orderBy('created_at')->limit(300)->get()
@@ -1663,6 +1671,12 @@ class WaModuleController extends Controller
 
         if (! $to) {
             return back()->with('flash', ['type' => 'error', 'message' => 'Conversation has no contact number.']);
+        }
+        // Enforce the 24-hour window: free text is only allowed within 24h of the
+        // contact's last inbound message — otherwise an approved template is required.
+        $lastInbound = WaMessage::where('conversation_id', $convo->id)->where('direction', 'inbound')->max('created_at');
+        if (! ($lastInbound && \Illuminate\Support\Carbon::parse($lastInbound)->gt(now()->subDay()))) {
+            return back()->with('flash', ['type' => 'error', 'message' => 'Outside the 24-hour window — send an approved template instead.']);
         }
         if (! config('services.whatsapp.api_token')) {
             return back()->with('flash', ['type' => 'error', 'message' => 'WhatsApp is not configured.']);

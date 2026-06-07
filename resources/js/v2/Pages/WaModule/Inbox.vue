@@ -13,11 +13,13 @@ const t = computed(() => isRtl.value ? {
     empty: 'اختر محادثة للبدء', noConvos: 'لا توجد محادثات', ph: 'اكتب رسالة', notConfigured: 'واتساب غير مُهيّأ',
     newChat: 'محادثة جديدة', phone: 'رقم الهاتف', firstMsg: 'رسالة أولى (اختياري)', start: 'بدء', cancel: 'إلغاء',
     tpl: 'إرسال قالب', pickTpl: 'اختر قالبًا', vars: 'المتغيرات', sendTpl: 'إرسال القالب',
+    windowClosed: 'انتهت نافذة الـ24 ساعة — النص الحر لا يصل. أرسل قالبًا معتمدًا.', windowOpen: 'نافذة الرد مفتوحة — تُغلق', windowPh: 'خارج نافذة 24 ساعة — استخدم قالبًا',
 } : {
     title: 'Inbox', messages: 'Messages', searchPh: 'Search or start a chat', all: 'All', open: 'Open', resolved: 'Resolved',
     empty: 'Select a conversation to start', noConvos: 'No conversations', ph: 'Type a message', notConfigured: 'WhatsApp not configured',
     newChat: 'New chat', phone: 'Phone number', firstMsg: 'First message (optional)', start: 'Start', cancel: 'Cancel',
     tpl: 'Send template', pickTpl: 'Pick a template', vars: 'Variables', sendTpl: 'Send template',
+    windowClosed: '24-hour window closed — free text won\'t deliver. Send an approved template.', windowOpen: 'Reply window open — closes', windowPh: 'Outside 24h window — use a template',
 })
 
 const f = reactive({ q: props.filters.q || '', status: props.filters.status || 'all' })
@@ -143,10 +145,16 @@ function sendTpl() {
                         </div>
                     </template>
                 </div>
+                <!-- 24h window notice -->
+                <div v-if="active.window_open === false" class="wa-window-bar">
+                    <Icon name="clock" :size="14" /> <span>{{ t.windowClosed }}</span>
+                    <button class="btn btn-sm" style="background:#fff; color:#b45309; border:0; margin-inline-start:auto;" @click="showTpl = true"><Icon name="layout-template" :size="13" /> {{ t.sendTpl }}</button>
+                </div>
+                <div v-else-if="active.window_expires" class="wa-window-ok"><Icon name="clock" :size="12" /> {{ t.windowOpen }} {{ active.window_expires }}</div>
                 <footer class="wa-composer">
                     <button class="wa-iconbtn" :title="t.tpl" @click="showTpl = true"><Icon name="layout-template" :size="20" /></button>
-                    <input v-model="reply.body" :placeholder="configured ? t.ph : t.notConfigured" :disabled="!configured" @keyup.enter="send" />
-                    <button class="wa-send" :disabled="reply.processing || !reply.body.trim() || !configured" @click="send"><Icon name="send" :size="18" /></button>
+                    <input v-model="reply.body" :placeholder="active.window_open === false ? t.windowPh : (configured ? t.ph : t.notConfigured)" :disabled="!configured || active.window_open === false" @keyup.enter="send" />
+                    <button class="wa-send" :disabled="reply.processing || !reply.body.trim() || !configured || active.window_open === false" @click="send"><Icon name="send" :size="18" /></button>
                 </footer>
             </template>
             <div v-else class="wa-empty">
@@ -249,6 +257,8 @@ function sendTpl() {
 .wa-bubble-body { white-space:pre-wrap; word-break:break-word; }
 .wa-bubble-meta { display:flex; gap:3px; align-items:center; justify-content:flex-end; font-size:10.5px; color:#667781; margin-top:1px; }
 .dark .wa-bubble-meta { color:#8696a0; }
+.wa-window-bar { display:flex; align-items:center; gap:8px; padding:8px 16px; background:#fef3c7; color:#92400e; font-size:12.5px; border-top:1px solid #fde68a; }
+.wa-window-ok { display:flex; align-items:center; gap:6px; padding:4px 16px; background:#ecfdf5; color:#047857; font-size:11px; }
 .wa-composer { display:flex; gap:10px; align-items:center; padding:10px 16px; background:#f0f2f5; }
 .dark .wa-composer { background:#202c33; }
 .wa-composer input { flex:1; padding:11px 14px; border-radius:10px; border:0; background:#fff; font-size:14px; outline:none; }

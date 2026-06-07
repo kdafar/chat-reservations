@@ -186,6 +186,38 @@ class WaModuleWorkflowTest extends TestCase
         $c->delete();
     }
 
+    public function test_free_text_reply_blocked_outside_24h_window(): void
+    {
+        $admin = \App\Models\User::whereHas('roles', fn ($q) => $q->whereIn('name', ['admin', 'super_admin', 'clinic_admin']))->first();
+        if (! $admin || ! config('services.whatsapp.api_token')) {
+            $this->markTestSkipped('no admin or not configured');
+        }
+        $c = new WaModuleController;
+        $ensure = new \ReflectionMethod($c, 'ensureCore');
+        $ensure->setAccessible(true);
+        $number = $ensure->invoke($c);
+
+        $contact = \App\Wa\Models\WhatsApp\WaContact::firstOrCreate(
+            ['wa_account_id' => $number->wa_account_id, 'phone' => '+96599000777'],
+            ['wa_id' => '96599000777win']
+        );
+        $convo = \App\Wa\Models\WhatsApp\WaConversation::findOrCreate($number, $contact);
+
+        // No inbound (or stale) -> window closed -> reply blocked.
+        WaMessage::create(['wa_account_id' => $number->wa_account_id, 'wa_number_id' => $number->id, 'conversation_id' => $convo->id, 'contact_id' => $contact->id, 'direction' => 'inbound', 'type' => 'text', 'body' => 'old', 'status' => 'received', 'created_at' => now()->subDays(2)]);
+        $this->actingAs($admin)->post(route('v2.wa-module.conversations.reply', $convo), ['body' => 'hi'])->assertSessionHas('flash.type', 'error');
+
+        // Fresh inbound -> window open -> allowed (send may fail at Meta but not be window-blocked).
+        WaMessage::create(['wa_account_id' => $number->wa_account_id, 'wa_number_id' => $number->id, 'conversation_id' => $convo->id, 'contact_id' => $contact->id, 'direction' => 'inbound', 'type' => 'text', 'body' => 'recent', 'status' => 'received', 'created_at' => now()->subMinutes(5)]);
+        $res = $this->actingAs($admin)->post(route('v2.wa-module.conversations.reply', $convo), ['body' => 'hi']);
+        $flash = $res->getSession()->get('flash');
+        $this->assertStringNotContainsStringIgnoringCase('24-hour window', (string) ($flash['message'] ?? ''));
+
+        $convo->messages()->delete();
+        $convo->delete();
+        $contact->delete();
+    }
+
     public function test_webhook_stores_incoming_message_as_inbound(): void
     {
         $c = new WaModuleController;
