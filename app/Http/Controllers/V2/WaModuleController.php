@@ -119,7 +119,7 @@ class WaModuleController extends Controller
     public function storeTemplate(Request $request, WhatsAppService $whatsapp): RedirectResponse
     {
         $this->authorizeAccess($request);
-        $data = $this->validateTemplate($request);
+        $data = $this->validateTemplate($request, null, $whatsapp);
 
         $tpl = MessageTemplate::create($data + ['local_status' => 'draft']);
 
@@ -136,7 +136,7 @@ class WaModuleController extends Controller
     }
 
     /** Update a local template (blocked once approved by Meta). */
-    public function updateTemplate(Request $request, int $template): RedirectResponse
+    public function updateTemplate(Request $request, int $template, WhatsAppService $whatsapp): RedirectResponse
     {
         $this->authorizeAccess($request);
         $tpl = MessageTemplate::findOrFail($template);
@@ -145,9 +145,25 @@ class WaModuleController extends Controller
             return back()->with('flash', ['type' => 'error', 'message' => 'Approved templates cannot be edited.']);
         }
 
-        $tpl->update($this->validateTemplate($request));
+        $tpl->update($this->validateTemplate($request, $tpl, $whatsapp));
 
         return back()->with('flash', ['type' => 'success', 'message' => 'Template updated.']);
+    }
+
+    /** Refresh a template's Meta status (APPROVED/PENDING/REJECTED + components). */
+    public function refreshTemplateStatus(Request $request, int $template, WhatsAppService $whatsapp): RedirectResponse
+    {
+        $this->authorizeAccess($request);
+        $tpl = MessageTemplate::findOrFail($template);
+        if (blank($tpl->meta_id)) {
+            return back()->with('flash', ['type' => 'error', 'message' => 'Template has not been submitted to Meta yet.']);
+        }
+        try {
+            $whatsapp->refreshTemplateStatus($tpl);
+            return back()->with('flash', ['type' => 'success', 'message' => 'Status refreshed: '.($tpl->fresh()->status ?: 'unknown').'.']);
+        } catch (\Throwable $e) {
+            return back()->with('flash', ['type' => 'error', 'message' => 'Refresh failed: '.$e->getMessage()]);
+        }
     }
 
     public function destroyTemplate(Request $request, int $template): RedirectResponse
@@ -257,41 +273,177 @@ class WaModuleController extends Controller
         return back()->with('flash', ['type' => 'success', 'message' => $tpl->is_auto_reply ? 'Auto-reply enabled.' : 'Auto-reply disabled.']);
     }
 
-    private function validateTemplate(Request $request): array
+    /** Normalize a template name to Meta rules + enforce the _en/_ar suffix. */
+    private function normalizeTemplateName(string $input, string $lang): string
     {
+        $lang = $lang === 'ar' ? 'ar' : 'en';
+        $name = strtolower(trim($input));
+        $name = preg_replace('/\s+/', '_', $name);
+        $name = preg_replace('/[^a-z0-9_]/', '', $name);
+        $name = preg_replace('/_+/', '_', $name);
+        $name = trim($name, '_');
+        $name = preg_replace('/_(en|ar)$/', '', $name);
+
+        return $name === '' ? '' : $name.'_'.$lang;
+    }
+
+    /**
+     * Validate + compose a template, enforcing the same Meta guardrails the
+     * source Filament wizard enforces (server-side = authoritative).
+     */
+    private function validateTemplate(Request $request, ?MessageTemplate $record = null, WhatsAppService $whatsapp = null): array
+    {
+        $whatsapp ??= app(WhatsAppService::class);
+        $locked = $record && ($record->local_status === 'published' || $record->status === 'APPROVED');
+
         $v = $request->validate([
-            'name' => ['required', 'string', 'max:512', 'regex:/^[a-z0-9_]+$/'],
+            'name' => ['required', 'string', 'max:512'],
             'category' => ['required', 'in:MARKETING,UTILITY,AUTHENTICATION'],
             'language' => ['required', 'in:en,ar'],
             'header_type' => ['nullable', 'in:NONE,TEXT,IMAGE,VIDEO,DOCUMENT'],
             'header_text' => ['nullable', 'string', 'max:60'],
+            'header_example' => ['nullable', 'string', 'max:120'],
             'header_media_url' => ['nullable', 'url', 'max:2048'],
+            'header_media_type' => ['nullable', 'string', 'max:120'], // mime of the sample, for type match
             'body' => ['required', 'string', 'max:1024'],
+            'body_examples' => ['array'],
+            'body_examples.*' => ['nullable', 'string', 'max:200'],
             'footer_text' => ['nullable', 'string', 'max:60'],
             'is_auto_reply' => ['boolean'],
             'triggers' => ['array'],
             'triggers.*' => ['string', 'max:60'],
-            'buttons' => ['array', 'max:10'],
+            'buttons' => ['array', 'max:3'],
             'buttons.*.type' => ['required_with:buttons', 'in:QUICK_REPLY,URL,PHONE_NUMBER'],
             'buttons.*.text' => ['required_with:buttons', 'string', 'max:25'],
             'buttons.*.url' => ['nullable', 'string', 'max:2048'],
             'buttons.*.phone_number' => ['nullable', 'string', 'max:20'],
         ]);
 
+        $name = $this->normalizeTemplateName($v['name'], $v['language']);
+        $body = $v['body'];
+        $headerType = $v['header_type'] ?? 'NONE';
+        $errors = [];
+
+        // --- name rules ---
+        if (! preg_match('/^[a-z0-9_]+$/', $name)) {
+            $errors['name'] = 'Meta requires strictly lowercase letters, numbers, and underscores.';
+        } elseif (! $locked && ! preg_match('/_(en|ar)$/', $name)) {
+            $errors['name'] = 'Name must end with _en or _ar.';
+        } elseif (MessageTemplate::where('name', $name)->when($record, fn ($q) => $q->whereKeyNot($record->id))->exists()) {
+            $errors['name'] = "A template named '{$name}' already exists locally.";
+        } elseif ((! $record || $record->name !== $name) && ! $locked && $whatsapp->doesTemplateExist($name)) {
+            $errors['name'] = "A template '{$name}' already exists on your Meta Business Account.";
+        }
+
+        // --- body rules (start/end var, whitespace, sequential 1..10) ---
+        if (preg_match('/^\s*\{\{\s*\d+\s*\}\}/', $body)) {
+            $errors['body'] = 'Meta rejects templates starting with a variable. Add text before {{1}}.';
+        } elseif (preg_match('/\{\{\s*\d+\s*\}\}\s*$/', $body)) {
+            $errors['body'] = 'Meta rejects templates ending with a variable. Add text after the last variable.';
+        } elseif (str_contains($body, "\t")) {
+            $errors['body'] = 'Tabs are not allowed.';
+        } elseif (preg_match('/ {4,}/', $body)) {
+            $errors['body'] = 'Too many consecutive spaces (max 4).';
+        } elseif (preg_match('/[\r\n]{3,}/', $body)) {
+            $errors['body'] = 'Too many consecutive newlines (max 2).';
+        }
+        preg_match_all('/\{\{\s*(\d+)\s*\}\}/', $body, $m);
+        $nums = collect($m[1] ?? [])->map(fn ($n) => (int) $n)->unique()->sort()->values()->all();
+        if (! isset($errors['body'])) {
+            if (count($nums) > 10) {
+                $errors['body'] = 'Meta allows a maximum of 10 body variables.';
+            } elseif (! empty($nums)) {
+                foreach ($nums as $i => $n) {
+                    if ($n !== $i + 1) {
+                        $errors['body'] = 'Variables must be sequential starting at {{1}} (missing {{'.($i + 1).'}}).';
+                        break;
+                    }
+                }
+            }
+        }
+        // body variable samples required (one per distinct variable)
+        $examples = array_values(array_filter($v['body_examples'] ?? [], fn ($x) => $x !== null && $x !== ''));
+        if (! empty($nums) && count($examples) < count($nums)) {
+            $errors['body_examples'] = 'Provide a sample value for each body variable (for Meta approval).';
+        }
+
+        // --- header rules ---
+        if ($headerType === 'TEXT') {
+            if (blank($v['header_text'] ?? null)) {
+                $errors['header_text'] = 'Header text is required for a TEXT header.';
+            } elseif (preg_match('/\{\{\s*1\s*\}\}/', (string) $v['header_text']) && blank($v['header_example'] ?? null)) {
+                $errors['header_example'] = 'A sample is required for the header variable.';
+            }
+        } elseif (in_array($headerType, ['IMAGE', 'VIDEO', 'DOCUMENT'], true)) {
+            if (blank($v['header_media_url'] ?? null)) {
+                $errors['header_media_url'] = "A sample {$headerType} is required for approval.";
+            } elseif (! empty($v['header_media_type'])) {
+                $type = strtolower($v['header_media_type']);
+                $ok = match ($headerType) {
+                    'IMAGE' => str_starts_with($type, 'image/'),
+                    'VIDEO' => str_starts_with($type, 'video/'),
+                    'DOCUMENT' => $type === 'application/pdf',
+                    default => true,
+                };
+                if (! $ok) {
+                    $errors['header_media_url'] = "Sample media does not match header type ({$headerType}).";
+                }
+            }
+        }
+
+        // --- footer: no variables ---
+        if (! empty($v['footer_text']) && preg_match('/\{\{.*\}\}/', $v['footer_text'])) {
+            $errors['footer_text'] = 'Footer cannot contain variables.';
+        }
+
+        // --- button mix rules ---
+        $btnRows = $v['buttons'] ?? [];
+        $types = collect($btnRows)->pluck('type')->filter();
+        if ($types->contains('QUICK_REPLY') && ($types->contains('URL') || $types->contains('PHONE_NUMBER'))) {
+            $errors['buttons'] = 'Cannot mix Quick Reply buttons with Link/Phone buttons.';
+        } elseif ($types->filter(fn ($t) => $t === 'URL')->count() > 1) {
+            $errors['buttons'] = 'Only one Website Link button is allowed.';
+        } elseif ($types->filter(fn ($t) => $t === 'PHONE_NUMBER')->count() > 1) {
+            $errors['buttons'] = 'Only one Phone Number button is allowed.';
+        } else {
+            foreach ($btnRows as $b) {
+                if (($b['type'] ?? '') === 'URL' && ! preg_match('#^https?://#', (string) ($b['url'] ?? ''))) {
+                    $errors['buttons'] = 'URL buttons must have a valid https link.';
+                }
+                if (($b['type'] ?? '') === 'PHONE_NUMBER' && ! preg_match('/^[0-9]{5,20}$/', (string) ($b['phone_number'] ?? ''))) {
+                    $errors['buttons'] = 'Phone buttons need digits only (5–20, no +).';
+                }
+            }
+        }
+
+        if ($errors) {
+            throw \Illuminate\Validation\ValidationException::withMessages($errors);
+        }
+
+        $v['name'] = $name;
+        $v['body_examples'] = $examples;
+
         // header_type/header_text/footer/buttons are not columns — they live
         // inside the Meta `components` structure. Build that here.
         $components = [];
-        if (($v['header_type'] ?? 'NONE') !== 'NONE') {
-            $header = ['type' => 'HEADER', 'format' => $v['header_type']];
-            if ($v['header_type'] === 'TEXT') {
+        if ($headerType !== 'NONE') {
+            $header = ['type' => 'HEADER', 'format' => $headerType];
+            if ($headerType === 'TEXT') {
                 $header['text'] = $v['header_text'] ?? null;
+                if (! empty($v['header_example'])) {
+                    $header['example'] = ['header_text' => [$v['header_example']]];
+                }
             } elseif (! empty($v['header_media_url'])) {
                 $header['example'] = ['header_handle' => [$v['header_media_url']]];
                 $header['media_url'] = $v['header_media_url'];
             }
             $components[] = array_filter($header);
         }
-        $components[] = ['type' => 'BODY', 'text' => $v['body']];
+        $bodyComp = ['type' => 'BODY', 'text' => $body];
+        if (! empty($examples)) {
+            $bodyComp['example'] = ['body_text' => [array_values($examples)]];
+        }
+        $components[] = $bodyComp;
         if (! empty($v['footer_text'])) {
             $components[] = ['type' => 'FOOTER', 'text' => $v['footer_text']];
         }
@@ -310,11 +462,11 @@ class WaModuleController extends Controller
         }
 
         return [
-            'name' => strtolower($v['name']),
+            'name' => $name,
             'category' => $v['category'],
             'language' => $v['language'],
-            'body' => $v['body'],
-            'body_preview' => \Illuminate\Support\Str::limit($v['body'], 160),
+            'body' => $body,
+            'body_preview' => \Illuminate\Support\Str::limit($body, 160),
             'components' => $components,
             'is_auto_reply' => (bool) ($v['is_auto_reply'] ?? false),
             'triggers' => $v['triggers'] ?? [],
@@ -327,14 +479,19 @@ class WaModuleController extends Controller
         $components = is_array($t->components) ? $t->components : [];
         $byType = fn ($type) => collect($components)->first(fn ($c) => strtoupper($c['type'] ?? '') === $type);
         $header = $byType('HEADER');
+        $body = $byType('BODY');
         $footer = $byType('FOOTER');
         $buttonsC = $byType('BUTTONS');
 
         return [
             'header_type' => $header['format'] ?? 'NONE',
             'header_text' => $header['text'] ?? null,
+            'header_example' => $header['example']['header_text'][0] ?? null,
             'header_media_url' => $header['media_url'] ?? ($header['example']['header_handle'][0] ?? null),
             'footer_text' => $footer['text'] ?? null,
+            'body_examples' => $body['example']['body_text'][0] ?? [],
+            'locked' => $t->local_status === 'published' || $t->status === 'APPROVED',
+            'has_meta_id' => filled($t->meta_id),
             'buttons' => collect($buttonsC['buttons'] ?? [])->map(fn ($b) => [
                 'type' => $b['type'] ?? 'QUICK_REPLY',
                 'text' => $b['text'] ?? '',

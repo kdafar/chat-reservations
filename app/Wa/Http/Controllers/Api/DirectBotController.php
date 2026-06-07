@@ -368,7 +368,7 @@ class DirectBotController extends Controller
                 'contact_id' => $waContact->id,
                 'conversation_id' => $conversation->id,
                 'meta_message_id' => $messagePayload['id'] ?? null,
-                'direction' => 'in',
+                'direction' => 'inbound',
                 'type' => $messageType,
                 'body' => $body,
                 'meta_raw' => $messagePayload,

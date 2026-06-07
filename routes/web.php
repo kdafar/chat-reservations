@@ -707,6 +707,7 @@ Route::middleware([
     Route::delete('/wa-module/templates/{template}',          [\App\Http\Controllers\V2\WaModuleController::class, 'destroyTemplate'])->name('wa-module.templates.destroy');
     Route::post('/wa-module/templates-sync',                  [\App\Http\Controllers\V2\WaModuleController::class, 'syncTemplates'])->name('wa-module.templates.sync');
     Route::post('/wa-module/templates/{template}/publish',    [\App\Http\Controllers\V2\WaModuleController::class, 'publishTemplate'])->name('wa-module.templates.publish');
+    Route::post('/wa-module/templates/{template}/refresh',     [\App\Http\Controllers\V2\WaModuleController::class, 'refreshTemplateStatus'])->name('wa-module.templates.refresh');
     Route::post('/wa-module/templates/{template}/auto-reply', [\App\Http\Controllers\V2\WaModuleController::class, 'toggleTemplateAutoReply'])->name('wa-module.templates.auto-reply');
     // Contacts + Groups CRUD
     Route::post('/wa-module/contacts',              [\App\Http\Controllers\V2\WaModuleController::class, 'storeContact'])->name('wa-module.contacts.store');
