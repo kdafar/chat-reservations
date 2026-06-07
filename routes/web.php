@@ -727,6 +727,11 @@ Route::middleware([
     Route::post('/wa-module/campaigns/{campaign}/send',       [\App\Http\Controllers\V2\WaModuleController::class, 'sendCampaign'])->name('wa-module.campaigns.send');
     Route::post('/wa-module/campaigns/{campaign}/recipients', [\App\Http\Controllers\V2\WaModuleController::class, 'addCampaignRecipient'])->name('wa-module.campaigns.recipients');
     Route::post('/wa-module/campaigns/{campaign}/import',     [\App\Http\Controllers\V2\WaModuleController::class, 'importRecipients'])->name('wa-module.campaigns.import');
+    Route::post('/wa-module/campaigns/{campaign}/from-group',  [\App\Http\Controllers\V2\WaModuleController::class, 'importFromGroup'])->name('wa-module.campaigns.from-group');
+    Route::get('/wa-module/campaigns/{campaign}/analytics',    [\App\Http\Controllers\V2\WaModuleController::class, 'campaignAnalytics'])->name('wa-module.campaigns.analytics');
+    // Engagement + smart groups
+    Route::post('/wa-module/engagement/refresh', [\App\Http\Controllers\V2\WaModuleController::class, 'refreshEngagement'])->name('wa-module.engagement.refresh');
+    Route::post('/wa-module/groups/smart',       [\App\Http\Controllers\V2\WaModuleController::class, 'buildSmartGroup'])->name('wa-module.groups.smart');
     // Settings
     Route::get('/wa-module/settings',  [\App\Http\Controllers\V2\WaModuleController::class, 'settings'])->name('wa-module.settings');
     Route::post('/wa-module/settings', [\App\Http\Controllers\V2\WaModuleController::class, 'updateSettings'])->name('wa-module.settings.update');

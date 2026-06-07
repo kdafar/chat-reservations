@@ -4,6 +4,7 @@ import { Head, router, useForm, usePage } from '@inertiajs/vue3'
 import AppLayout from '../../Layouts/AppLayout.vue'
 defineOptions({ layout: AppLayout })
 import Icon from '../../Components/Icon.vue'
+import SearchableSelect from '../../Components/SearchableSelect.vue'
 import { confirm } from '../../Composables/useConfirm.js'
 
 const props = defineProps({ filters: Object, page: Object, groups: Array, can_edit: Boolean })
@@ -15,12 +16,18 @@ const t = computed(() => isRtl.value ? {
     col: { msisdn: 'الهاتف', name: 'الاسم', locale: 'اللغة', created: 'أضيف' }, empty: 'لا توجد جهات اتصال', showing: 'عرض', of: 'من',
     f: { msisdn: 'الهاتف', name: 'الاسم', locale: 'اللغة', gname: 'اسم المجموعة', gdesc: 'الوصف', gtype: 'النوع' }, save: 'حفظ', cancel: 'إلغاء',
     confirmC: 'حذف جهة الاتصال؟', confirmG: 'حذف المجموعة؟',
+    engagement: 'التفاعل', refreshEng: 'تحديث التفاعل', smart: 'مجموعة ذكية', active: 'نشِط',
+    smartTitle: 'إنشاء مجموعة ذكية', smartName: 'اسم المجموعة', smartFilter: 'المعيار', create: 'إنشاء',
+    filters: { active: 'نشِط (آخر 30 يوم)', healthy: 'سليم (سُلّم وبدون فشل)', delivered: 'تم التسليم', read: 'تمت القراءة' },
 } : {
     title: 'Contacts', eyebrow: 'WhatsApp Platform', desc: 'Number directory and groups.', searchPh: 'Search phone or name…', clear: 'Clear',
     newC: 'Contact', newG: 'Group', edit: 'Edit', del: 'Delete', groups: 'Groups', addToG: 'Add to group',
     col: { msisdn: 'Phone', name: 'Name', locale: 'Locale', created: 'Added' }, empty: 'No contacts', showing: 'Showing', of: 'of',
     f: { msisdn: 'Phone', name: 'Name', locale: 'Locale', gname: 'Group name', gdesc: 'Description', gtype: 'Type' }, save: 'Save', cancel: 'Cancel',
     confirmC: 'Delete this contact?', confirmG: 'Delete this group?',
+    engagement: 'Engagement', refreshEng: 'Refresh engagement', smart: 'Smart group', active: 'Active',
+    smartTitle: 'Create smart group', smartName: 'Group name', smartFilter: 'Criteria', create: 'Create',
+    filters: { active: 'Active (last 30 days)', healthy: 'Healthy (delivered, ≤1 fail)', delivered: 'Delivered to', read: 'Read by' },
 })
 
 const f = reactive({ q: props.filters.q || '' })
@@ -48,6 +55,19 @@ function toggleMember(contact, groupId) {
     if (!groupId) return
     router.post(route('v2.wa-module.groups.toggle', { group: groupId }), { contact_id: contact.id }, { preserveScroll: true })
 }
+
+function refreshEng() { router.post(route('v2.wa-module.engagement.refresh'), {}, { preserveScroll: true }) }
+
+const showSmart = ref(false)
+const sForm = useForm({ name: '', filter: 'active' })
+const filterItems = computed(() => [
+    { value: 'active', label: t.value.filters.active },
+    { value: 'healthy', label: t.value.filters.healthy },
+    { value: 'delivered', label: t.value.filters.delivered },
+    { value: 'read', label: t.value.filters.read },
+])
+function openSmart() { sForm.reset(); sForm.clearErrors(); showSmart.value = true }
+function saveSmart() { sForm.post(route('v2.wa-module.groups.smart'), { preserveScroll: true, onSuccess: () => { showSmart.value = false } }) }
 </script>
 
 <template>
@@ -55,7 +75,9 @@ function toggleMember(contact, groupId) {
     <div style="padding:24px; max-width:1200px; margin:0 auto;">
         <div style="margin-bottom:16px; display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
             <div><div class="eyebrow">{{ t.eyebrow }}</div><h1 style="margin:4px 0 0; font-size:22px; font-weight:700; color:var(--fg);">{{ t.title }}</h1><p style="margin:6px 0 0; font-size:13px; color:var(--fg-subtle);">{{ t.desc }}</p></div>
-            <div style="display:flex; gap:8px;">
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                <button class="btn btn-ghost btn-sm" @click="refreshEng"><Icon name="refresh-cw" :size="14" /> {{ t.refreshEng }}</button>
+                <button class="btn btn-ghost btn-sm" @click="openSmart"><Icon name="sparkles" :size="14" /> {{ t.smart }}</button>
                 <button class="btn btn-ghost btn-sm" @click="openG"><Icon name="plus" :size="14" /> {{ t.newG }}</button>
                 <button class="btn btn-primary btn-sm" @click="openC(null)"><Icon name="plus" :size="14" /> {{ t.newC }}</button>
             </div>
@@ -68,13 +90,22 @@ function toggleMember(contact, groupId) {
                 </div>
                 <div class="card" style="overflow:hidden;">
                     <table class="table">
-                        <thead><tr><th>{{ t.col.msisdn }}</th><th>{{ t.col.name }}</th><th>{{ t.col.locale }}</th><th style="width:140px;">{{ t.addToG }}</th><th style="width:80px;"></th></tr></thead>
+                        <thead><tr><th>{{ t.col.msisdn }}</th><th>{{ t.col.name }}</th><th>{{ t.col.locale }}</th><th>{{ t.engagement }}</th><th style="width:140px;">{{ t.addToG }}</th><th style="width:80px;"></th></tr></thead>
                         <tbody>
-                            <tr v-if="!page.data.length"><td colspan="5" style="text-align:center; padding:40px; color:var(--fg-faint);">{{ t.empty }}</td></tr>
+                            <tr v-if="!page.data.length"><td colspan="6" style="text-align:center; padding:40px; color:var(--fg-faint);">{{ t.empty }}</td></tr>
                             <tr v-for="r in page.data" :key="r.id">
                                 <td class="mono" style="font-size:12px; font-weight:600;">{{ r.msisdn }}</td>
                                 <td style="font-size:12px;">{{ r.name || '—' }}</td>
                                 <td class="mono" style="font-size:12px;">{{ r.locale || '—' }}</td>
+                                <td>
+                                    <div v-if="r.eng" style="display:flex; align-items:center; gap:8px; font-size:11px;">
+                                        <span :title="t.active" :style="{ height:'7px', width:'7px', borderRadius:'50%', background: r.eng.active ? '#25D366' : '#cbd5e1' }"></span>
+                                        <span style="color:#16a34a;" title="delivered">✓{{ r.eng.delivered }}</span>
+                                        <span style="color:#06b6d4;" title="read">👁{{ r.eng.read }}</span>
+                                        <span v-if="r.eng.failed" style="color:#dc2626;" title="failed">✕{{ r.eng.failed }}</span>
+                                    </div>
+                                    <span v-else style="font-size:11px; color:var(--fg-faint);">—</span>
+                                </td>
                                 <td>
                                     <select class="input" style="font-size:11px; padding:4px;" @change="e => { toggleMember(r, e.target.value); e.target.value='' }">
                                         <option value="">—</option>
@@ -128,6 +159,18 @@ function toggleMember(contact, groupId) {
                     <div><label style="font-size:12px; color:var(--fg-subtle);">{{ t.f.gtype }}</label><select v-model="gForm.group_type" class="input"><option value="static">static</option><option value="dynamic">dynamic</option></select></div>
                 </div>
                 <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:18px;"><button class="btn btn-ghost" @click="showG=false">{{ t.cancel }}</button><button class="btn btn-primary" :disabled="gForm.processing" @click="saveG">{{ t.save }}</button></div>
+            </div>
+        </div>
+        <!-- smart group modal -->
+        <div v-if="showSmart" class="modal-backdrop" @click.self="showSmart=false">
+            <div class="modal-panel" role="dialog" style="max-width:440px; padding:20px;">
+                <h3 style="margin:0 0 6px; font-size:16px; font-weight:700; display:flex; align-items:center; gap:8px;"><Icon name="sparkles" :size="16" style="color:#8b5cf6;" /> {{ t.smartTitle }}</h3>
+                <p style="margin:0 0 14px; font-size:12px; color:var(--fg-subtle);">{{ t.refreshEng }} → {{ t.smart }}</p>
+                <div style="display:grid; gap:12px;">
+                    <div><label style="font-size:12px; color:var(--fg-subtle);">{{ t.smartName }}</label><input v-model="sForm.name" class="input" placeholder="Engaged contacts" /><div v-if="sForm.errors.name" style="font-size:11px; color:#dc2626;">{{ sForm.errors.name }}</div></div>
+                    <div><label style="font-size:12px; color:var(--fg-subtle);">{{ t.smartFilter }}</label><SearchableSelect v-model="sForm.filter" :items="filterItems" :nullable="false" /></div>
+                </div>
+                <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:18px;"><button class="btn btn-ghost" @click="showSmart=false">{{ t.cancel }}</button><button class="btn btn-primary" :disabled="sForm.processing || !sForm.name" @click="saveSmart">{{ t.create }}</button></div>
             </div>
         </div>
     </div>

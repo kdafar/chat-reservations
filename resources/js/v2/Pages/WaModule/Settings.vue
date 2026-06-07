@@ -34,6 +34,11 @@ const form = useForm({ settings: { ...props.settings } })
 function save() { form.post(route('v2.wa-module.settings.update'), { preserveScroll: true }) }
 
 const K = (k) => 'whatsapp.' + k
+
+const q = computed(() => String(props.health?.quality_rating || '').toUpperCase())
+const qualityLabel = computed(() => ({ GREEN: 'High quality', HIGH: 'High quality', YELLOW: 'Medium quality', MEDIUM: 'Medium quality', RED: 'Low quality', LOW: 'Low quality' }[q.value] || (props.health?.status === 'ok' ? 'Connected' : props.health?.status || 'Unknown')))
+const qualityDot = computed(() => ({ GREEN: '#16a34a', HIGH: '#16a34a', YELLOW: '#d97706', MEDIUM: '#d97706', RED: '#dc2626', LOW: '#dc2626' }[q.value] || (props.health?.status === 'ok' ? '#16a34a' : '#94a3b8')))
+const qualityStyle = computed(() => ({ background: qualityDot.value + '1a', color: qualityDot.value }))
 </script>
 
 <template>
@@ -44,12 +49,21 @@ const K = (k) => 'whatsapp.' + k
         <div class="card" style="padding:14px 16px; margin-bottom:14px;">
             <h3 style="margin:0 0 8px; font-size:13px; font-weight:600; color:var(--fg);">{{ t.health }}</h3>
             <div v-if="!configured" style="font-size:13px; color:#92400e;">{{ t.notConfigured }}</div>
-            <div v-else style="display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:8px; font-size:12px;">
-                <div><span style="color:var(--fg-faint);">status:</span> <b>{{ health.status }}</b></div>
-                <div v-if="health.display_phone_number"><span style="color:var(--fg-faint);">phone:</span> {{ health.display_phone_number }}</div>
-                <div v-if="health.verified_name"><span style="color:var(--fg-faint);">name:</span> {{ health.verified_name }}</div>
-                <div v-if="health.quality_rating"><span style="color:var(--fg-faint);">quality:</span> {{ health.quality_rating }}</div>
-                <div v-if="health.messaging_limit_tier"><span style="color:var(--fg-faint);">tier:</span> {{ health.messaging_limit_tier }}</div>
+            <div v-else>
+                <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
+                    <span :style="{ display:'inline-flex', alignItems:'center', gap:'6px', padding:'4px 11px', borderRadius:'20px', fontSize:'12px', fontWeight:'600', ...qualityStyle }">
+                        <span :style="{ height:'8px', width:'8px', borderRadius:'50%', background: qualityDot }"></span>{{ qualityLabel }}
+                    </span>
+                    <span v-if="health.display_phone_number" class="mono" style="font-size:13px; color:var(--fg);">{{ health.display_phone_number }}</span>
+                    <span v-if="health.verified_name" style="font-size:13px; color:var(--fg-subtle);">· {{ health.verified_name }}</span>
+                </div>
+                <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:8px 16px; font-size:12px;">
+                    <div><span style="color:var(--fg-faint);">Messaging tier:</span> <b>{{ health.effective_messaging_limit_tier || health.messaging_limit_tier || '—' }}</b></div>
+                    <div><span style="color:var(--fg-faint);">Name status:</span> {{ health.name_status || '—' }}</div>
+                    <div><span style="color:var(--fg-faint);">Throughput:</span> {{ health.throughput_level || 'Standard' }}</div>
+                    <div><span style="color:var(--fg-faint);">Platform:</span> {{ health.platform_type || '—' }}</div>
+                    <div><span style="color:var(--fg-faint);">Verification:</span> {{ health.code_verification_status || '—' }}</div>
+                </div>
             </div>
         </div>
 

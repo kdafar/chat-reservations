@@ -4,6 +4,7 @@ namespace App\Http\Controllers\V2;
 
 use App\Http\Controllers\Controller;
 use App\Wa\Hub\Models\Contact;
+use App\Wa\Hub\Models\ContactEngagementStat;
 use App\Wa\Hub\Models\ContactGroup;
 use App\Wa\Hub\Models\MessageTemplate;
 use App\Wa\Hub\Models\PromotionalCampaign;
@@ -286,7 +287,7 @@ class WaModuleController extends Controller
         $filters = ['q' => trim((string) $request->query('q', ''))];
 
         $page = Contact::query()
-            ->with('groups:id')
+            ->with(['groups:id', 'engagementStat'])
             ->when($filters['q'] !== '', fn ($q) => $q
                 ->where(fn ($w) => $w->where('msisdn', 'like', "%{$filters['q']}%")->orWhere('name', 'like', "%{$filters['q']}%")))
             ->latest('created_at')
@@ -298,6 +299,13 @@ class WaModuleController extends Controller
                 'name' => $c->name,
                 'locale' => $c->locale,
                 'group_ids' => $c->groups->pluck('id'),
+                'eng' => $c->engagementStat ? [
+                    'sent' => $c->engagementStat->sent_count,
+                    'delivered' => $c->engagementStat->delivered_count,
+                    'read' => $c->engagementStat->read_count,
+                    'failed' => $c->engagementStat->failed_count,
+                    'active' => (bool) $c->engagementStat->is_active,
+                ] : null,
                 'created_at' => optional($c->created_at)->toDateTimeString(),
             ]);
 
@@ -437,10 +445,77 @@ class WaModuleController extends Controller
             ], $this->templateParts($t)))
             ->values();
 
+        $groups = ContactGroup::query()->withCount('contacts')->orderBy('name')->get()
+            ->map(fn (ContactGroup $g) => ['id' => $g->id, 'name' => $g->name, 'count' => $g->contacts_count]);
+
         return Inertia::render('WaModule/Campaigns', [
             'page' => $page,
             'templates' => $templates,
+            'groups' => $groups,
             'can_edit' => true,
+        ]);
+    }
+
+    /** Per-campaign analytics: funnel, rates, failure breakdown, latency, recipients. */
+    public function campaignAnalytics(Request $request, int $campaign)
+    {
+        $this->authorizeAccess($request);
+        $c = PromotionalCampaign::findOrFail($campaign);
+
+        $base = PromotionalCampaignRecipient::where('promotional_campaign_id', $c->id);
+        $total = (clone $base)->count();
+        $byStatus = (clone $base)->selectRaw('status, COUNT(*) as n')->groupBy('status')->pluck('n', 'status')->toArray();
+        $g = fn ($k) => (int) ($byStatus[$k] ?? 0);
+
+        $sent = $g('sent') + $g('delivered') + $g('read');
+        $delivered = $g('delivered') + $g('read');
+        $read = $g('read');
+        $failed = $g('failed') + $g('limited') + $g('undeliverable') + $g('experiment_blocked');
+        $pending = $g('pending');
+
+        // latency (seconds) — MySQL TIMESTAMPDIFF
+        $avgDeliver = (clone $base)->whereNotNull('delivered_at')->whereNotNull('sent_at')
+            ->selectRaw('AVG(TIMESTAMPDIFF(SECOND, sent_at, delivered_at)) a')->value('a');
+        $avgRead = (clone $base)->whereNotNull('read_at')->whereNotNull('sent_at')
+            ->selectRaw('AVG(TIMESTAMPDIFF(SECOND, sent_at, read_at)) a')->value('a');
+
+        $failures = (clone $base)->whereIn('status', ['failed', 'limited', 'undeliverable', 'experiment_blocked'])
+            ->selectRaw('COALESCE(wa_error_title, error_message, "Unknown") as reason, wa_error_code as code, COUNT(*) as n')
+            ->groupBy('reason', 'code')->orderByDesc('n')->limit(20)->get()
+            ->map(fn ($r) => ['reason' => $r->reason, 'code' => $r->code, 'count' => $r->n]);
+
+        $statusFilter = $request->query('status', 'all');
+        $recipients = (clone $base)
+            ->when($statusFilter !== 'all', fn ($q) => $q->where('status', $statusFilter))
+            ->orderByDesc('id')
+            ->paginate(30)
+            ->withQueryString()
+            ->through(fn (PromotionalCampaignRecipient $r) => [
+                'id' => $r->id,
+                'msisdn' => $r->msisdn,
+                'name' => $r->name,
+                'status' => $r->status,
+                'sent_at' => optional($r->sent_at)->format('H:i:s'),
+                'delivered_at' => optional($r->delivered_at)->format('H:i:s'),
+                'read_at' => optional($r->read_at)->format('H:i:s'),
+                'error' => $r->wa_error_title ?: $r->error_message,
+                'pricing' => $r->wa_pricing_model,
+            ]);
+
+        return Inertia::render('WaModule/CampaignAnalytics', [
+            'campaign' => ['id' => $c->id, 'name' => $c->name, 'status' => $c->status, 'template_name' => $c->template_name],
+            'metrics' => [
+                'total' => $total,
+                'sent' => $sent, 'delivered' => $delivered, 'read' => $read, 'failed' => $failed, 'pending' => $pending,
+                'delivery_rate' => $sent ? round($delivered / $sent * 100, 1) : 0,
+                'read_rate' => $delivered ? round($read / $delivered * 100, 1) : 0,
+                'fail_rate' => $total ? round($failed / $total * 100, 1) : 0,
+                'avg_deliver_sec' => $avgDeliver ? round($avgDeliver) : null,
+                'avg_read_sec' => $avgRead ? round($avgRead) : null,
+            ],
+            'failures' => $failures,
+            'recipients' => $recipients,
+            'filters' => ['status' => $statusFilter],
         ]);
     }
 
@@ -872,6 +947,100 @@ class WaModuleController extends Controller
         );
 
         return back()->with('flash', ['type' => 'success', 'message' => 'Import queued — recipients will appear shortly.']);
+    }
+
+    /** Add all contacts from a contact group as campaign recipients (deduped). */
+    public function importFromGroup(Request $request, int $campaign): RedirectResponse
+    {
+        $this->authorizeAccess($request);
+        $data = $request->validate(['group_id' => ['required', 'integer']]);
+        $c = PromotionalCampaign::findOrFail($campaign);
+        $group = ContactGroup::with('contacts')->findOrFail($data['group_id']);
+
+        $added = 0;
+        foreach ($group->contacts as $contact) {
+            $rec = PromotionalCampaignRecipient::firstOrCreate(
+                ['promotional_campaign_id' => $c->id, 'msisdn' => $contact->msisdn],
+                ['name' => $contact->name, 'status' => 'pending', 'locale' => $contact->locale ?: ($c->default_locale ?? 'en'), 'source' => 'group']
+            );
+            if ($rec->wasRecentlyCreated) {
+                $added++;
+            }
+        }
+        $c->update(['total_recipients' => $c->recipients()->count()]);
+
+        return back()->with('flash', ['type' => 'success', 'message' => "Added {$added} recipients from “{$group->name}”."]);
+    }
+
+    /** Recompute contact engagement stats from campaign recipient history. */
+    public function refreshEngagement(Request $request): RedirectResponse
+    {
+        $this->authorizeAccess($request);
+
+        $agg = PromotionalCampaignRecipient::query()
+            ->selectRaw('msisdn,
+                COUNT(DISTINCT promotional_campaign_id) campaigns_count,
+                SUM(status IN ("sent","delivered","read")) sent_count,
+                SUM(status IN ("delivered","read")) delivered_count,
+                SUM(status = "read") read_count,
+                SUM(status IN ("failed","limited","undeliverable","experiment_blocked")) failed_count,
+                SUM(status = "pending") pending_count,
+                MAX(GREATEST(COALESCE(read_at,0), COALESCE(delivered_at,0), COALESCE(sent_at,0))) last_activity')
+            ->groupBy('msisdn')->get()->keyBy('msisdn');
+
+        $touched = 0;
+        Contact::query()->chunkById(500, function ($contacts) use ($agg, &$touched) {
+            foreach ($contacts as $contact) {
+                $a = $agg->get($contact->msisdn);
+                if (! $a) {
+                    continue;
+                }
+                $last = $a->last_activity && $a->last_activity !== '0' ? $a->last_activity : null;
+                ContactEngagementStat::updateOrCreate(['contact_id' => $contact->id], [
+                    'campaigns_count' => $a->campaigns_count,
+                    'sent_count' => $a->sent_count,
+                    'delivered_count' => $a->delivered_count,
+                    'read_count' => $a->read_count,
+                    'failed_count' => $a->failed_count,
+                    'pending_count' => $a->pending_count,
+                    'last_activity_at' => $last,
+                    'is_active' => $last ? \Illuminate\Support\Carbon::parse($last)->gt(now()->subDays(30)) : false,
+                ]);
+                $touched++;
+            }
+        });
+
+        return back()->with('flash', ['type' => 'success', 'message' => "Engagement refreshed for {$touched} contacts."]);
+    }
+
+    /** Create a dynamic group and populate it from engagement filters. */
+    public function buildSmartGroup(Request $request): RedirectResponse
+    {
+        $this->authorizeAccess($request);
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:191'],
+            'filter' => ['required', 'in:active,healthy,delivered,read'],
+        ]);
+
+        $group = ContactGroup::create([
+            'name' => $data['name'],
+            'group_type' => 'dynamic',
+            'filters_json' => ['engagement' => $data['filter']],
+            'last_synced_at' => now(),
+        ]);
+
+        $q = Contact::query()->whereHas('engagementStat', function ($s) use ($data) {
+            match ($data['filter']) {
+                'active' => $s->where('is_active', true),
+                'healthy' => $s->where('delivered_count', '>', 0)->where('failed_count', '<=', 1),
+                'delivered' => $s->where('delivered_count', '>', 0),
+                'read' => $s->where('read_count', '>', 0),
+            };
+        });
+        $ids = $q->pluck('id');
+        $group->contacts()->sync($ids);
+
+        return back()->with('flash', ['type' => 'success', 'message' => "Smart group “{$group->name}” created with {$ids->count()} contacts."]);
     }
 
     /** Send a free-text reply within a conversation thread. */
