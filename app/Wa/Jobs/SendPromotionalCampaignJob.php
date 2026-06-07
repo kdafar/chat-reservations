@@ -3,6 +3,7 @@
 namespace App\Wa\Jobs;
 
 use App\Wa\Hub\Models\PromotionalCampaign;
+use Spatie\Multitenancy\Jobs\NotTenantAware;
 use App\Wa\Hub\Models\WhatsappSession;
 use App\Wa\Services\WhatsApp\WhatsAppService;
 use Illuminate\Bus\Queueable;
@@ -13,7 +14,7 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
-class SendPromotionalCampaignJob implements ShouldQueue
+class SendPromotionalCampaignJob implements NotTenantAware, ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 

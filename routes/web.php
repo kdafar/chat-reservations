@@ -717,12 +717,16 @@ Route::middleware([
     Route::post('/wa-module/sessions/{session}/block',  [\App\Http\Controllers\V2\WaModuleController::class, 'toggleSessionBlock'])->name('wa-module.sessions.block');
     Route::delete('/wa-module/sessions/{session}',      [\App\Http\Controllers\V2\WaModuleController::class, 'destroySession'])->name('wa-module.sessions.destroy');
     Route::post('/wa-module/conversations/{conversation}/reply', [\App\Http\Controllers\V2\WaModuleController::class, 'replyConversation'])->name('wa-module.conversations.reply');
+    Route::post('/wa-module/conversations/{conversation}/template', [\App\Http\Controllers\V2\WaModuleController::class, 'sendConversationTemplate'])->name('wa-module.conversations.template');
+    Route::post('/wa-module/inbox/start',  [\App\Http\Controllers\V2\WaModuleController::class, 'startChat'])->name('wa-module.inbox.start');
+    Route::post('/wa-module/connect',      [\App\Http\Controllers\V2\WaModuleController::class, 'connectNumber'])->name('wa-module.connect');
     // Campaigns CRUD + send + recipients
     Route::post('/wa-module/campaigns',                       [\App\Http\Controllers\V2\WaModuleController::class, 'storeCampaign'])->name('wa-module.campaigns.store');
     Route::put('/wa-module/campaigns/{campaign}',             [\App\Http\Controllers\V2\WaModuleController::class, 'updateCampaign'])->name('wa-module.campaigns.update');
     Route::delete('/wa-module/campaigns/{campaign}',          [\App\Http\Controllers\V2\WaModuleController::class, 'destroyCampaign'])->name('wa-module.campaigns.destroy');
     Route::post('/wa-module/campaigns/{campaign}/send',       [\App\Http\Controllers\V2\WaModuleController::class, 'sendCampaign'])->name('wa-module.campaigns.send');
     Route::post('/wa-module/campaigns/{campaign}/recipients', [\App\Http\Controllers\V2\WaModuleController::class, 'addCampaignRecipient'])->name('wa-module.campaigns.recipients');
+    Route::post('/wa-module/campaigns/{campaign}/import',     [\App\Http\Controllers\V2\WaModuleController::class, 'importRecipients'])->name('wa-module.campaigns.import');
     // Settings
     Route::get('/wa-module/settings',  [\App\Http\Controllers\V2\WaModuleController::class, 'settings'])->name('wa-module.settings');
     Route::post('/wa-module/settings', [\App\Http\Controllers\V2\WaModuleController::class, 'updateSettings'])->name('wa-module.settings.update');

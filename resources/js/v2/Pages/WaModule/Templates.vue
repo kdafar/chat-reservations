@@ -12,13 +12,13 @@ const t = computed(() => isRtl.value ? {
     title: 'القوالب', eyebrow: 'منصة واتساب', desc: 'قوالب الرسائل المعتمدة لدى ميتا.', searchPh: 'ابحث بالاسم…', clear: 'مسح',
     sync: 'مزامنة من ميتا', new: 'قالب جديد', edit: 'تعديل', del: 'حذف', publish: 'إرسال للمراجعة', auto: 'رد تلقائي',
     col: { name: 'الاسم', category: 'الفئة', lang: 'اللغة', status: 'الحالة', auto: 'رد تلقائي', preview: 'المعاينة', actions: '' }, empty: 'لا توجد قوالب', showing: 'عرض', of: 'من',
-    f: { name: 'الاسم (أحرف صغيرة وشرطة سفلية)', category: 'الفئة', lang: 'اللغة', header: 'نوع الترويسة', headerText: 'نص الترويسة', body: 'النص', footer: 'التذييل', autoReply: 'تفعيل الرد التلقائي', triggers: 'كلمات التحفيز (مفصولة بفواصل)' },
+    f: { name: 'الاسم (أحرف صغيرة وشرطة سفلية)', category: 'الفئة', lang: 'اللغة', header: 'نوع الترويسة', headerText: 'نص الترويسة', mediaUrl: 'رابط الوسائط', body: 'النص', footer: 'التذييل', autoReply: 'تفعيل الرد التلقائي', triggers: 'كلمات التحفيز (مفصولة بفواصل)', buttons: 'الأزرار', addBtn: 'إضافة زر', btnText: 'النص', btnUrl: 'الرابط', btnPhone: 'الهاتف' },
     save: 'حفظ', saveSubmit: 'حفظ وإرسال للمراجعة', cancel: 'إلغاء', confirmDel: 'حذف هذا القالب؟',
 } : {
     title: 'Templates', eyebrow: 'WhatsApp Platform', desc: 'Message templates registered with Meta.', searchPh: 'Search by name…', clear: 'Clear',
     sync: 'Sync from Meta', new: 'New template', edit: 'Edit', del: 'Delete', publish: 'Submit for review', auto: 'Auto-reply',
     col: { name: 'Name', category: 'Category', lang: 'Lang', status: 'Status', auto: 'Auto-reply', preview: 'Preview', actions: '' }, empty: 'No templates', showing: 'Showing', of: 'of',
-    f: { name: 'Name (lowercase + underscores)', category: 'Category', lang: 'Language', header: 'Header type', headerText: 'Header text', body: 'Body', footer: 'Footer', autoReply: 'Enable auto-reply', triggers: 'Trigger keywords (comma-separated)' },
+    f: { name: 'Name (lowercase + underscores)', category: 'Category', lang: 'Language', header: 'Header type', headerText: 'Header text', mediaUrl: 'Media URL', body: 'Body', footer: 'Footer', autoReply: 'Enable auto-reply', triggers: 'Trigger keywords (comma-separated)', buttons: 'Buttons', addBtn: 'Add button', btnText: 'Text', btnUrl: 'URL', btnPhone: 'Phone' },
     save: 'Save draft', saveSubmit: 'Save & submit for review', cancel: 'Cancel', confirmDel: 'Delete this template?',
 })
 
@@ -30,11 +30,12 @@ function apply() { router.get(route('v2.wa-module.templates'), { q: f.q || undef
 // ---- create / edit modal ----
 const showModal = ref(false)
 const editingId = ref(null)
-const form = useForm({ name: '', category: 'MARKETING', language: 'en', header_type: 'NONE', header_text: '', body: '', footer_text: '', is_auto_reply: false, triggersText: '', publish: false })
+const form = useForm({ name: '', category: 'MARKETING', language: 'en', header_type: 'NONE', header_text: '', header_media_url: '', body: '', footer_text: '', is_auto_reply: false, triggersText: '', buttons: [], publish: false })
 
 function openCreate() {
     editingId.value = null
     form.reset()
+    form.buttons = []
     form.clearErrors()
     showModal.value = true
 }
@@ -42,11 +43,14 @@ function openEdit(r) {
     editingId.value = r.id
     form.clearErrors()
     form.name = r.name; form.category = r.category || 'MARKETING'; form.language = r.language || 'en'
-    form.header_type = r.header_type || 'NONE'; form.header_text = r.header_text || ''
+    form.header_type = r.header_type || 'NONE'; form.header_text = r.header_text || ''; form.header_media_url = r.header_media_url || ''
     form.body = r.body || ''; form.footer_text = r.footer_text || ''
-    form.is_auto_reply = !!r.is_auto_reply; form.triggersText = (r.triggers || []).join(', '); form.publish = false
+    form.is_auto_reply = !!r.is_auto_reply; form.triggersText = (r.triggers || []).join(', ')
+    form.buttons = (r.buttons || []).map(b => ({ ...b })); form.publish = false
     showModal.value = true
 }
+function addButton() { if (form.buttons.length < 3) form.buttons.push({ type: 'QUICK_REPLY', text: '', url: '', phone_number: '' }) }
+function removeButton(i) { form.buttons.splice(i, 1) }
 function submit(publish) {
     form.publish = publish
     form.transform(d => ({ ...d, triggers: d.triggersText.split(',').map(s => s.trim()).filter(Boolean) }))
@@ -142,6 +146,10 @@ const statusStyle = (s) => {
                         <div v-if="form.header_type==='TEXT'" style="flex:2;"><label style="font-size:12px; color:var(--fg-subtle);">{{ t.f.headerText }}</label>
                             <input v-model="form.header_text" class="input" maxlength="60" /></div>
                     </div>
+                    <div v-if="['IMAGE','VIDEO','DOCUMENT'].includes(form.header_type)">
+                        <label style="font-size:12px; color:var(--fg-subtle);">{{ t.f.mediaUrl }}</label>
+                        <input v-model="form.header_media_url" class="input" placeholder="https://…" />
+                    </div>
                     <div>
                         <label style="font-size:12px; color:var(--fg-subtle);">{{ t.f.body }}</label>
                         <textarea v-model="form.body" class="input" rows="4" maxlength="1024" placeholder="Hello {{1}}, ..."></textarea>
@@ -150,6 +158,20 @@ const statusStyle = (s) => {
                     <div><label style="font-size:12px; color:var(--fg-subtle);">{{ t.f.footer }}</label><input v-model="form.footer_text" class="input" maxlength="60" /></div>
                     <label style="display:flex; align-items:center; gap:8px; font-size:13px; color:var(--fg);"><input type="checkbox" v-model="form.is_auto_reply" /> {{ t.f.autoReply }}</label>
                     <div v-if="form.is_auto_reply"><label style="font-size:12px; color:var(--fg-subtle);">{{ t.f.triggers }}</label><input v-model="form.triggersText" class="input" placeholder="hi, hello, menu" /></div>
+                    <!-- buttons builder -->
+                    <div>
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <label style="font-size:12px; color:var(--fg-subtle);">{{ t.f.buttons }} ({{ form.buttons.length }}/3)</label>
+                            <button v-if="form.buttons.length < 3" type="button" class="btn btn-ghost btn-sm" @click="addButton"><Icon name="plus" :size="12" /> {{ t.f.addBtn }}</button>
+                        </div>
+                        <div v-for="(b,i) in form.buttons" :key="i" style="display:flex; gap:6px; align-items:center; margin-top:6px;">
+                            <select v-model="b.type" class="input" style="flex:0 0 130px; font-size:12px;"><option value="QUICK_REPLY">Quick reply</option><option value="URL">URL</option><option value="PHONE_NUMBER">Phone</option></select>
+                            <input v-model="b.text" class="input" :placeholder="t.f.btnText" maxlength="25" style="flex:1; font-size:12px;" />
+                            <input v-if="b.type==='URL'" v-model="b.url" class="input" :placeholder="t.f.btnUrl" style="flex:1.4; font-size:12px;" />
+                            <input v-if="b.type==='PHONE_NUMBER'" v-model="b.phone_number" class="input" :placeholder="t.f.btnPhone" style="flex:1.4; font-size:12px;" />
+                            <button type="button" class="btn btn-ghost btn-sm" @click="removeButton(i)"><Icon name="x" :size="13" style="color:#dc2626;" /></button>
+                        </div>
+                    </div>
                 </div>
                 <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:18px;">
                     <button class="btn btn-ghost" @click="showModal=false">{{ t.cancel }}</button>

@@ -9,11 +9,11 @@ const props = defineProps({ page: Object, templates: Array, can_edit: Boolean })
 const pageProps = usePage()
 const isRtl = computed(() => (pageProps.props.locale ?? 'en') === 'ar')
 const t = computed(() => isRtl.value ? {
-    title: 'الحملات', eyebrow: 'منصة واتساب', desc: 'حملات البث الجماعي.', new: 'حملة جديدة', edit: 'تعديل', del: 'حذف', send: 'إرسال الآن', addR: 'إضافة مستلم',
+    title: 'الحملات', eyebrow: 'منصة واتساب', desc: 'حملات البث الجماعي.', new: 'حملة جديدة', edit: 'تعديل', del: 'حذف', send: 'إرسال الآن', addR: 'إضافة مستلم', import: 'استيراد CSV', impFile: 'ملف CSV/Excel', impHeader: 'الملف يحتوي صف عناوين', impHint: 'الأعمدة: الهاتف، الاسم، اللغة', impBtn: 'استيراد',
     col: { name: 'الاسم', template: 'القالب', status: 'الحالة', recipients: 'المستلمون', progress: 'التقدّم', scheduled: 'مجدولة' }, empty: 'لا توجد حملات', showing: 'عرض', of: 'من',
     f: { name: 'الاسم', template: 'القالب', locale: 'اللغة', schedule: 'موعد الجدولة', rate: 'المعدل/دقيقة', rmsisdn: 'هاتف المستلم', rname: 'الاسم' }, save: 'حفظ', cancel: 'إلغاء', confirmDel: 'حذف الحملة؟', confirmSend: 'إرسال للمستلمين المعلّقين؟',
 } : {
-    title: 'Campaigns', eyebrow: 'WhatsApp Platform', desc: 'Bulk broadcast campaigns.', new: 'New campaign', edit: 'Edit', del: 'Delete', send: 'Send now', addR: 'Add recipient',
+    title: 'Campaigns', eyebrow: 'WhatsApp Platform', desc: 'Bulk broadcast campaigns.', new: 'New campaign', edit: 'Edit', del: 'Delete', send: 'Send now', addR: 'Add recipient', import: 'Import CSV', impFile: 'CSV/Excel file', impHeader: 'File has a header row', impHint: 'Columns: phone, name, locale', impBtn: 'Import',
     col: { name: 'Name', template: 'Template', status: 'Status', recipients: 'Recipients', progress: 'Progress', scheduled: 'Scheduled' }, empty: 'No campaigns', showing: 'Showing', of: 'of',
     f: { name: 'Name', template: 'Template', locale: 'Language', schedule: 'Schedule at', rate: 'Rate/min', rmsisdn: 'Recipient phone', rname: 'Name' }, save: 'Save', cancel: 'Cancel', confirmDel: 'Delete this campaign?', confirmSend: 'Send to pending recipients?',
 })
@@ -34,6 +34,12 @@ const showR = ref(false), rCampaign = ref(null)
 const rForm = useForm({ msisdn: '', name: '' })
 function openR(r) { rCampaign.value = r.id; rForm.reset(); rForm.clearErrors(); showR.value = true }
 function saveR() { rForm.post(route('v2.wa-module.campaigns.recipients', { campaign: rCampaign.value }), { preserveScroll: true, onSuccess: () => { showR.value = false } }) }
+
+// CSV import
+const showImp = ref(false), impCampaign = ref(null)
+const impForm = useForm({ file: null, has_header: true })
+function openImp(r) { impCampaign.value = r.id; impForm.reset(); impForm.clearErrors(); showImp.value = true }
+function doImport() { impForm.post(route('v2.wa-module.campaigns.import', { campaign: impCampaign.value }), { forceFormData: true, preserveScroll: true, onSuccess: () => { showImp.value = false } }) }
 
 const statusStyle = (s) => {
     const m = { draft: ['#64748b', '#64748b1a'], sending: ['#2563eb', '#2563eb1a'], completed: ['#16a34a', '#16a34a1a'], paused: ['#d97706', '#d977061a'], failed: ['#dc2626', '#dc26261a'] }
@@ -67,6 +73,7 @@ const pct = (r) => r.recipients_count ? Math.round((r.sent_count / r.recipients_
                         <td style="font-size:11px; color:var(--fg-faint);">{{ r.scheduled_at || '—' }}</td>
                         <td>
                             <div style="display:flex; gap:4px; justify-content:flex-end;">
+                                <button class="btn btn-ghost btn-sm" :title="t.import" @click="openImp(r)"><Icon name="upload" :size="13" /></button>
                                 <button class="btn btn-ghost btn-sm" :title="t.addR" @click="openR(r)"><Icon name="user-plus" :size="13" /></button>
                                 <button class="btn btn-ghost btn-sm" :title="t.send" @click="send(r)"><Icon name="send" :size="13" style="color:#16a34a;" /></button>
                                 <button class="btn btn-ghost btn-sm" :title="t.edit" @click="openEdit(r)"><Icon name="pencil" :size="13" /></button>
@@ -108,6 +115,22 @@ const pct = (r) => r.recipients_count ? Math.round((r.sent_count / r.recipients_
                     <div><label style="font-size:12px; color:var(--fg-subtle);">{{ t.f.rname }}</label><input v-model="rForm.name" class="input" /></div>
                 </div>
                 <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:18px;"><button class="btn btn-ghost" @click="showR=false">{{ t.cancel }}</button><button class="btn btn-primary" :disabled="rForm.processing" @click="saveR">{{ t.save }}</button></div>
+            </div>
+        </div>
+        <!-- import modal -->
+        <div v-if="showImp" style="position:fixed; inset:0; background:rgba(0,0,0,.4); display:flex; align-items:center; justify-content:center; z-index:50;" @click.self="showImp=false">
+            <div class="card" style="width:420px; max-width:100%; padding:20px;">
+                <h3 style="margin:0 0 14px; font-size:16px; font-weight:700;">{{ t.import }}</h3>
+                <div style="display:grid; gap:12px;">
+                    <div>
+                        <label style="font-size:12px; color:var(--fg-subtle);">{{ t.impFile }}</label>
+                        <input type="file" accept=".csv,.txt,.xlsx,.xls" class="input" @change="e => impForm.file = e.target.files[0]" />
+                        <div v-if="impForm.errors.file" style="font-size:11px; color:#dc2626;">{{ impForm.errors.file }}</div>
+                        <div style="font-size:11px; color:var(--fg-faint); margin-top:4px;">{{ t.impHint }}</div>
+                    </div>
+                    <label style="display:flex; align-items:center; gap:8px; font-size:13px; color:var(--fg);"><input type="checkbox" v-model="impForm.has_header" /> {{ t.impHeader }}</label>
+                </div>
+                <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:18px;"><button class="btn btn-ghost" @click="showImp=false">{{ t.cancel }}</button><button class="btn btn-primary" :disabled="impForm.processing || !impForm.file" @click="doImport">{{ t.impBtn }}</button></div>
             </div>
         </div>
     </div>

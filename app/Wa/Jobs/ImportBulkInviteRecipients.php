@@ -3,6 +3,7 @@
 namespace App\Wa\Jobs;
 
 use App\Wa\Hub\Models\PromotionalCampaign;
+use Spatie\Multitenancy\Jobs\NotTenantAware;
 use App\Wa\Hub\Models\PromotionalCampaignRecipient;
 use App\Wa\Support\Phone;
 use Illuminate\Bus\Queueable;
@@ -15,7 +16,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Spatie\SimpleExcel\SimpleExcelReader;
 
-class ImportBulkInviteRecipients implements /* NotTenantAware, */ ShouldQueue
+class ImportBulkInviteRecipients implements NotTenantAware, ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 

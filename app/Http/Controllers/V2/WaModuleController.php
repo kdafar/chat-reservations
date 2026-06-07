@@ -9,12 +9,19 @@ use App\Wa\Hub\Models\MessageTemplate;
 use App\Wa\Hub\Models\PromotionalCampaign;
 use App\Wa\Hub\Models\WhatsappSession;
 use App\Wa\Hub\Models\PromotionalCampaignRecipient;
+use App\Wa\Jobs\ImportBulkInviteRecipients;
 use App\Wa\Jobs\SendPromotionalCampaignMessage;
+use App\Wa\Models\WhatsApp\WaAccount;
+use App\Wa\Models\WhatsApp\WaContact;
 use App\Wa\Models\WhatsApp\WaConversation;
+use App\Wa\Models\WhatsApp\WaCredential;
 use App\Wa\Models\WhatsApp\WaMessage;
+use App\Wa\Models\WhatsApp\WaNumber;
 use App\Wa\Services\WhatsApp\WhatsAppService;
+use App\Wa\Support\Phone;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 
 /**
@@ -192,26 +199,48 @@ class WaModuleController extends Controller
             'language' => ['required', 'in:en,ar'],
             'header_type' => ['nullable', 'in:NONE,TEXT,IMAGE,VIDEO,DOCUMENT'],
             'header_text' => ['nullable', 'string', 'max:60'],
+            'header_media_url' => ['nullable', 'url', 'max:2048'],
             'body' => ['required', 'string', 'max:1024'],
             'footer_text' => ['nullable', 'string', 'max:60'],
             'is_auto_reply' => ['boolean'],
             'triggers' => ['array'],
             'triggers.*' => ['string', 'max:60'],
+            'buttons' => ['array', 'max:10'],
+            'buttons.*.type' => ['required_with:buttons', 'in:QUICK_REPLY,URL,PHONE_NUMBER'],
+            'buttons.*.text' => ['required_with:buttons', 'string', 'max:25'],
+            'buttons.*.url' => ['nullable', 'string', 'max:2048'],
+            'buttons.*.phone_number' => ['nullable', 'string', 'max:20'],
         ]);
 
-        // header_type/header_text/footer are not columns — they live inside the
-        // Meta `components` structure. Build that here from the simple inputs.
+        // header_type/header_text/footer/buttons are not columns — they live
+        // inside the Meta `components` structure. Build that here.
         $components = [];
         if (($v['header_type'] ?? 'NONE') !== 'NONE') {
-            $components[] = array_filter([
-                'type' => 'HEADER',
-                'format' => $v['header_type'],
-                'text' => $v['header_type'] === 'TEXT' ? ($v['header_text'] ?? null) : null,
-            ]);
+            $header = ['type' => 'HEADER', 'format' => $v['header_type']];
+            if ($v['header_type'] === 'TEXT') {
+                $header['text'] = $v['header_text'] ?? null;
+            } elseif (! empty($v['header_media_url'])) {
+                $header['example'] = ['header_handle' => [$v['header_media_url']]];
+                $header['media_url'] = $v['header_media_url'];
+            }
+            $components[] = array_filter($header);
         }
         $components[] = ['type' => 'BODY', 'text' => $v['body']];
         if (! empty($v['footer_text'])) {
             $components[] = ['type' => 'FOOTER', 'text' => $v['footer_text']];
+        }
+        if (! empty($v['buttons'])) {
+            $buttons = array_map(function ($b) {
+                $btn = ['type' => $b['type'], 'text' => $b['text']];
+                if ($b['type'] === 'URL' && ! empty($b['url'])) {
+                    $btn['url'] = $b['url'];
+                }
+                if ($b['type'] === 'PHONE_NUMBER' && ! empty($b['phone_number'])) {
+                    $btn['phone_number'] = $b['phone_number'];
+                }
+                return $btn;
+            }, $v['buttons']);
+            $components[] = ['type' => 'BUTTONS', 'buttons' => $buttons];
         }
 
         return [
@@ -226,17 +255,26 @@ class WaModuleController extends Controller
         ];
     }
 
-    /** Pull header_type/header_text/footer back out of the components JSON. */
+    /** Pull header/footer/buttons back out of the components JSON for edit prefill. */
     private function templateParts(MessageTemplate $t): array
     {
         $components = is_array($t->components) ? $t->components : [];
-        $header = collect($components)->first(fn ($c) => ($c['type'] ?? null) === 'HEADER');
-        $footer = collect($components)->first(fn ($c) => ($c['type'] ?? null) === 'FOOTER');
+        $byType = fn ($type) => collect($components)->first(fn ($c) => strtoupper($c['type'] ?? '') === $type);
+        $header = $byType('HEADER');
+        $footer = $byType('FOOTER');
+        $buttonsC = $byType('BUTTONS');
 
         return [
             'header_type' => $header['format'] ?? 'NONE',
             'header_text' => $header['text'] ?? null,
+            'header_media_url' => $header['media_url'] ?? ($header['example']['header_handle'][0] ?? null),
             'footer_text' => $footer['text'] ?? null,
+            'buttons' => collect($buttonsC['buttons'] ?? [])->map(fn ($b) => [
+                'type' => $b['type'] ?? 'QUICK_REPLY',
+                'text' => $b['text'] ?? '',
+                'url' => $b['url'] ?? '',
+                'phone_number' => $b['phone_number'] ?? '',
+            ])->values()->all(),
         ];
     }
 
@@ -505,7 +543,7 @@ class WaModuleController extends Controller
             ->through(fn (WaConversation $c) => [
                 'id' => $c->id,
                 'contact_name' => optional($c->contact)->name,
-                'contact_msisdn' => optional($c->contact)->msisdn,
+                'contact_msisdn' => optional($c->contact)->phone,
                 'status' => $c->status,
                 'last_message_at' => optional($c->last_message_at)->toDateTimeString(),
             ]);
@@ -519,6 +557,7 @@ class WaModuleController extends Controller
     public function inbox(Request $request)
     {
         $this->authorizeAccess($request);
+        $this->ensureCore(); // make sure the number is wired so chats can be created
 
         $filters = [
             'q' => trim((string) $request->query('q', '')),
@@ -535,8 +574,8 @@ class WaModuleController extends Controller
             ->get()
             ->map(fn (WaConversation $c) => [
                 'id' => $c->id,
-                'name' => optional($c->contact)->name ?: optional($c->contact)->msisdn ?: '—',
-                'msisdn' => optional($c->contact)->msisdn,
+                'name' => optional($c->contact)->name ?: optional($c->contact)->phone ?: '—',
+                'msisdn' => optional($c->contact)->phone,
                 'status' => $c->status,
                 'last_body' => \Illuminate\Support\Str::limit((string) optional($c->lastMessage)->body, 42) ?: null,
                 'last_dir' => optional($c->lastMessage)->direction,
@@ -552,8 +591,8 @@ class WaModuleController extends Controller
             if ($convo) {
                 $active = [
                     'id' => $convo->id,
-                    'name' => optional($convo->contact)->name ?: optional($convo->contact)->msisdn ?: '—',
-                    'msisdn' => optional($convo->contact)->msisdn,
+                    'name' => optional($convo->contact)->name ?: optional($convo->contact)->phone ?: '—',
+                    'msisdn' => optional($convo->contact)->phone,
                     'status' => $convo->status,
                 ];
                 $messages = WaMessage::where('conversation_id', $convo->id)
@@ -570,11 +609,23 @@ class WaModuleController extends Controller
             }
         }
 
+        $templates = MessageTemplate::query()
+            ->where('status', 'APPROVED')
+            ->orderBy('name')
+            ->get()
+            ->map(fn (MessageTemplate $t) => [
+                'name' => $t->name,
+                'language' => $t->language ?: 'en',
+                'body' => $t->body,
+                'var_count' => preg_match_all('/\{\{\s*\d+\s*\}\}/', (string) $t->body),
+            ])->values();
+
         return Inertia::render('WaModule/Inbox', [
             'filters' => $filters,
             'conversations' => $conversations,
             'active' => $active,
             'messages' => $messages,
+            'templates' => $templates,
             'configured' => (bool) config('services.whatsapp.api_token'),
         ]);
     }
@@ -603,7 +654,7 @@ class WaModuleController extends Controller
             'conversation' => [
                 'id' => $convo->id,
                 'contact_name' => optional($convo->contact)->name,
-                'contact_msisdn' => optional($convo->contact)->msisdn,
+                'contact_msisdn' => optional($convo->contact)->phone,
                 'status' => $convo->status,
             ],
             'messages' => $messages,
@@ -651,13 +702,180 @@ class WaModuleController extends Controller
         return back()->with('flash', ['type' => 'success', 'message' => 'Session deleted.']);
     }
 
+    /**
+     * Ensure a WaAccount + WaCredential + WaNumber exist for the configured
+     * number, so the inbox can create conversations and the cloud webhook can
+     * route incoming messages. Idempotent. Returns the WaNumber or null.
+     */
+    private function ensureCore(): ?WaNumber
+    {
+        $phoneId = config('services.whatsapp.phone_number_id');
+        $token = config('services.whatsapp.api_token');
+        $waba = config('services.whatsapp.waba_id') ?: config('services.whatsapp.business_account_id');
+        if (! $phoneId || ! $token) {
+            return null;
+        }
+
+        $number = WaNumber::where('phone_number_id', $phoneId)->first();
+        if ($number) {
+            return $number;
+        }
+
+        $account = WaAccount::firstOrCreate(
+            ['external_business_id' => $waba],
+            ['name' => 'Default WABA', 'status' => 'active']
+        );
+        $cred = WaCredential::create([
+            'wa_account_id' => $account->id,
+            'type' => 'system_user',
+            'token' => $token,
+        ]);
+
+        $health = [];
+        try {
+            $health = app(WhatsAppService::class)->getCurrentNumberHealth();
+        } catch (\Throwable $e) {
+        }
+
+        return WaNumber::create([
+            'wa_account_id' => $account->id,
+            'credential_id' => $cred->id,
+            'phone_number_id' => $phoneId,
+            'display_phone_number' => $health['display_phone_number'] ?? null,
+            'verified_name' => $health['verified_name'] ?? null,
+            'waba_id' => $waba,
+            'quality_rating' => $health['quality_rating'] ?? null,
+            'messaging_limit_tier' => $health['messaging_limit_tier'] ?? null,
+            'status' => 'active',
+            'account_mode' => 'live',
+        ]);
+    }
+
+    /** Provision the core records on demand (button on Settings). */
+    public function connectNumber(Request $request): RedirectResponse
+    {
+        $this->authorizeAccess($request);
+        $number = $this->ensureCore();
+
+        return back()->with('flash', $number
+            ? ['type' => 'success', 'message' => 'Number connected to the inbox ('.($number->display_phone_number ?: $number->phone_number_id).').']
+            : ['type' => 'error', 'message' => 'WhatsApp credentials missing — cannot connect.']);
+    }
+
+    /** Start a new conversation (and optionally send the first message). */
+    public function startChat(Request $request, WhatsAppService $whatsapp): RedirectResponse
+    {
+        $this->authorizeAccess($request);
+        $data = $request->validate([
+            'phone' => ['required', 'string', 'max:32'],
+            'body' => ['nullable', 'string', 'max:4096'],
+        ]);
+
+        $number = $this->ensureCore();
+        if (! $number) {
+            return back()->with('flash', ['type' => 'error', 'message' => 'WhatsApp is not configured.']);
+        }
+
+        $e164 = Phone::parseToE164AcrossRegions($data['phone'], ['KW', 'SA', 'AE', 'QA', 'BH', 'OM', 'EG'], 'KW')
+            ?: preg_replace('/\D+/', '', $data['phone']);
+
+        $digits = preg_replace('/\D+/', '', $e164);
+        $contact = WaContact::firstOrCreate(
+            ['wa_account_id' => $number->wa_account_id, 'phone' => $e164],
+            ['wa_id' => $digits, 'name' => null]
+        );
+        $convo = WaConversation::findOrCreate($number, $contact);
+
+        if (! empty($data['body'])) {
+            $result = $whatsapp->sendTextMessage($e164, $data['body']);
+            WaMessage::create([
+                'wa_account_id' => $number->wa_account_id,
+                'wa_number_id' => $number->id,
+                'conversation_id' => $convo->id,
+                'contact_id' => $contact->id,
+                'direction' => 'outbound',
+                'type' => 'text',
+                'body' => $data['body'],
+                'status' => $result ? 'sent' : 'failed',
+                'meta_message_id' => $result['messages'][0]['id'] ?? null,
+                'sent_at' => now(),
+            ]);
+            $convo->update(['last_message_at' => now(), 'last_outgoing_at' => now()]);
+        }
+
+        return redirect()->route('v2.wa-module.inbox', ['c' => $convo->id])
+            ->with('flash', ['type' => 'success', 'message' => 'Conversation ready.']);
+    }
+
+    /** Send an approved template into a conversation (e.g. outside the 24h window). */
+    public function sendConversationTemplate(Request $request, int $conversation, WhatsAppService $whatsapp): RedirectResponse
+    {
+        $this->authorizeAccess($request);
+        $data = $request->validate([
+            'template' => ['required', 'string'],
+            'language' => ['required', 'string'],
+            'vars' => ['array'],
+            'vars.*' => ['nullable', 'string'],
+        ]);
+        $convo = WaConversation::with('contact')->findOrFail($conversation);
+        $to = optional($convo->contact)->phone;
+        if (! $to || ! config('services.whatsapp.api_token')) {
+            return back()->with('flash', ['type' => 'error', 'message' => 'Cannot send (no number / not configured).']);
+        }
+
+        $components = [];
+        $vars = array_values(array_filter($data['vars'] ?? [], fn ($v) => $v !== null && $v !== ''));
+        if ($vars) {
+            $components[] = ['type' => 'body', 'parameters' => array_map(fn ($v) => ['type' => 'text', 'text' => $v], $vars)];
+        }
+        $payload = ['name' => $data['template'], 'language' => ['code' => $data['language']], 'components' => $components];
+        $result = $whatsapp->sendTemplate($to, $payload);
+
+        WaMessage::create([
+            'wa_account_id' => $convo->wa_account_id,
+            'wa_number_id' => $convo->wa_number_id,
+            'conversation_id' => $convo->id,
+            'contact_id' => $convo->contact_id,
+            'direction' => 'outbound',
+            'type' => 'template',
+            'body' => '📋 '.$data['template'],
+            'status' => $result ? 'sent' : 'failed',
+            'meta_message_id' => $result['messages'][0]['id'] ?? null,
+            'template_name' => $data['template'],
+            'sent_at' => now(),
+        ]);
+        $convo->update(['last_message_at' => now(), 'last_outgoing_at' => now()]);
+
+        return back()->with('flash', ['type' => $result ? 'success' : 'error', 'message' => $result ? 'Template sent.' : 'Template send failed.']);
+    }
+
+    /** Bulk-import campaign recipients from an uploaded CSV/Excel file. */
+    public function importRecipients(Request $request, int $campaign): RedirectResponse
+    {
+        $this->authorizeAccess($request);
+        $request->validate([
+            'file' => ['required', 'file', 'mimes:csv,txt,xlsx,xls', 'max:5120'],
+            'has_header' => ['boolean'],
+        ]);
+        $c = PromotionalCampaign::findOrFail($campaign);
+
+        $path = $request->file('file')->store('wa-imports');
+        ImportBulkInviteRecipients::dispatch(
+            campaignId: $c->id,
+            storedFilePath: $path,
+            hasHeader: $request->boolean('has_header', true),
+        );
+
+        return back()->with('flash', ['type' => 'success', 'message' => 'Import queued — recipients will appear shortly.']);
+    }
+
     /** Send a free-text reply within a conversation thread. */
     public function replyConversation(Request $request, int $conversation, WhatsAppService $whatsapp): RedirectResponse
     {
         $this->authorizeAccess($request);
         $data = $request->validate(['body' => ['required', 'string', 'max:4096']]);
         $convo = WaConversation::with('contact')->findOrFail($conversation);
-        $to = optional($convo->contact)->msisdn;
+        $to = optional($convo->contact)->phone;
 
         if (! $to) {
             return back()->with('flash', ['type' => 'error', 'message' => 'Conversation has no contact number.']);

@@ -3,6 +3,7 @@
 namespace App\Wa\Jobs;
 
 use App\Wa\Models\WhatsApp\WaMessage;
+use Spatie\Multitenancy\Jobs\NotTenantAware;
 use App\Wa\Services\WhatsApp\Tenant\TenantWhatsAppService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -10,7 +11,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 
-class SendWhatsAppTemplateJob implements ShouldQueue
+class SendWhatsAppTemplateJob implements NotTenantAware, ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 

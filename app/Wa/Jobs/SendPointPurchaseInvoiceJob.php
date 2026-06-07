@@ -3,6 +3,7 @@
 namespace App\Wa\Jobs;
 
 use App\Wa\Hub\Models\PointPurchase;
+use Spatie\Multitenancy\Jobs\NotTenantAware;
 use App\Wa\Services\PointInvoiceService;
 use App\Wa\Services\WhatsAppBot;
 use Illuminate\Bus\Queueable;
@@ -13,7 +14,7 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
-class SendPointPurchaseInvoiceJob implements ShouldQueue
+class SendPointPurchaseInvoiceJob implements NotTenantAware, ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 

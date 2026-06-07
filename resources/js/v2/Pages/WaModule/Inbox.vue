@@ -5,15 +5,19 @@ import AppLayout from '../../Layouts/AppLayout.vue'
 defineOptions({ layout: AppLayout })
 import Icon from '../../Components/Icon.vue'
 
-const props = defineProps({ filters: Object, conversations: Array, active: Object, messages: Array, configured: Boolean })
+const props = defineProps({ filters: Object, conversations: Array, active: Object, messages: Array, templates: Array, configured: Boolean })
 const pageProps = usePage()
 const isRtl = computed(() => (pageProps.props.locale ?? 'en') === 'ar')
 const t = computed(() => isRtl.value ? {
     title: 'صندوق الوارد', messages: 'الرسائل', searchPh: 'ابحث أو ابدأ محادثة', all: 'الكل', open: 'مفتوحة', resolved: 'مغلقة',
     empty: 'اختر محادثة للبدء', noConvos: 'لا توجد محادثات', ph: 'اكتب رسالة', notConfigured: 'واتساب غير مُهيّأ',
+    newChat: 'محادثة جديدة', phone: 'رقم الهاتف', firstMsg: 'رسالة أولى (اختياري)', start: 'بدء', cancel: 'إلغاء',
+    tpl: 'إرسال قالب', pickTpl: 'اختر قالبًا', vars: 'المتغيرات', sendTpl: 'إرسال القالب',
 } : {
     title: 'Inbox', messages: 'Messages', searchPh: 'Search or start a chat', all: 'All', open: 'Open', resolved: 'Resolved',
     empty: 'Select a conversation to start', noConvos: 'No conversations', ph: 'Type a message', notConfigured: 'WhatsApp not configured',
+    newChat: 'New chat', phone: 'Phone number', firstMsg: 'First message (optional)', start: 'Start', cancel: 'Cancel',
+    tpl: 'Send template', pickTpl: 'Pick a template', vars: 'Variables', sendTpl: 'Send template',
 })
 
 const f = reactive({ q: props.filters.q || '', status: props.filters.status || 'all' })
@@ -51,6 +55,32 @@ function send() {
         onSuccess: () => { reply.reset('body'); scrollBottom() },
     })
 }
+
+// new chat
+const showNew = ref(false)
+const newForm = useForm({ phone: '', body: '' })
+function startChat() {
+    newForm.post(route('v2.wa-module.inbox.start'), { onSuccess: () => { showNew.value = false; newForm.reset() } })
+}
+
+// template send
+const showTpl = ref(false)
+const tplForm = useForm({ template: '', language: 'en', vars: {} })
+const pickedTpl = computed(() => (props.templates || []).find(x => x.name === tplForm.template))
+function pickTpl(e) {
+    const tp = (props.templates || []).find(x => x.name === e.target.value)
+    tplForm.template = tp?.name || ''
+    tplForm.language = tp?.language || 'en'
+    tplForm.vars = {}
+    if (tp) for (let i = 1; i <= tp.var_count; i++) tplForm.vars[i] = ''
+}
+function sendTpl() {
+    if (!tplForm.template || !props.active) return
+    tplForm.post(route('v2.wa-module.conversations.template', { conversation: props.active.id }), {
+        preserveScroll: true, preserveState: true, only: ['conversations', 'active', 'messages'],
+        onSuccess: () => { showTpl.value = false; tplForm.reset(); scrollBottom() },
+    })
+}
 </script>
 
 <template>
@@ -63,7 +93,10 @@ function send() {
                     <div class="wa-avatar" style="background:linear-gradient(135deg,#34d399,#059669);">{{ initials(pageProps.props.auth?.user?.name) }}</div>
                     <span class="wa-me-label">{{ t.messages }}</span>
                 </div>
-                <button class="wa-iconbtn" :title="t.all" @click="reload()"><Icon name="refresh-cw" :size="16" /></button>
+                <div style="display:flex; gap:2px;">
+                    <button class="wa-iconbtn" :title="t.newChat" @click="showNew = true"><Icon name="message-square-plus" :size="18" /></button>
+                    <button class="wa-iconbtn" :title="t.all" @click="reload()"><Icon name="refresh-cw" :size="16" /></button>
+                </div>
             </div>
             <div class="wa-search">
                 <Icon name="search" :size="15" class="wa-search-ic" />
@@ -111,6 +144,7 @@ function send() {
                     </template>
                 </div>
                 <footer class="wa-composer">
+                    <button class="wa-iconbtn" :title="t.tpl" @click="showTpl = true"><Icon name="layout-template" :size="20" /></button>
                     <input v-model="reply.body" :placeholder="configured ? t.ph : t.notConfigured" :disabled="!configured" @keyup.enter="send" />
                     <button class="wa-send" :disabled="reply.processing || !reply.body.trim() || !configured" @click="send"><Icon name="send" :size="18" /></button>
                 </footer>
@@ -120,6 +154,45 @@ function send() {
                 <p>{{ t.empty }}</p>
             </div>
         </section>
+
+        <!-- new chat modal -->
+        <div v-if="showNew" class="wa-modal-bg" @click.self="showNew=false">
+            <div class="wa-modal">
+                <h3>{{ t.newChat }}</h3>
+                <label>{{ t.phone }}</label>
+                <input v-model="newForm.phone" class="input" placeholder="9655…" />
+                <div v-if="newForm.errors.phone" class="wa-err">{{ newForm.errors.phone }}</div>
+                <label>{{ t.firstMsg }}</label>
+                <textarea v-model="newForm.body" class="input" rows="2"></textarea>
+                <div class="wa-modal-foot">
+                    <button class="btn btn-ghost" @click="showNew=false">{{ t.cancel }}</button>
+                    <button class="btn btn-primary" :disabled="newForm.processing || !newForm.phone" @click="startChat">{{ t.start }}</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- template send modal -->
+        <div v-if="showTpl" class="wa-modal-bg" @click.self="showTpl=false">
+            <div class="wa-modal">
+                <h3>{{ t.tpl }}</h3>
+                <label>{{ t.pickTpl }}</label>
+                <select class="input" @change="pickTpl">
+                    <option value="">—</option>
+                    <option v-for="tp in templates" :key="tp.name" :value="tp.name">{{ tp.name }} ({{ tp.language }})</option>
+                </select>
+                <div v-if="pickedTpl" style="margin:10px 0; padding:10px; border-radius:8px; background:#efeae2;">
+                    <div style="background:#fff; border-radius:8px; padding:8px 10px; font-size:12.5px; white-space:pre-wrap;">{{ pickedTpl.body }}</div>
+                </div>
+                <template v-if="pickedTpl && pickedTpl.var_count">
+                    <label>{{ t.vars }}</label>
+                    <input v-for="i in pickedTpl.var_count" :key="i" v-model="tplForm.vars[i]" class="input" :placeholder="'{{'+i+'}}'" style="margin-bottom:6px;" />
+                </template>
+                <div class="wa-modal-foot">
+                    <button class="btn btn-ghost" @click="showTpl=false">{{ t.cancel }}</button>
+                    <button class="btn btn-primary" :disabled="tplForm.processing || !tplForm.template" @click="sendTpl">{{ t.sendTpl }}</button>
+                </div>
+            </div>
+        </div>
     </div>
 </template>
 
@@ -186,4 +259,10 @@ function send() {
 .wa-empty-badge { height:90px; width:90px; border-radius:50%; background:rgba(37,211,102,.12); color:#25D366; display:flex; align-items:center; justify-content:center; }
 @keyframes slideIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
 .message-animate { animation:slideIn .18s ease-out; }
+.wa-modal-bg { position:fixed; inset:0; background:rgba(0,0,0,.4); display:flex; align-items:center; justify-content:center; z-index:60; padding:16px; }
+.wa-modal { width:420px; max-width:100%; background:var(--card,#fff); border-radius:14px; padding:20px; box-shadow:0 10px 40px rgba(0,0,0,.25); }
+.wa-modal h3 { margin:0 0 14px; font-size:16px; font-weight:700; color:var(--fg,#111); }
+.wa-modal label { display:block; font-size:12px; color:var(--fg-subtle,#667); margin:10px 0 4px; }
+.wa-modal-foot { display:flex; justify-content:flex-end; gap:8px; margin-top:18px; }
+.wa-err { font-size:11px; color:#dc2626; margin-top:3px; }
 </style>
