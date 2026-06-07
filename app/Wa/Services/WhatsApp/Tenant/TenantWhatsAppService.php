@@ -558,7 +558,7 @@ class TenantWhatsAppService
             $metaMessageId = $response->json('messages.0.id');
 
             if ($metaMessageId) {
-                event(new \App\Events\OutgoingWhatsappMessageSent($session, $body, $metaMessageId));
+                event(new \App\Wa\Events\OutgoingWhatsappMessageSent($session, $body, $metaMessageId));
             } else {
                 Log::warning('[WA] No messages[0].id returned; skipping OutgoingWhatsappMessageSent');
             }

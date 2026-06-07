@@ -105,8 +105,8 @@ class MessageTemplateResource extends Resource
                                         return; // Name hasn't changed
                                     }
 
-                                    /** @var \App\Services\WhatsApp\WhatsAppService $wa */
-                                    $wa = app(\App\Services\WhatsApp\WhatsAppService::class);
+                                    /** @var \App\Wa\Services\WhatsApp\WhatsAppService $wa */
+                                    $wa = app(\App\Wa\Services\WhatsApp\WhatsAppService::class);
                                     if ($wa->doesTemplateExist($value)) {
                                         $fail("A template with the name '{$value}' already exists on your Meta Business Account.");
                                     }

@@ -161,7 +161,7 @@ class WhatsAppCloudWebhookController extends Controller
             'wa_number_id' => $number->id,
             'conversation_id' => $conversation->id,
 
-            'direction' => 'in',   // <-- incoming
+            'direction' => 'inbound',   // <-- incoming (canonical; v2 keys off inbound/outbound)
             'type' => $type,
             'body' => $body,
             'meta_message_id' => $metaMessageId,

@@ -95,5 +95,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command('queue:work --queue=campaigns,default --sleep=1 --max-time=55 --stop-when-empty')
             ->everyMinute()
             ->withoutOverlapping();
+        // WhatsApp module: dispatch scheduled campaigns + keep engagement fresh.
+        $schedule->command('wa:campaigns:process-scheduled')->everyMinute()->withoutOverlapping();
+        $schedule->command('wa:contacts:refresh-engagement-stats')->hourly()->withoutOverlapping();
     })
     ->create();

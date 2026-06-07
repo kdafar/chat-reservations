@@ -382,7 +382,7 @@ class WhatsAppFlowService
 
             // Clear cart if user chose a different restaurant
             if ($vendorIdRaw !== $previousVendorId && $session) {
-                \App\Hub\Models\CartItem::where('whatsapp_session_id', $session->id)->delete();
+                \App\Wa\Hub\Models\CartItem::where('whatsapp_session_id', $session->id)->delete();
                 unset($flow['cart']);
             }
 
@@ -805,11 +805,11 @@ class WhatsAppFlowService
 
         if ($finalAction === 'remove') {
             if ($cartItemId) {
-                \App\Hub\Models\CartItem::where('whatsapp_session_id', $session->id)
+                \App\Wa\Hub\Models\CartItem::where('whatsapp_session_id', $session->id)
                     ->where('id', $cartItemId)
                     ->delete();
             } else {
-                $itemToRemove = \App\Hub\Models\CartItem::where('whatsapp_session_id', $session->id)
+                $itemToRemove = \App\Wa\Hub\Models\CartItem::where('whatsapp_session_id', $session->id)
                     ->where('item_id_from_restaurant', $itemId)
                     ->get()
                     ->first(function ($ci) use ($addonsDetailed) {
@@ -824,7 +824,7 @@ class WhatsAppFlowService
                     $itemToRemove->delete();
                 } else {
                     // Fallback: if there is only one candidate for this item, remove it.
-                    $candidates = \App\Hub\Models\CartItem::where('whatsapp_session_id', $session->id)
+                    $candidates = \App\Wa\Hub\Models\CartItem::where('whatsapp_session_id', $session->id)
                         ->where('item_id_from_restaurant', $itemId)
                         ->get();
                     if ($candidates->count() === 1) {
@@ -838,7 +838,7 @@ class WhatsAppFlowService
             }
 
             if ($cartItemId) {
-                $cartLine = \App\Hub\Models\CartItem::where('whatsapp_session_id', $session->id)
+                $cartLine = \App\Wa\Hub\Models\CartItem::where('whatsapp_session_id', $session->id)
                     ->where('id', $cartItemId)
                     ->first();
 
@@ -847,7 +847,7 @@ class WhatsAppFlowService
                     $cartLine->variations = ! empty($addonsDetailed) ? $addonsDetailed : ($cartLine->variations ?? []);
                     $cartLine->save();
                 } else {
-                    $candidates = \App\Hub\Models\CartItem::where('whatsapp_session_id', $session->id)
+                    $candidates = \App\Wa\Hub\Models\CartItem::where('whatsapp_session_id', $session->id)
                         ->where('item_id_from_restaurant', $itemId)
                         ->get();
                     $existing = $candidates->first(function ($ci) use ($addonsDetailed) {
@@ -863,7 +863,7 @@ class WhatsAppFlowService
                     } else {
                         $itemData = $this->vendorDataService->getItemBasic($itemIdUi, $flow['vendor_id'], $locale);
                         if ($itemData) {
-                            \App\Hub\Models\CartItem::create([
+                            \App\Wa\Hub\Models\CartItem::create([
                                 'whatsapp_session_id' => $session->id,
                                 'item_id_from_restaurant' => $itemId,
                                 'item_name' => $itemData['title'],
@@ -875,7 +875,7 @@ class WhatsAppFlowService
                     }
                 }
             } else {
-                $candidates = \App\Hub\Models\CartItem::where('whatsapp_session_id', $session->id)
+                $candidates = \App\Wa\Hub\Models\CartItem::where('whatsapp_session_id', $session->id)
                     ->where('item_id_from_restaurant', $itemId)
                     ->get();
 
@@ -893,7 +893,7 @@ class WhatsAppFlowService
                 } else {
                     $itemData = $this->vendorDataService->getItemBasic($itemIdUi, $flow['vendor_id'], $locale);
                     if ($itemData) {
-                        \App\Hub\Models\CartItem::create([
+                        \App\Wa\Hub\Models\CartItem::create([
                             'whatsapp_session_id' => $session->id,
                             'item_id_from_restaurant' => $itemId,
                             'item_name' => $itemData['title'],
@@ -2197,7 +2197,7 @@ class WhatsAppFlowService
     // Totals / promos
     // ------------------------------------------------------------------
 
-    private function orderTotalKwd(\App\Models\Order $order): float
+    private function orderTotalKwd(\App\Wa\Models\Order $order): float
     {
         $t = (float) ($order->total ?? 0);
         if ($t > 0) {
@@ -2277,7 +2277,7 @@ class WhatsAppFlowService
             return;
         }
 
-        \App\Hub\Models\CartItem::where('whatsapp_session_id', $session->id)
+        \App\Wa\Hub\Models\CartItem::where('whatsapp_session_id', $session->id)
             ->whereIn('item_id_from_restaurant', $toDelete)
             ->delete();
     }

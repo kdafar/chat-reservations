@@ -13,8 +13,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $promotional_campaign_id
  * @property int $whatsapp_session_id
  * @property string $order_id_from_restaurant
- * @property-read \App\Models\PromotionalCampaign $campaign
- * @property-read \App\Hub\Models\WhatsappSession $session
+ * @property-read \App\Wa\Hub\Models\PromotionalCampaign $campaign
+ * @property-read \App\Wa\Hub\Models\WhatsappSession $session
  */
 class CampaignConversion extends Model
 {

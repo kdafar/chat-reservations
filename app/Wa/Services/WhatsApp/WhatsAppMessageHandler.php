@@ -462,7 +462,7 @@ class WhatsAppMessageHandler
             }
             if ($ranked->count() > 1) {
                 $rows = $ranked->take(5)->map(function ($r) use ($locale) {
-                    /** @var \App\Hub\Models\Vendors $rest */
+                    /** @var \App\Wa\Hub\Models\Vendors $rest */
                     $rest = $r['restaurant'];
                     $name = method_exists($rest, 'getTranslation')
                         ? $rest->getTranslation('name', $locale)
@@ -1356,12 +1356,12 @@ class WhatsAppMessageHandler
         array $apiResponseBody,
         ?string $customerName,
         string $locale,
-        \App\Hub\Models\Vendors $restaurant
+        \App\Wa\Hub\Models\Vendors $restaurant
     ): void {
         $branchKey = data_get($apiResponseBody, 'branch.key');
         $branchName = null;
         if ($branchKey) {
-            $hubBranch = \App\Hub\Models\HubBranch::where('external_key', $branchKey)->first();
+            $hubBranch = \App\Wa\Hub\Models\HubBranch::where('external_key', $branchKey)->first();
             if ($hubBranch) {
                 $branchName = $locale === 'ar'
                     ? ($hubBranch->name_ar ?: $hubBranch->name_en)
@@ -1414,7 +1414,7 @@ class WhatsAppMessageHandler
             return;
         }
 
-        $listRows = $recentOrders->map(function (\App\Models\Order $order) use ($locale) {
+        $listRows = $recentOrders->map(function (\App\Wa\Models\Order $order) use ($locale) {
             return [
                 'id' => 'reorder_'.$order->id, // e.g., "reorder_123"
                 'title' => ($locale === 'ar' ? 'طلب رقم ' : 'Order #').$order->id,
@@ -1478,7 +1478,7 @@ class WhatsAppMessageHandler
             }
 
             // ---------- Create Order ----------
-            $order = \App\Models\Order::create([
+            $order = \App\Wa\Models\Order::create([
                 'whatsapp_session_id' => $session->id,
                 'restaurant_id' => $restaurant->id,
                 'customer_phone_number' => $session->customer_phone_number,
@@ -1512,7 +1512,7 @@ class WhatsAppMessageHandler
                     continue;
                 }
 
-                $hubItem = \App\Hub\Models\MenuItem::where('vendor_id', $restaurant->id)
+                $hubItem = \App\Wa\Hub\Models\MenuItem::where('vendor_id', $restaurant->id)
                     ->where('external_id', $extId)
                     ->first();
 
@@ -1580,7 +1580,7 @@ class WhatsAppMessageHandler
         }
     }
 
-    private function sendRestaurantAbout(WhatsappSession $session, \App\Hub\Models\Vendors $restaurant, string $locale): void
+    private function sendRestaurantAbout(WhatsappSession $session, \App\Wa\Hub\Models\Vendors $restaurant, string $locale): void
     {
         // Pull dynamic numbers for placeholders (if available)
         $cityId = (int) ($session->delivery_city_id ?? 0);

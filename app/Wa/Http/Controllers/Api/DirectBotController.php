@@ -264,7 +264,7 @@ class DirectBotController extends Controller
         // ------------------------------------------------------------------
         // 3) OLD EVENT LOGIC (KEEP)
         // ------------------------------------------------------------------
-        event(new \App\Events\OutgoingWhatsappStatusReceived($statusPayload));
+        event(new \App\Wa\Events\OutgoingWhatsappStatusReceived($statusPayload));
     }
 
     /**
@@ -480,7 +480,7 @@ class DirectBotController extends Controller
             return;
         }
 
-        event(new \App\Events\IncomingWhatsappMessageReceived($session, $messagePayload));
+        event(new \App\Wa\Events\IncomingWhatsappMessageReceived($session, $messagePayload));
         $this->messageHandler->handle($messagePayload);
     }
 
@@ -732,7 +732,7 @@ class DirectBotController extends Controller
                 ? 'تم إلغاء الاشتراك في الرسائل الترويجية. ما زالت الخدمة تعمل للطلبات والدعم. لإعادة التفعيل أرسل *تفعيل*.'
                 : 'You have opted out of promotional messages. Ordering/support still works. Reply *START* to resubscribe.';
 
-            app(\App\Services\WhatsApp\WhatsAppService::class)->sendTextMessage($customerPhone, $msg);
+            app(\App\Wa\Services\WhatsApp\WhatsAppService::class)->sendTextMessage($customerPhone, $msg);
 
             return false;
         }
@@ -749,7 +749,7 @@ class DirectBotController extends Controller
                 ? 'تم تفعيل استقبال الرسائل الترويجية مرة أخرى '
                 : 'You will receive promotional messages again ';
 
-            app(\App\Services\WhatsApp\WhatsAppService::class)->sendTextMessage($customerPhone, $msg);
+            app(\App\Wa\Services\WhatsApp\WhatsAppService::class)->sendTextMessage($customerPhone, $msg);
 
             return false;
         }

@@ -356,8 +356,8 @@ class WhatsAppBot
             return [true, null, null];
         }
 
-        /** @var \App\Services\ImageNormalizer $norm */
-        $norm = app(\App\Services\ImageNormalizer::class);
+        /** @var \App\Wa\Services\ImageNormalizer $norm */
+        $norm = app(\App\Wa\Services\ImageNormalizer::class);
         [$ok, $local, $err] = $norm->toLocalJpeg($imageUrl);
         if (! $ok) {
             return [false, null, "Normalize failed: $err"];
@@ -383,8 +383,8 @@ class WhatsAppBot
                 return [true, $mid, null];
             }
 
-            /** @var \App\Services\ImageNormalizer $norm */
-            $norm = app(\App\Services\ImageNormalizer::class);
+            /** @var \App\Wa\Services\ImageNormalizer $norm */
+            $norm = app(\App\Wa\Services\ImageNormalizer::class);
             [$ok, $localPath, $err] = $norm->toLocalJpeg($imageUrl);
             if (! $ok) {
                 return [false, null, "Normalize failed: $err"];
@@ -410,7 +410,7 @@ class WhatsAppBot
     {
         $num = preg_replace('/\D+/', '', $to);
 
-        $last = \App\Hub\Models\WhatsappMessage::whereHas(
+        $last = \App\Wa\Hub\Models\WhatsappMessage::whereHas(
             'whatsappSession',
             fn ($q) => $q->where('customer_phone_number', $num)
         )

@@ -32,13 +32,13 @@ class CustomerProfile extends Model
 
     public function getAddress(string $slug): ?array
     {
-        return \App\Support\AddressBook::get($this->addresses ?? [], $slug);
+        return \App\Wa\Support\AddressBook::get($this->addresses ?? [], $slug);
     }
 
     public function saveAddress(array $addr): void
     {
         $addresses = $this->addresses ?? [];
-        \App\Support\AddressBook::upsert($addresses, $addr);
+        \App\Wa\Support\AddressBook::upsert($addresses, $addr);
         $this->addresses = $addresses;
         $this->save();
     }

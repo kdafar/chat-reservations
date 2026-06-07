@@ -780,7 +780,7 @@ class WhatsAppFlowHelperService
         return $this->paginate($list, $page, $pageSize);
     }
 
-    public function orderTotalKwd(\App\Models\Order $order): float
+    public function orderTotalKwd(\App\Wa\Models\Order $order): float
     {
         if ((float) ($order->total ?? 0) > 0) {
             return (float) $order->total;
@@ -826,7 +826,7 @@ class WhatsAppFlowHelperService
         $allIdsInCat = collect($this->vendorDataService->getItemsForCategorySimple($categoryIdRaw, $vendorIdRaw, $locale))->map(fn ($i) => (int) preg_replace('/\D+/', '', $i['id']))->all();
         $toDelete = array_diff($allIdsInCat, $selectedIds);
         if (! empty($toDelete)) {
-            \App\Hub\Models\CartItem::where('whatsapp_session_id', $session->id)->whereIn('item_id_from_restaurant', $toDelete)->delete();
+            \App\Wa\Hub\Models\CartItem::where('whatsapp_session_id', $session->id)->whereIn('item_id_from_restaurant', $toDelete)->delete();
         }
     }
 

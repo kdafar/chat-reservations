@@ -589,9 +589,10 @@ class WaModuleController extends Controller
     {
         $this->authorizeAccess($request);
         $data = $this->validateCampaign($request);
-        PromotionalCampaign::create($data + ['status' => 'draft']);
+        $status = ! empty($data['scheduled_at']) && \Illuminate\Support\Carbon::parse($data['scheduled_at'])->isFuture() ? 'scheduled' : 'draft';
+        PromotionalCampaign::create($data + ['status' => $status]);
 
-        return back()->with('flash', ['type' => 'success', 'message' => 'Campaign created.']);
+        return back()->with('flash', ['type' => 'success', 'message' => $status === 'scheduled' ? 'Campaign scheduled.' : 'Campaign created.']);
     }
 
     public function updateCampaign(Request $request, int $campaign): RedirectResponse
@@ -601,7 +602,12 @@ class WaModuleController extends Controller
         if (in_array($c->status, ['sending', 'completed'], true)) {
             return back()->with('flash', ['type' => 'error', 'message' => 'A sending/completed campaign cannot be edited.']);
         }
-        $c->update($this->validateCampaign($request));
+        $data = $this->validateCampaign($request);
+        // Re-derive scheduled/draft from the (new) scheduled_at while still editable.
+        if (in_array($c->status, ['draft', 'scheduled'], true)) {
+            $data['status'] = ! empty($data['scheduled_at']) && \Illuminate\Support\Carbon::parse($data['scheduled_at'])->isFuture() ? 'scheduled' : 'draft';
+        }
+        $c->update($data);
 
         return back()->with('flash', ['type' => 'success', 'message' => 'Campaign updated.']);
     }
@@ -714,7 +720,7 @@ class WaModuleController extends Controller
             ->with(['contact', 'lastMessage'])
             ->when($filters['status'] !== 'all', fn ($q) => $q->where('status', $filters['status']))
             ->when($filters['q'] !== '', fn ($q) => $q->whereHas('contact', fn ($w) => $w
-                ->where('name', 'like', "%{$filters['q']}%")->orWhere('msisdn', 'like', "%{$filters['q']}%")))
+                ->where('name', 'like', "%{$filters['q']}%")->orWhere('phone', 'like', "%{$filters['q']}%")))
             ->orderByDesc('last_message_at')
             ->limit(100)
             ->get()
@@ -1260,8 +1266,17 @@ class WaModuleController extends Controller
         return back()->with('flash', ['type' => 'success', 'message' => count($ids).' contacts imported ('.$created.' new).']);
     }
 
-    /** Recompute contact engagement stats from campaign recipient history. */
+    /** Recompute contact engagement stats (delegates to the shared command logic). */
     public function refreshEngagement(Request $request): RedirectResponse
+    {
+        $this->authorizeAccess($request);
+        $touched = \App\Wa\Console\Commands\RefreshContactEngagementStats::rebuild();
+
+        return back()->with('flash', ['type' => 'success', 'message' => "Engagement refreshed for {$touched} contacts."]);
+    }
+
+    /** @deprecated kept for reference; logic moved to RefreshContactEngagementStats::rebuild(). */
+    private function refreshEngagementInline(Request $request): RedirectResponse
     {
         $this->authorizeAccess($request);
 

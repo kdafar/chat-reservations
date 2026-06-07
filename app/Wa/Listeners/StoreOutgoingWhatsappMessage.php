@@ -14,7 +14,7 @@ class StoreOutgoingWhatsappMessage
             return;
         }
 
-        $msg = \App\Hub\Models\WhatsappMessage::updateOrCreate(
+        $msg = \App\Wa\Hub\Models\WhatsappMessage::updateOrCreate(
             ['meta_message_id' => $e->metaMessageId],
             [
                 'whatsapp_session_id' => $e->session->id,
@@ -22,7 +22,7 @@ class StoreOutgoingWhatsappMessage
                 'direction' => 'outgoing',
                 'type' => $e->body['type'] ?? null,
                 'content' => $e->body, // cast to array
-                'delivery_status' => \App\Hub\Models\WhatsappMessage::STATUS_QUEUED,
+                'delivery_status' => \App\Wa\Hub\Models\WhatsappMessage::STATUS_QUEUED,
             ]
         );
 
