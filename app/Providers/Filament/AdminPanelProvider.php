@@ -32,6 +32,15 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->login()
+            // Bridge to the isolated WhatsApp module panel (app/Wa) so it is
+            // reachable from the main admin sidebar.
+            ->navigationItems([
+                \Filament\Navigation\NavigationItem::make('WhatsApp Platform')
+                    ->url(fn (): string => url('/whatsapp/admin'), shouldOpenInNewTab: true)
+                    ->icon('heroicon-o-chat-bubble-left-right')
+                    ->group('WhatsApp')
+                    ->sort(99),
+            ])
             ->databaseNotifications()
             ->databaseNotificationsPolling('5s')
             ->renderHook(
@@ -45,6 +54,28 @@ class AdminPanelProvider extends PanelProvider
             ->renderHook(
                 \Filament\View\PanelsRenderHook::TOPBAR_END,
                 fn (): string => view('filament.hooks.v2-switch')->render(),
+            )
+            // v2-styled login: inject scoped chrome + brand block on the
+            // login page only (never the rest of the admin).
+            ->renderHook(
+                \Filament\View\PanelsRenderHook::HEAD_END,
+                fn (): string => view('filament.auth.login-head')->render(),
+                scopes: \Filament\Pages\Auth\Login::class,
+            )
+            ->renderHook(
+                \Filament\View\PanelsRenderHook::SIMPLE_PAGE_START,
+                fn (): string => view('filament.auth.login-brand')->render(),
+                scopes: \Filament\Pages\Auth\Login::class,
+            )
+            ->renderHook(
+                \Filament\View\PanelsRenderHook::BODY_START,
+                fn (): string => view('filament.auth.login-hero')->render(),
+                scopes: \Filament\Pages\Auth\Login::class,
+            )
+            ->renderHook(
+                \Filament\View\PanelsRenderHook::SIMPLE_PAGE_END,
+                fn (): string => view('filament.auth.login-foot')->render(),
+                scopes: \Filament\Pages\Auth\Login::class,
             )
             ->sidebarFullyCollapsibleOnDesktop()
             ->maxContentWidth(\Filament\Support\Enums\MaxWidth::Full)

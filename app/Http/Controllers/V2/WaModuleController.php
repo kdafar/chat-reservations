@@ -8,6 +8,8 @@ use App\Wa\Hub\Models\ContactGroup;
 use App\Wa\Hub\Models\MessageTemplate;
 use App\Wa\Hub\Models\PromotionalCampaign;
 use App\Wa\Hub\Models\WhatsappSession;
+use App\Wa\Hub\Models\PromotionalCampaignRecipient;
+use App\Wa\Jobs\SendPromotionalCampaignMessage;
 use App\Wa\Models\WhatsApp\WaConversation;
 use App\Wa\Models\WhatsApp\WaMessage;
 use App\Wa\Services\WhatsApp\WhatsAppService;
@@ -90,6 +92,10 @@ class WaModuleController extends Controller
                 'status' => $t->status,
                 'local_status' => $t->local_status,
                 'is_auto_reply' => (bool) $t->is_auto_reply,
+                ...$this->templateParts($t),
+                'body' => $t->body,
+                'triggers' => $t->triggers ?? [],
+                'meta_id' => $t->meta_id,
                 'body_preview' => \Illuminate\Support\Str::limit((string) ($t->body_preview ?: $t->body), 120),
                 'updated_at' => optional($t->updated_at)->toDateTimeString(),
             ]);
@@ -97,7 +103,141 @@ class WaModuleController extends Controller
         return Inertia::render('WaModule/Templates', [
             'filters' => $filters,
             'page' => $page,
+            'can_edit' => true,
         ]);
+    }
+
+    /** Create a local message template (optionally publish to Meta). */
+    public function storeTemplate(Request $request, WhatsAppService $whatsapp): RedirectResponse
+    {
+        $this->authorizeAccess($request);
+        $data = $this->validateTemplate($request);
+
+        $tpl = MessageTemplate::create($data + ['local_status' => 'draft']);
+
+        if ($request->boolean('publish')) {
+            try {
+                $whatsapp->publishTemplateToMeta($tpl);
+                return back()->with('flash', ['type' => 'success', 'message' => 'Template created and submitted to Meta for review.']);
+            } catch (\Throwable $e) {
+                return back()->with('flash', ['type' => 'error', 'message' => 'Saved locally, but Meta submit failed: '.$e->getMessage()]);
+            }
+        }
+
+        return back()->with('flash', ['type' => 'success', 'message' => 'Template saved as draft.']);
+    }
+
+    /** Update a local template (blocked once approved by Meta). */
+    public function updateTemplate(Request $request, int $template): RedirectResponse
+    {
+        $this->authorizeAccess($request);
+        $tpl = MessageTemplate::findOrFail($template);
+
+        if ($tpl->status === 'APPROVED') {
+            return back()->with('flash', ['type' => 'error', 'message' => 'Approved templates cannot be edited.']);
+        }
+
+        $tpl->update($this->validateTemplate($request));
+
+        return back()->with('flash', ['type' => 'success', 'message' => 'Template updated.']);
+    }
+
+    public function destroyTemplate(Request $request, int $template): RedirectResponse
+    {
+        $this->authorizeAccess($request);
+        MessageTemplate::whereKey($template)->delete();
+
+        return back()->with('flash', ['type' => 'success', 'message' => 'Template deleted.']);
+    }
+
+    /** Pull all templates + statuses from Meta into the local table. */
+    public function syncTemplates(Request $request, WhatsAppService $whatsapp): RedirectResponse
+    {
+        $this->authorizeAccess($request);
+        try {
+            $count = $whatsapp->syncTemplatesFromMeta();
+            return back()->with('flash', ['type' => 'success', 'message' => "Synced {$count} templates from Meta."]);
+        } catch (\Throwable $e) {
+            return back()->with('flash', ['type' => 'error', 'message' => 'Sync failed: '.$e->getMessage()]);
+        }
+    }
+
+    /** Submit a local draft to Meta for approval. */
+    public function publishTemplate(Request $request, int $template, WhatsAppService $whatsapp): RedirectResponse
+    {
+        $this->authorizeAccess($request);
+        $tpl = MessageTemplate::findOrFail($template);
+        try {
+            $whatsapp->publishTemplateToMeta($tpl);
+            return back()->with('flash', ['type' => 'success', 'message' => 'Submitted to Meta for review.']);
+        } catch (\Throwable $e) {
+            return back()->with('flash', ['type' => 'error', 'message' => 'Submit failed: '.$e->getMessage()]);
+        }
+    }
+
+    public function toggleTemplateAutoReply(Request $request, int $template): RedirectResponse
+    {
+        $this->authorizeAccess($request);
+        $tpl = MessageTemplate::findOrFail($template);
+        $tpl->update(['is_auto_reply' => ! $tpl->is_auto_reply]);
+
+        return back()->with('flash', ['type' => 'success', 'message' => $tpl->is_auto_reply ? 'Auto-reply enabled.' : 'Auto-reply disabled.']);
+    }
+
+    private function validateTemplate(Request $request): array
+    {
+        $v = $request->validate([
+            'name' => ['required', 'string', 'max:512', 'regex:/^[a-z0-9_]+$/'],
+            'category' => ['required', 'in:MARKETING,UTILITY,AUTHENTICATION'],
+            'language' => ['required', 'in:en,ar'],
+            'header_type' => ['nullable', 'in:NONE,TEXT,IMAGE,VIDEO,DOCUMENT'],
+            'header_text' => ['nullable', 'string', 'max:60'],
+            'body' => ['required', 'string', 'max:1024'],
+            'footer_text' => ['nullable', 'string', 'max:60'],
+            'is_auto_reply' => ['boolean'],
+            'triggers' => ['array'],
+            'triggers.*' => ['string', 'max:60'],
+        ]);
+
+        // header_type/header_text/footer are not columns — they live inside the
+        // Meta `components` structure. Build that here from the simple inputs.
+        $components = [];
+        if (($v['header_type'] ?? 'NONE') !== 'NONE') {
+            $components[] = array_filter([
+                'type' => 'HEADER',
+                'format' => $v['header_type'],
+                'text' => $v['header_type'] === 'TEXT' ? ($v['header_text'] ?? null) : null,
+            ]);
+        }
+        $components[] = ['type' => 'BODY', 'text' => $v['body']];
+        if (! empty($v['footer_text'])) {
+            $components[] = ['type' => 'FOOTER', 'text' => $v['footer_text']];
+        }
+
+        return [
+            'name' => strtolower($v['name']),
+            'category' => $v['category'],
+            'language' => $v['language'],
+            'body' => $v['body'],
+            'body_preview' => \Illuminate\Support\Str::limit($v['body'], 160),
+            'components' => $components,
+            'is_auto_reply' => (bool) ($v['is_auto_reply'] ?? false),
+            'triggers' => $v['triggers'] ?? [],
+        ];
+    }
+
+    /** Pull header_type/header_text/footer back out of the components JSON. */
+    private function templateParts(MessageTemplate $t): array
+    {
+        $components = is_array($t->components) ? $t->components : [];
+        $header = collect($components)->first(fn ($c) => ($c['type'] ?? null) === 'HEADER');
+        $footer = collect($components)->first(fn ($c) => ($c['type'] ?? null) === 'FOOTER');
+
+        return [
+            'header_type' => $header['format'] ?? 'NONE',
+            'header_text' => $header['text'] ?? null,
+            'footer_text' => $footer['text'] ?? null,
+        ];
     }
 
     /** Contacts + groups. */
@@ -108,9 +248,9 @@ class WaModuleController extends Controller
         $filters = ['q' => trim((string) $request->query('q', ''))];
 
         $page = Contact::query()
+            ->with('groups:id')
             ->when($filters['q'] !== '', fn ($q) => $q
-                ->where('msisdn', 'like', "%{$filters['q']}%")
-                ->orWhere('name', 'like', "%{$filters['q']}%"))
+                ->where(fn ($w) => $w->where('msisdn', 'like', "%{$filters['q']}%")->orWhere('name', 'like', "%{$filters['q']}%")))
             ->latest('created_at')
             ->paginate(25)
             ->withQueryString()
@@ -119,6 +259,7 @@ class WaModuleController extends Controller
                 'msisdn' => $c->msisdn,
                 'name' => $c->name,
                 'locale' => $c->locale,
+                'group_ids' => $c->groups->pluck('id'),
                 'created_at' => optional($c->created_at)->toDateTimeString(),
             ]);
 
@@ -138,7 +279,84 @@ class WaModuleController extends Controller
             'filters' => $filters,
             'page' => $page,
             'groups' => $groups,
+            'can_edit' => true,
         ]);
+    }
+
+    public function storeContact(Request $request): RedirectResponse
+    {
+        $this->authorizeAccess($request);
+        $data = $request->validate([
+            'msisdn' => ['required', 'string', 'max:32'],
+            'name' => ['nullable', 'string', 'max:191'],
+            'locale' => ['nullable', 'in:en,ar'],
+        ]);
+        Contact::updateOrCreate(['msisdn' => $data['msisdn']], [
+            'name' => $data['name'] ?? null,
+            'locale' => $data['locale'] ?? 'en',
+        ]);
+
+        return back()->with('flash', ['type' => 'success', 'message' => 'Contact saved.']);
+    }
+
+    public function updateContact(Request $request, int $contact): RedirectResponse
+    {
+        $this->authorizeAccess($request);
+        $data = $request->validate([
+            'msisdn' => ['required', 'string', 'max:32'],
+            'name' => ['nullable', 'string', 'max:191'],
+            'locale' => ['nullable', 'in:en,ar'],
+        ]);
+        Contact::whereKey($contact)->update($data);
+
+        return back()->with('flash', ['type' => 'success', 'message' => 'Contact updated.']);
+    }
+
+    public function destroyContact(Request $request, int $contact): RedirectResponse
+    {
+        $this->authorizeAccess($request);
+        Contact::whereKey($contact)->delete();
+
+        return back()->with('flash', ['type' => 'success', 'message' => 'Contact deleted.']);
+    }
+
+    public function storeGroup(Request $request): RedirectResponse
+    {
+        $this->authorizeAccess($request);
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:191'],
+            'description' => ['nullable', 'string', 'max:500'],
+            'group_type' => ['nullable', 'in:static,dynamic'],
+        ]);
+        ContactGroup::create([
+            'name' => $data['name'],
+            'description' => $data['description'] ?? null,
+            'group_type' => $data['group_type'] ?? 'static',
+        ]);
+
+        return back()->with('flash', ['type' => 'success', 'message' => 'Group created.']);
+    }
+
+    public function destroyGroup(Request $request, int $group): RedirectResponse
+    {
+        $this->authorizeAccess($request);
+        $g = ContactGroup::findOrFail($group);
+        $g->contacts()->detach();
+        $g->delete();
+
+        return back()->with('flash', ['type' => 'success', 'message' => 'Group deleted.']);
+    }
+
+    /** Add/remove a contact to/from a group. */
+    public function toggleGroupMember(Request $request, int $group): RedirectResponse
+    {
+        $this->authorizeAccess($request);
+        $data = $request->validate(['contact_id' => ['required', 'integer']]);
+        $g = ContactGroup::findOrFail($group);
+        $res = $g->contacts()->toggle([$data['contact_id']]);
+        $added = ! empty($res['attached']);
+
+        return back()->with('flash', ['type' => 'success', 'message' => $added ? 'Added to group.' : 'Removed from group.']);
     }
 
     /** Promotional / bulk campaigns. */
@@ -147,6 +365,11 @@ class WaModuleController extends Controller
         $this->authorizeAccess($request);
 
         $page = PromotionalCampaign::query()
+            ->withCount([
+                'recipients',
+                'recipients as pending_count' => fn ($q) => $q->where('status', 'pending'),
+                'recipients as sent_count' => fn ($q) => $q->whereIn('status', ['sent', 'delivered', 'read']),
+            ])
             ->latest('created_at')
             ->paginate(25)
             ->withQueryString()
@@ -155,15 +378,118 @@ class WaModuleController extends Controller
                 'name' => $c->name,
                 'template_name' => $c->template_name,
                 'status' => $c->status,
-                'total_recipients' => $c->total_recipients,
-                'scheduled_at' => optional($c->scheduled_at)->toDateTimeString(),
+                'recipients_count' => $c->recipients_count,
+                'pending_count' => $c->pending_count,
+                'sent_count' => $c->sent_count,
+                'default_locale' => $c->default_locale,
+                'send_rate_per_min' => $c->send_rate_per_min,
+                'scheduled_at' => optional($c->scheduled_at)->format('Y-m-d\TH:i'),
                 'sent_at' => optional($c->sent_at)->toDateTimeString(),
                 'created_at' => optional($c->created_at)->toDateTimeString(),
             ]);
 
+        $templates = MessageTemplate::query()
+            ->orderBy('name')
+            ->pluck('language', 'name')
+            ->map(fn ($lang, $name) => ['name' => $name, 'language' => $lang])
+            ->values();
+
         return Inertia::render('WaModule/Campaigns', [
             'page' => $page,
+            'templates' => $templates,
+            'can_edit' => true,
         ]);
+    }
+
+    public function storeCampaign(Request $request): RedirectResponse
+    {
+        $this->authorizeAccess($request);
+        $data = $this->validateCampaign($request);
+        PromotionalCampaign::create($data + ['status' => 'draft']);
+
+        return back()->with('flash', ['type' => 'success', 'message' => 'Campaign created.']);
+    }
+
+    public function updateCampaign(Request $request, int $campaign): RedirectResponse
+    {
+        $this->authorizeAccess($request);
+        $c = PromotionalCampaign::findOrFail($campaign);
+        if (in_array($c->status, ['sending', 'completed'], true)) {
+            return back()->with('flash', ['type' => 'error', 'message' => 'A sending/completed campaign cannot be edited.']);
+        }
+        $c->update($this->validateCampaign($request));
+
+        return back()->with('flash', ['type' => 'success', 'message' => 'Campaign updated.']);
+    }
+
+    public function destroyCampaign(Request $request, int $campaign): RedirectResponse
+    {
+        $this->authorizeAccess($request);
+        $c = PromotionalCampaign::findOrFail($campaign);
+        $c->recipients()->delete();
+        $c->delete();
+
+        return back()->with('flash', ['type' => 'success', 'message' => 'Campaign deleted.']);
+    }
+
+    /** Dispatch send jobs for all pending recipients. */
+    public function sendCampaign(Request $request, int $campaign): RedirectResponse
+    {
+        $this->authorizeAccess($request);
+        $c = PromotionalCampaign::findOrFail($campaign);
+
+        if (! config('services.whatsapp.api_token')) {
+            return back()->with('flash', ['type' => 'error', 'message' => 'WhatsApp is not configured.']);
+        }
+
+        $pending = $c->recipients()->where('status', 'pending')->pluck('id');
+        if ($pending->isEmpty()) {
+            return back()->with('flash', ['type' => 'error', 'message' => 'No pending recipients. Add recipients first.']);
+        }
+
+        $c->update(['status' => 'sending', 'sent_at' => $c->sent_at ?? now()]);
+        foreach ($pending as $rid) {
+            SendPromotionalCampaignMessage::dispatch($c->id, $rid);
+        }
+
+        return back()->with('flash', ['type' => 'success', 'message' => "Queued {$pending->count()} messages."]);
+    }
+
+    /** Add a single recipient phone to a campaign (quick test / manual). */
+    public function addCampaignRecipient(Request $request, int $campaign): RedirectResponse
+    {
+        $this->authorizeAccess($request);
+        $data = $request->validate([
+            'msisdn' => ['required', 'string', 'max:32'],
+            'name' => ['nullable', 'string', 'max:191'],
+        ]);
+        $c = PromotionalCampaign::findOrFail($campaign);
+        PromotionalCampaignRecipient::updateOrCreate(
+            ['promotional_campaign_id' => $c->id, 'msisdn' => $data['msisdn']],
+            ['name' => $data['name'] ?? null, 'status' => 'pending', 'locale' => $c->default_locale ?? 'en', 'source' => 'manual']
+        );
+        $c->update(['total_recipients' => $c->recipients()->count()]);
+
+        return back()->with('flash', ['type' => 'success', 'message' => 'Recipient added.']);
+    }
+
+    private function validateCampaign(Request $request): array
+    {
+        $v = $request->validate([
+            'name' => ['required', 'string', 'max:160'],
+            'template_name' => ['nullable', 'string', 'max:512'],
+            'default_locale' => ['nullable', 'in:en,ar'],
+            'scheduled_at' => ['nullable', 'date'],
+            'send_rate_per_min' => ['nullable', 'integer', 'min:60', 'max:6000'],
+        ]);
+
+        return [
+            'name' => $v['name'],
+            'template_name' => $v['template_name'] ?? null,
+            'default_locale' => $v['default_locale'] ?? 'en',
+            'scheduled_at' => $v['scheduled_at'] ?? null,
+            'send_rate_per_min' => $v['send_rate_per_min'] ?? 600,
+        ];
     }
 
     /** Conversations (inbox) list. */
@@ -242,6 +568,116 @@ class WaModuleController extends Controller
         return Inertia::render('WaModule/Sessions', [
             'page' => $page,
         ]);
+    }
+
+    public function toggleSessionBlock(Request $request, int $session): RedirectResponse
+    {
+        $this->authorizeAccess($request);
+        $s = WhatsappSession::findOrFail($session);
+        $s->update(['is_blocked' => ! $s->is_blocked]);
+
+        return back()->with('flash', ['type' => 'success', 'message' => $s->is_blocked ? 'Session blocked.' : 'Session unblocked.']);
+    }
+
+    public function destroySession(Request $request, int $session): RedirectResponse
+    {
+        $this->authorizeAccess($request);
+        WhatsappSession::whereKey($session)->delete();
+
+        return back()->with('flash', ['type' => 'success', 'message' => 'Session deleted.']);
+    }
+
+    /** Send a free-text reply within a conversation thread. */
+    public function replyConversation(Request $request, int $conversation, WhatsAppService $whatsapp): RedirectResponse
+    {
+        $this->authorizeAccess($request);
+        $data = $request->validate(['body' => ['required', 'string', 'max:4096']]);
+        $convo = WaConversation::with('contact')->findOrFail($conversation);
+        $to = optional($convo->contact)->msisdn;
+
+        if (! $to) {
+            return back()->with('flash', ['type' => 'error', 'message' => 'Conversation has no contact number.']);
+        }
+        if (! config('services.whatsapp.api_token')) {
+            return back()->with('flash', ['type' => 'error', 'message' => 'WhatsApp is not configured.']);
+        }
+
+        $result = $whatsapp->sendTextMessage($to, $data['body']);
+
+        // Persist the outgoing message into the thread regardless, marking status.
+        WaMessage::create([
+            'wa_account_id' => $convo->wa_account_id,
+            'wa_number_id' => $convo->wa_number_id,
+            'conversation_id' => $convo->id,
+            'contact_id' => $convo->contact_id,
+            'direction' => 'outbound',
+            'type' => 'text',
+            'body' => $data['body'],
+            'status' => $result ? 'sent' : 'failed',
+            'meta_message_id' => $result['messages'][0]['id'] ?? null,
+            'sent_at' => now(),
+        ]);
+        $convo->update(['last_message_at' => now(), 'last_outgoing_at' => now()]);
+
+        return back()->with('flash', [
+            'type' => $result ? 'success' : 'error',
+            'message' => $result ? 'Reply sent.' : 'Send failed — saved as failed.',
+        ]);
+    }
+
+    /** Setting keys the bot reads (Wave\Setting-backed). */
+    private const SETTING_KEYS = [
+        'whatsapp.entry_mode',
+        'whatsapp.banner_greeting_en', 'whatsapp.banner_greeting_ar',
+        'whatsapp.flow_welcome_en', 'whatsapp.flow_welcome_ar',
+        'whatsapp.fallback_reply_en', 'whatsapp.fallback_reply_ar',
+        'whatsapp.about_reply_en', 'whatsapp.about_reply_ar',
+        'whatsapp.pricing_reply_en', 'whatsapp.pricing_reply_ar',
+        'whatsapp.privacy_reply_en', 'whatsapp.privacy_reply_ar',
+        'whatsapp.frequency_cap_whitelist',
+        'wa_initiation_restricted',
+    ];
+
+    public function settings(Request $request, WhatsAppService $whatsapp)
+    {
+        $this->authorizeAccess($request);
+
+        $stored = \Wave\Setting::whereIn('key', self::SETTING_KEYS)->pluck('value', 'key')->toArray();
+        $settings = [];
+        foreach (self::SETTING_KEYS as $k) {
+            $settings[$k] = $stored[$k] ?? '';
+        }
+
+        $health = ['status' => 'unknown'];
+        if (config('services.whatsapp.api_token')) {
+            try {
+                $health = $whatsapp->getCurrentNumberHealth();
+            } catch (\Throwable $e) {
+                $health = ['status' => 'error', 'message' => $e->getMessage()];
+            }
+        } else {
+            $health = ['status' => 'missing_credentials'];
+        }
+
+        return Inertia::render('WaModule/Settings', [
+            'settings' => $settings,
+            'health' => $health,
+            'configured' => (bool) config('services.whatsapp.api_token'),
+        ]);
+    }
+
+    public function updateSettings(Request $request): RedirectResponse
+    {
+        $this->authorizeAccess($request);
+        $payload = (array) $request->input('settings', []);
+        foreach (self::SETTING_KEYS as $k) {
+            if (! array_key_exists($k, $payload)) {
+                continue;
+            }
+            \Wave\Setting::updateOrCreate(['key' => $k], ['value' => (string) $payload[$k]]);
+        }
+
+        return back()->with('flash', ['type' => 'success', 'message' => 'Settings saved.']);
     }
 
     /** Send a free-text message to a number via the module's WhatsApp client. */

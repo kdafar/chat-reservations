@@ -1,36 +1,87 @@
 <script setup>
-import { computed, reactive, watch } from 'vue'
-import { Head, router, usePage } from '@inertiajs/vue3'
+import { computed, reactive, ref, watch } from 'vue'
+import { Head, router, useForm, usePage } from '@inertiajs/vue3'
 import AppLayout from '../../Layouts/AppLayout.vue'
 defineOptions({ layout: AppLayout })
 import Icon from '../../Components/Icon.vue'
 
-const props = defineProps({ filters: Object, page: Object })
+const props = defineProps({ filters: Object, page: Object, can_edit: Boolean })
 const pageProps = usePage()
 const isRtl = computed(() => (pageProps.props.locale ?? 'en') === 'ar')
 const t = computed(() => isRtl.value ? {
     title: 'القوالب', eyebrow: 'منصة واتساب', desc: 'قوالب الرسائل المعتمدة لدى ميتا.', searchPh: 'ابحث بالاسم…', clear: 'مسح',
-    col: { name: 'الاسم', category: 'الفئة', lang: 'اللغة', status: 'الحالة', auto: 'رد تلقائي', preview: 'المعاينة', updated: 'آخر تحديث' }, empty: 'لا توجد قوالب', showing: 'عرض', of: 'من',
+    sync: 'مزامنة من ميتا', new: 'قالب جديد', edit: 'تعديل', del: 'حذف', publish: 'إرسال للمراجعة', auto: 'رد تلقائي',
+    col: { name: 'الاسم', category: 'الفئة', lang: 'اللغة', status: 'الحالة', auto: 'رد تلقائي', preview: 'المعاينة', actions: '' }, empty: 'لا توجد قوالب', showing: 'عرض', of: 'من',
+    f: { name: 'الاسم (أحرف صغيرة وشرطة سفلية)', category: 'الفئة', lang: 'اللغة', header: 'نوع الترويسة', headerText: 'نص الترويسة', body: 'النص', footer: 'التذييل', autoReply: 'تفعيل الرد التلقائي', triggers: 'كلمات التحفيز (مفصولة بفواصل)' },
+    save: 'حفظ', saveSubmit: 'حفظ وإرسال للمراجعة', cancel: 'إلغاء', confirmDel: 'حذف هذا القالب؟',
 } : {
     title: 'Templates', eyebrow: 'WhatsApp Platform', desc: 'Message templates registered with Meta.', searchPh: 'Search by name…', clear: 'Clear',
-    col: { name: 'Name', category: 'Category', lang: 'Lang', status: 'Status', auto: 'Auto-reply', preview: 'Preview', updated: 'Updated' }, empty: 'No templates', showing: 'Showing', of: 'of',
+    sync: 'Sync from Meta', new: 'New template', edit: 'Edit', del: 'Delete', publish: 'Submit for review', auto: 'Auto-reply',
+    col: { name: 'Name', category: 'Category', lang: 'Lang', status: 'Status', auto: 'Auto-reply', preview: 'Preview', actions: '' }, empty: 'No templates', showing: 'Showing', of: 'of',
+    f: { name: 'Name (lowercase + underscores)', category: 'Category', lang: 'Language', header: 'Header type', headerText: 'Header text', body: 'Body', footer: 'Footer', autoReply: 'Enable auto-reply', triggers: 'Trigger keywords (comma-separated)' },
+    save: 'Save draft', saveSubmit: 'Save & submit for review', cancel: 'Cancel', confirmDel: 'Delete this template?',
 })
+
 const f = reactive({ q: props.filters.q || '' })
 let timer = null
 watch(() => f.q, () => { clearTimeout(timer); timer = setTimeout(apply, 250) })
 function apply() { router.get(route('v2.wa-module.templates'), { q: f.q || undefined }, { preserveState: true, preserveScroll: true, replace: true }) }
+
+// ---- create / edit modal ----
+const showModal = ref(false)
+const editingId = ref(null)
+const form = useForm({ name: '', category: 'MARKETING', language: 'en', header_type: 'NONE', header_text: '', body: '', footer_text: '', is_auto_reply: false, triggersText: '', publish: false })
+
+function openCreate() {
+    editingId.value = null
+    form.reset()
+    form.clearErrors()
+    showModal.value = true
+}
+function openEdit(r) {
+    editingId.value = r.id
+    form.clearErrors()
+    form.name = r.name; form.category = r.category || 'MARKETING'; form.language = r.language || 'en'
+    form.header_type = r.header_type || 'NONE'; form.header_text = r.header_text || ''
+    form.body = r.body || ''; form.footer_text = r.footer_text || ''
+    form.is_auto_reply = !!r.is_auto_reply; form.triggersText = (r.triggers || []).join(', '); form.publish = false
+    showModal.value = true
+}
+function submit(publish) {
+    form.publish = publish
+    form.transform(d => ({ ...d, triggers: d.triggersText.split(',').map(s => s.trim()).filter(Boolean) }))
+    const opts = { preserveScroll: true, onSuccess: () => { showModal.value = false } }
+    if (editingId.value) form.put(route('v2.wa-module.templates.update', { template: editingId.value }), opts)
+    else form.post(route('v2.wa-module.templates.store'), opts)
+}
+function destroy(r) {
+    if (!confirm(t.value.confirmDel)) return
+    router.delete(route('v2.wa-module.templates.destroy', { template: r.id }), { preserveScroll: true })
+}
+function publish(r) { router.post(route('v2.wa-module.templates.publish', { template: r.id }), {}, { preserveScroll: true }) }
+function toggleAuto(r) { router.post(route('v2.wa-module.templates.auto-reply', { template: r.id }), {}, { preserveScroll: true }) }
+function sync() { router.post(route('v2.wa-module.templates.sync'), {}, { preserveScroll: true }) }
 </script>
+
 <template>
     <Head :title="t.title" />
     <div style="padding:24px; max-width:1200px; margin:0 auto;">
-        <div style="margin-bottom:16px;"><div class="eyebrow">{{ t.eyebrow }}</div><h1 style="margin:4px 0 0; font-size:22px; font-weight:700; color:var(--fg);">{{ t.title }}</h1><p style="margin:6px 0 0; font-size:13px; color:var(--fg-subtle);">{{ t.desc }}</p></div>
+        <div style="margin-bottom:16px; display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
+            <div><div class="eyebrow">{{ t.eyebrow }}</div><h1 style="margin:4px 0 0; font-size:22px; font-weight:700; color:var(--fg);">{{ t.title }}</h1><p style="margin:6px 0 0; font-size:13px; color:var(--fg-subtle);">{{ t.desc }}</p></div>
+            <div style="display:flex; gap:8px;">
+                <button class="btn btn-ghost btn-sm" @click="sync"><Icon name="refresh-cw" :size="14" /> {{ t.sync }}</button>
+                <button v-if="can_edit" class="btn btn-primary btn-sm" @click="openCreate"><Icon name="plus" :size="14" /> {{ t.new }}</button>
+            </div>
+        </div>
+
         <div class="card" style="padding:12px; margin-bottom:12px; display:flex; gap:8px; align-items:center;">
             <div style="position:relative; flex:1; min-width:240px;"><Icon name="search" :size="14" style="position:absolute; inset-inline-start:10px; top:50%; transform:translateY(-50%); color:var(--fg-faint);" /><input v-model="f.q" type="search" :placeholder="t.searchPh" class="input" style="padding-inline-start:32px;" /></div>
             <button v-if="f.q" class="btn btn-ghost btn-sm" @click="f.q=''; apply()">{{ t.clear }}</button>
         </div>
+
         <div class="card" style="overflow:hidden;">
             <table class="table">
-                <thead><tr><th>{{ t.col.name }}</th><th>{{ t.col.category }}</th><th>{{ t.col.lang }}</th><th>{{ t.col.status }}</th><th>{{ t.col.auto }}</th><th>{{ t.col.preview }}</th><th>{{ t.col.updated }}</th></tr></thead>
+                <thead><tr><th>{{ t.col.name }}</th><th>{{ t.col.category }}</th><th>{{ t.col.lang }}</th><th>{{ t.col.status }}</th><th>{{ t.col.auto }}</th><th>{{ t.col.preview }}</th><th style="width:120px;"></th></tr></thead>
                 <tbody>
                     <tr v-if="!page.data.length"><td colspan="7" style="text-align:center; padding:40px; color:var(--fg-faint);">{{ t.empty }}</td></tr>
                     <tr v-for="r in page.data" :key="r.id">
@@ -38,16 +89,62 @@ function apply() { router.get(route('v2.wa-module.templates'), { q: f.q || undef
                         <td style="font-size:12px;">{{ r.category || '—' }}</td>
                         <td class="mono" style="font-size:12px;">{{ r.language || '—' }}</td>
                         <td><span class="badge-muted">{{ r.status || r.local_status || '—' }}</span></td>
-                        <td>{{ r.is_auto_reply ? '✓' : '—' }}</td>
-                        <td style="font-size:12px; color:var(--fg-subtle); max-width:320px;">{{ r.body_preview || '—' }}</td>
-                        <td style="font-size:11px; color:var(--fg-faint);">{{ r.updated_at }}</td>
+                        <td><button class="btn btn-ghost btn-sm" :title="t.auto" @click="toggleAuto(r)">{{ r.is_auto_reply ? '✓' : '—' }}</button></td>
+                        <td style="font-size:12px; color:var(--fg-subtle); max-width:280px;">{{ r.body_preview || '—' }}</td>
+                        <td>
+                            <div style="display:flex; gap:4px; justify-content:flex-end;">
+                                <button class="btn btn-ghost btn-sm" :title="t.edit" @click="openEdit(r)"><Icon name="pencil" :size="13" /></button>
+                                <button v-if="r.status !== 'APPROVED'" class="btn btn-ghost btn-sm" :title="t.publish" @click="publish(r)"><Icon name="upload" :size="13" /></button>
+                                <button class="btn btn-ghost btn-sm" :title="t.del" @click="destroy(r)"><Icon name="trash-2" :size="13" style="color:#dc2626;" /></button>
+                            </div>
+                        </td>
                     </tr>
                 </tbody>
             </table>
         </div>
+
         <div v-if="page.last_page > 1" style="display:flex; justify-content:space-between; align-items:center; margin-top:12px; font-size:12px; color:var(--fg-subtle);">
             <span>{{ t.showing }} {{ page.from }}–{{ page.to }} {{ t.of }} {{ page.total }}</span>
             <div style="display:flex; gap:4px;"><a v-for="link in page.links" :key="link.label" :href="link.url || undefined" v-html="link.label" :class="['btn','btn-sm', link.active ? 'btn-primary' : 'btn-ghost', !link.url ? 'is-disabled' : '']" style="min-width:32px;" /></div>
+        </div>
+
+        <!-- modal -->
+        <div v-if="showModal" style="position:fixed; inset:0; background:rgba(0,0,0,.4); display:flex; align-items:center; justify-content:center; z-index:50; padding:16px;" @click.self="showModal=false">
+            <div class="card" style="width:560px; max-width:100%; max-height:90vh; overflow:auto; padding:20px;">
+                <h3 style="margin:0 0 14px; font-size:16px; font-weight:700; color:var(--fg);">{{ editingId ? t.edit : t.new }}</h3>
+                <div style="display:grid; gap:12px;">
+                    <div>
+                        <label style="font-size:12px; color:var(--fg-subtle);">{{ t.f.name }}</label>
+                        <input v-model="form.name" class="input" placeholder="welcome_message_en" />
+                        <div v-if="form.errors.name" style="font-size:11px; color:#dc2626;">{{ form.errors.name }}</div>
+                    </div>
+                    <div style="display:flex; gap:10px;">
+                        <div style="flex:1;"><label style="font-size:12px; color:var(--fg-subtle);">{{ t.f.category }}</label>
+                            <select v-model="form.category" class="input"><option>MARKETING</option><option>UTILITY</option><option>AUTHENTICATION</option></select></div>
+                        <div style="flex:1;"><label style="font-size:12px; color:var(--fg-subtle);">{{ t.f.lang }}</label>
+                            <select v-model="form.language" class="input"><option value="en">en</option><option value="ar">ar</option></select></div>
+                    </div>
+                    <div style="display:flex; gap:10px;">
+                        <div style="flex:1;"><label style="font-size:12px; color:var(--fg-subtle);">{{ t.f.header }}</label>
+                            <select v-model="form.header_type" class="input"><option>NONE</option><option>TEXT</option><option>IMAGE</option><option>VIDEO</option><option>DOCUMENT</option></select></div>
+                        <div v-if="form.header_type==='TEXT'" style="flex:2;"><label style="font-size:12px; color:var(--fg-subtle);">{{ t.f.headerText }}</label>
+                            <input v-model="form.header_text" class="input" maxlength="60" /></div>
+                    </div>
+                    <div>
+                        <label style="font-size:12px; color:var(--fg-subtle);">{{ t.f.body }}</label>
+                        <textarea v-model="form.body" class="input" rows="4" maxlength="1024" placeholder="Hello {{1}}, ..."></textarea>
+                        <div v-if="form.errors.body" style="font-size:11px; color:#dc2626;">{{ form.errors.body }}</div>
+                    </div>
+                    <div><label style="font-size:12px; color:var(--fg-subtle);">{{ t.f.footer }}</label><input v-model="form.footer_text" class="input" maxlength="60" /></div>
+                    <label style="display:flex; align-items:center; gap:8px; font-size:13px; color:var(--fg);"><input type="checkbox" v-model="form.is_auto_reply" /> {{ t.f.autoReply }}</label>
+                    <div v-if="form.is_auto_reply"><label style="font-size:12px; color:var(--fg-subtle);">{{ t.f.triggers }}</label><input v-model="form.triggersText" class="input" placeholder="hi, hello, menu" /></div>
+                </div>
+                <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:18px;">
+                    <button class="btn btn-ghost" @click="showModal=false">{{ t.cancel }}</button>
+                    <button class="btn btn-ghost" :disabled="form.processing" @click="submit(false)">{{ t.save }}</button>
+                    <button class="btn btn-primary" :disabled="form.processing" @click="submit(true)">{{ t.saveSubmit }}</button>
+                </div>
+            </div>
         </div>
     </div>
 </template>

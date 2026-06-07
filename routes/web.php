@@ -698,6 +698,33 @@ Route::middleware([
     Route::get('/wa-module/conversations/{conversation}', [\App\Http\Controllers\V2\WaModuleController::class, 'conversation'])->name('wa-module.conversation');
     Route::get('/wa-module/sessions',              [\App\Http\Controllers\V2\WaModuleController::class, 'sessions'])->name('wa-module.sessions');
     Route::post('/wa-module/send',                 [\App\Http\Controllers\V2\WaModuleController::class, 'sendMessage'])->name('wa-module.send');
+    // Templates CRUD + Meta actions
+    Route::post('/wa-module/templates',                       [\App\Http\Controllers\V2\WaModuleController::class, 'storeTemplate'])->name('wa-module.templates.store');
+    Route::put('/wa-module/templates/{template}',             [\App\Http\Controllers\V2\WaModuleController::class, 'updateTemplate'])->name('wa-module.templates.update');
+    Route::delete('/wa-module/templates/{template}',          [\App\Http\Controllers\V2\WaModuleController::class, 'destroyTemplate'])->name('wa-module.templates.destroy');
+    Route::post('/wa-module/templates-sync',                  [\App\Http\Controllers\V2\WaModuleController::class, 'syncTemplates'])->name('wa-module.templates.sync');
+    Route::post('/wa-module/templates/{template}/publish',    [\App\Http\Controllers\V2\WaModuleController::class, 'publishTemplate'])->name('wa-module.templates.publish');
+    Route::post('/wa-module/templates/{template}/auto-reply', [\App\Http\Controllers\V2\WaModuleController::class, 'toggleTemplateAutoReply'])->name('wa-module.templates.auto-reply');
+    // Contacts + Groups CRUD
+    Route::post('/wa-module/contacts',              [\App\Http\Controllers\V2\WaModuleController::class, 'storeContact'])->name('wa-module.contacts.store');
+    Route::put('/wa-module/contacts/{contact}',     [\App\Http\Controllers\V2\WaModuleController::class, 'updateContact'])->name('wa-module.contacts.update');
+    Route::delete('/wa-module/contacts/{contact}',  [\App\Http\Controllers\V2\WaModuleController::class, 'destroyContact'])->name('wa-module.contacts.destroy');
+    Route::post('/wa-module/groups',                [\App\Http\Controllers\V2\WaModuleController::class, 'storeGroup'])->name('wa-module.groups.store');
+    Route::delete('/wa-module/groups/{group}',      [\App\Http\Controllers\V2\WaModuleController::class, 'destroyGroup'])->name('wa-module.groups.destroy');
+    Route::post('/wa-module/groups/{group}/toggle', [\App\Http\Controllers\V2\WaModuleController::class, 'toggleGroupMember'])->name('wa-module.groups.toggle');
+    // Sessions + conversation reply
+    Route::post('/wa-module/sessions/{session}/block',  [\App\Http\Controllers\V2\WaModuleController::class, 'toggleSessionBlock'])->name('wa-module.sessions.block');
+    Route::delete('/wa-module/sessions/{session}',      [\App\Http\Controllers\V2\WaModuleController::class, 'destroySession'])->name('wa-module.sessions.destroy');
+    Route::post('/wa-module/conversations/{conversation}/reply', [\App\Http\Controllers\V2\WaModuleController::class, 'replyConversation'])->name('wa-module.conversations.reply');
+    // Campaigns CRUD + send + recipients
+    Route::post('/wa-module/campaigns',                       [\App\Http\Controllers\V2\WaModuleController::class, 'storeCampaign'])->name('wa-module.campaigns.store');
+    Route::put('/wa-module/campaigns/{campaign}',             [\App\Http\Controllers\V2\WaModuleController::class, 'updateCampaign'])->name('wa-module.campaigns.update');
+    Route::delete('/wa-module/campaigns/{campaign}',          [\App\Http\Controllers\V2\WaModuleController::class, 'destroyCampaign'])->name('wa-module.campaigns.destroy');
+    Route::post('/wa-module/campaigns/{campaign}/send',       [\App\Http\Controllers\V2\WaModuleController::class, 'sendCampaign'])->name('wa-module.campaigns.send');
+    Route::post('/wa-module/campaigns/{campaign}/recipients', [\App\Http\Controllers\V2\WaModuleController::class, 'addCampaignRecipient'])->name('wa-module.campaigns.recipients');
+    // Settings
+    Route::get('/wa-module/settings',  [\App\Http\Controllers\V2\WaModuleController::class, 'settings'])->name('wa-module.settings');
+    Route::post('/wa-module/settings', [\App\Http\Controllers\V2\WaModuleController::class, 'updateSettings'])->name('wa-module.settings.update');
 
     // WhatsApp — Triggers (auto-reply builder, v2 replacement for WhatsappTriggerResource). Admin only.
     Route::get('/whatsapp/triggers',                [\App\Http\Controllers\V2\WhatsappTriggersController::class, 'index'])->name('whatsapp.triggers.index');

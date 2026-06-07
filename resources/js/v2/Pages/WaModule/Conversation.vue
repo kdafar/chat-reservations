@@ -1,17 +1,25 @@
 <script setup>
 import { computed } from 'vue'
-import { Head, router, usePage } from '@inertiajs/vue3'
+import { Head, router, useForm, usePage } from '@inertiajs/vue3'
 import AppLayout from '../../Layouts/AppLayout.vue'
 defineOptions({ layout: AppLayout })
 import Icon from '../../Components/Icon.vue'
 
-defineProps({ conversation: Object, messages: Array })
+const props = defineProps({ conversation: Object, messages: Array })
 const pageProps = usePage()
 const isRtl = computed(() => (pageProps.props.locale ?? 'en') === 'ar')
 const t = computed(() => isRtl.value
-    ? { eyebrow: 'منصة واتساب', back: 'رجوع', empty: 'لا توجد رسائل' }
-    : { eyebrow: 'WhatsApp Platform', back: 'Back', empty: 'No messages' })
+    ? { eyebrow: 'منصة واتساب', back: 'رجوع', empty: 'لا توجد رسائل', ph: 'اكتب رسالة…', send: 'إرسال' }
+    : { eyebrow: 'WhatsApp Platform', back: 'Back', empty: 'No messages', ph: 'Type a message…', send: 'Send' })
 function back() { router.get(route('v2.wa-module.conversations')) }
+
+const reply = useForm({ body: '' })
+function send() {
+    if (!reply.body.trim()) return
+    reply.post(route('v2.wa-module.conversations.reply', { conversation: props.conversation.id }), {
+        preserveScroll: true, onSuccess: () => reply.reset('body'),
+    })
+}
 </script>
 <template>
     <Head :title="conversation.contact_name || conversation.contact_msisdn || 'Conversation'" />
@@ -30,6 +38,10 @@ function back() { router.get(route('v2.wa-module.conversations')) }
                     <div style="font-size:10px; color:#667; margin-top:3px; text-align:end;">{{ m.created_at }} · {{ m.status }}</div>
                 </div>
             </div>
+        </div>
+        <div class="card" style="padding:12px; margin-top:12px; display:flex; gap:8px; align-items:center;">
+            <input v-model="reply.body" class="input" :placeholder="t.ph" style="flex:1;" @keyup.enter="send" />
+            <button class="btn btn-primary" :disabled="reply.processing || !reply.body.trim()" @click="send"><Icon name="send" :size="14" /> {{ t.send }}</button>
         </div>
     </div>
 </template>

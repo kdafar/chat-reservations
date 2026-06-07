@@ -147,6 +147,7 @@ const navGates = {
     'wap-contacts':         { roles: ['admin', 'super_admin', 'clinic_admin'] },
     'wap-campaigns':        { roles: ['admin', 'super_admin', 'clinic_admin'] },
     'wap-sessions':         { roles: ['admin', 'super_admin', 'clinic_admin'] },
+    'wap-settings':         { roles: ['admin', 'super_admin', 'clinic_admin'] },
 }
 function itemVisible(it) {
     const g = navGates[it.id]
@@ -451,6 +452,7 @@ const navSections = computed(() => ([
             { id: 'wap-contacts',      icon: 'users-round',      label: locale.value === 'ar' ? 'جهات الاتصال' : 'Contacts', href: '/admin/v2/wa-module/contacts', v2: true },
             { id: 'wap-campaigns',     icon: 'send',             label: locale.value === 'ar' ? 'الحملات' : 'Campaigns', href: '/admin/v2/wa-module/campaigns', v2: true },
             { id: 'wap-sessions',      icon: 'message-circle',   label: locale.value === 'ar' ? 'الجلسات' : 'Sessions', href: '/admin/v2/wa-module/sessions', v2: true },
+            { id: 'wap-settings',      icon: 'settings',         label: locale.value === 'ar' ? 'الإعدادات' : 'Settings', href: '/admin/v2/wa-module/settings', v2: true },
         ],
     },
 ].map(section => ({
