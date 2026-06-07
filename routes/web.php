@@ -697,10 +697,12 @@ Route::middleware([
     Route::get('/wa-module/inbox',                 [\App\Http\Controllers\V2\WaModuleController::class, 'inbox'])->name('wa-module.inbox');
     Route::get('/wa-module/conversations',         [\App\Http\Controllers\V2\WaModuleController::class, 'conversations'])->name('wa-module.conversations');
     Route::get('/wa-module/conversations/{conversation}', [\App\Http\Controllers\V2\WaModuleController::class, 'conversation'])->name('wa-module.conversation');
+    Route::get('/wa-module/logs',                  [\App\Http\Controllers\V2\WaModuleController::class, 'logs'])->name('wa-module.logs');
     Route::get('/wa-module/sessions',              [\App\Http\Controllers\V2\WaModuleController::class, 'sessions'])->name('wa-module.sessions');
     Route::post('/wa-module/send',                 [\App\Http\Controllers\V2\WaModuleController::class, 'sendMessage'])->name('wa-module.send');
     // Templates CRUD + Meta actions
     Route::post('/wa-module/templates',                       [\App\Http\Controllers\V2\WaModuleController::class, 'storeTemplate'])->name('wa-module.templates.store');
+    Route::post('/wa-module/templates-carousel',              [\App\Http\Controllers\V2\WaModuleController::class, 'storeCarousel'])->name('wa-module.templates.carousel');
     Route::put('/wa-module/templates/{template}',             [\App\Http\Controllers\V2\WaModuleController::class, 'updateTemplate'])->name('wa-module.templates.update');
     Route::delete('/wa-module/templates/{template}',          [\App\Http\Controllers\V2\WaModuleController::class, 'destroyTemplate'])->name('wa-module.templates.destroy');
     Route::post('/wa-module/templates-sync',                  [\App\Http\Controllers\V2\WaModuleController::class, 'syncTemplates'])->name('wa-module.templates.sync');

@@ -14,13 +14,15 @@ const pageProps = usePage()
 const isRtl = computed(() => (pageProps.props.locale ?? 'en') === 'ar')
 const t = computed(() => isRtl.value ? {
     title: 'القوالب', eyebrow: 'منصة واتساب', desc: 'قوالب الرسائل المعتمدة لدى ميتا.', searchPh: 'ابحث بالاسم…',
-    sync: 'مزامنة من ميتا', new: 'قالب جديد', edit: 'تعديل', del: 'حذف', publish: 'إرسال للمراجعة', auto: 'تبديل الرد التلقائي',
+    sync: 'مزامنة من ميتا', new: 'قالب جديد', newCarousel: 'كاروسيل', edit: 'تعديل', del: 'حذف', publish: 'إرسال للمراجعة', auto: 'تبديل الرد التلقائي',
+    car: { title: 'قالب كاروسيل', bundle: 'رسالة التقديم', cards: 'البطاقات', addCard: 'إضافة بطاقة', img: 'رابط الصورة', cbody: 'نص البطاقة', addBtn: 'زر' },
     empty: 'لا توجد قوالب', showing: 'عرض', of: 'من', delConfirm: 'حذف هذا القالب؟', preview: 'المعاينة',
     f: { name: 'الاسم', nameHint: 'أحرف صغيرة وشرطة سفلية', category: 'الفئة', lang: 'اللغة', header: 'الترويسة', headerText: 'نص الترويسة', mediaUrl: 'رابط الوسائط', body: 'النص', footer: 'التذييل', autoReply: 'رد تلقائي', triggers: 'كلمات التحفيز', buttons: 'الأزرار', addBtn: 'إضافة زر', btnText: 'النص', btnUrl: 'الرابط', btnPhone: 'الهاتف' },
     save: 'حفظ', saveSubmit: 'حفظ وإرسال', cancel: 'إلغاء',
 } : {
     title: 'Templates', eyebrow: 'WhatsApp Platform', desc: 'Message templates registered with Meta.', searchPh: 'Search by name…',
-    sync: 'Sync from Meta', new: 'New template', edit: 'Edit', del: 'Delete', publish: 'Submit for review', auto: 'Toggle auto-reply',
+    sync: 'Sync from Meta', new: 'New template', newCarousel: 'Carousel', edit: 'Edit', del: 'Delete', publish: 'Submit for review', auto: 'Toggle auto-reply',
+    car: { title: 'Carousel template', bundle: 'Intro message', cards: 'Cards', addCard: 'Add card', img: 'Image URL', cbody: 'Card text', addBtn: 'Button' },
     empty: 'No templates', showing: 'Showing', of: 'of', delConfirm: 'Delete this template?', preview: 'Preview',
     f: { name: 'Name', nameHint: 'lowercase + underscores', category: 'Category', lang: 'Language', header: 'Header', headerText: 'Header text', mediaUrl: 'Media URL', body: 'Body', footer: 'Footer', autoReply: 'Auto-reply', triggers: 'Trigger keywords', buttons: 'Buttons', addBtn: 'Add button', btnText: 'Text', btnUrl: 'URL', btnPhone: 'Phone' },
     save: 'Save draft', saveSubmit: 'Save & submit', cancel: 'Cancel',
@@ -66,6 +68,24 @@ const statusStyle = (s) => {
     const [c, bg] = m[s] || ['#64748b', '#64748b1a']
     return { color: c, background: bg }
 }
+
+// ---- carousel builder ----
+const showCarousel = ref(false)
+const cForm = useForm({ name: '', category: 'MARKETING', language: 'en', body: '', cards: [], publish: false })
+function openCarousel() {
+    cForm.reset()
+    cForm.cards = [newCard(), newCard()]
+    cForm.clearErrors(); showCarousel.value = true
+}
+function newCard() { return { image_url: '', body: '', buttons: [] } }
+function addCard() { if (cForm.cards.length < 10) cForm.cards.push(newCard()) }
+function removeCard(i) { if (cForm.cards.length > 2) cForm.cards.splice(i, 1) }
+function addCardBtn(card) { if (card.buttons.length < 2) card.buttons.push({ type: 'QUICK_REPLY', text: '', url: '' }) }
+function removeCardBtn(card, i) { card.buttons.splice(i, 1) }
+function submitCarousel(publish) {
+    cForm.publish = publish
+    cForm.post(route('v2.wa-module.templates.carousel'), { preserveScroll: true, onSuccess: () => { showCarousel.value = false } })
+}
 </script>
 
 <template>
@@ -75,6 +95,7 @@ const statusStyle = (s) => {
             <div><div class="eyebrow">{{ t.eyebrow }}</div><h1 style="margin:4px 0 0; font-size:22px; font-weight:700; color:var(--fg);">{{ t.title }}</h1><p style="margin:6px 0 0; font-size:13px; color:var(--fg-subtle);">{{ t.desc }}</p></div>
             <div style="display:flex; gap:8px;">
                 <button class="btn btn-ghost btn-sm" @click="sync"><Icon name="refresh-cw" :size="14" /> {{ t.sync }}</button>
+                <button v-if="can_edit" class="btn btn-ghost btn-sm" @click="openCarousel"><Icon name="gallery-horizontal-end" :size="14" /> {{ t.newCarousel }}</button>
                 <button v-if="can_edit" class="btn btn-primary btn-sm" @click="openCreate"><Icon name="plus" :size="14" /> {{ t.new }}</button>
             </div>
         </div>
@@ -169,6 +190,47 @@ const statusStyle = (s) => {
                     <button class="btn btn-ghost" @click="showModal=false">{{ t.cancel }}</button>
                     <button class="btn btn-ghost" :disabled="form.processing" @click="submit(false)">{{ t.save }}</button>
                     <button class="btn btn-primary" :disabled="form.processing" @click="submit(true)">{{ t.saveSubmit }}</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- carousel builder modal -->
+        <div v-if="showCarousel" class="modal-backdrop" @click.self="showCarousel=false">
+            <div class="modal-panel modal-lg" role="dialog" aria-modal="true" style="display:flex; flex-direction:column; max-height:90vh;">
+                <div style="padding:16px 20px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center;">
+                    <h3 style="margin:0; font-size:15px; font-weight:600; display:flex; align-items:center; gap:8px;"><Icon name="gallery-horizontal-end" :size="16" style="color:#8b5cf6;" /> {{ t.car.title }}</h3>
+                    <button class="btn btn-ghost btn-sm btn-icon" @click="showCarousel=false"><Icon name="x" :size="16" /></button>
+                </div>
+                <div style="padding:18px 20px; overflow:auto; display:grid; gap:14px;">
+                    <div style="display:flex; gap:10px;">
+                        <div style="flex:2;"><label class="wa-lbl">{{ t.f.name }}</label><input v-model="cForm.name" class="input" placeholder="summer_carousel_en" /><div v-if="cForm.errors.name" class="wa-err">{{ cForm.errors.name }}</div></div>
+                        <div style="flex:1;"><label class="wa-lbl">{{ t.f.category }}</label><SearchableSelect v-model="cForm.category" :items="[{value:'MARKETING',label:'Marketing'},{value:'UTILITY',label:'Utility'}]" :nullable="false" /></div>
+                        <div style="flex:1;"><label class="wa-lbl">{{ t.f.lang }}</label><SearchableSelect v-model="cForm.language" :items="langItems" :nullable="false" /></div>
+                    </div>
+                    <div><label class="wa-lbl">{{ t.car.bundle }}</label><textarea v-model="cForm.body" class="input" rows="2" maxlength="1024"></textarea><div v-if="cForm.errors.body" class="wa-err">{{ cForm.errors.body }}</div></div>
+                    <div style="display:flex; justify-content:space-between; align-items:center;"><label class="wa-lbl" style="margin:0;">{{ t.car.cards }} ({{ cForm.cards.length }}/10)</label><button type="button" class="btn btn-ghost btn-sm" :disabled="cForm.cards.length>=10" @click="addCard"><Icon name="plus" :size="12" /> {{ t.car.addCard }}</button></div>
+                    <!-- horizontal card builder -->
+                    <div style="display:flex; gap:12px; overflow-x:auto; padding-bottom:6px;">
+                        <div v-for="(card,ci) in cForm.cards" :key="ci" class="card" style="min-width:260px; max-width:260px; padding:12px; flex:0 0 auto;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;"><span style="font-size:12px; font-weight:600; color:var(--fg);">#{{ ci+1 }}</span><button v-if="cForm.cards.length>2" type="button" class="btn btn-ghost btn-sm btn-icon" @click="removeCard(ci)"><Icon name="x" :size="12" :style="{color:'var(--destructive)'}" /></button></div>
+                            <div v-if="card.image_url" style="height:90px; border-radius:8px; background:#ccd0d5 center/cover no-repeat; margin-bottom:8px;" :style="{ backgroundImage:'url('+card.image_url+')' }"></div>
+                            <input v-model="card.image_url" class="input" :placeholder="t.car.img" style="font-size:12px; margin-bottom:6px;" />
+                            <textarea v-model="card.body" class="input" :placeholder="t.car.cbody" rows="2" maxlength="160" style="font-size:12px;"></textarea>
+                            <div v-for="(b,bi) in card.buttons" :key="bi" style="display:flex; gap:4px; margin-top:6px; align-items:center;">
+                                <select v-model="b.type" class="input" style="flex:0 0 90px; font-size:11px;"><option value="QUICK_REPLY">Reply</option><option value="URL">URL</option></select>
+                                <input v-model="b.text" class="input" placeholder="Text" style="flex:1; font-size:11px;" maxlength="25" />
+                                <button type="button" class="btn btn-ghost btn-sm btn-icon" @click="removeCardBtn(card,bi)"><Icon name="x" :size="11" /></button>
+                            </div>
+                            <input v-for="(b,bi) in card.buttons.filter(x=>x.type==='URL')" :key="'u'+bi" v-model="b.url" class="input" placeholder="https://…" style="font-size:11px; margin-top:4px;" />
+                            <button v-if="card.buttons.length<2" type="button" class="btn btn-ghost btn-sm" style="margin-top:6px; width:100%;" @click="addCardBtn(card)"><Icon name="plus" :size="11" /> {{ t.car.addBtn }}</button>
+                        </div>
+                    </div>
+                    <div v-if="cForm.errors.cards" class="wa-err">{{ cForm.errors.cards }}</div>
+                </div>
+                <div style="padding:14px 20px; border-top:1px solid var(--line); display:flex; justify-content:flex-end; gap:8px;">
+                    <button class="btn btn-ghost" @click="showCarousel=false">{{ t.cancel }}</button>
+                    <button class="btn btn-ghost" :disabled="cForm.processing" @click="submitCarousel(false)">{{ t.save }}</button>
+                    <button class="btn btn-primary" :disabled="cForm.processing" @click="submitCarousel(true)">{{ t.saveSubmit }}</button>
                 </div>
             </div>
         </div>

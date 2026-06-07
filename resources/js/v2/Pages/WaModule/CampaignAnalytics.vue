@@ -1,11 +1,18 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { Head, router, usePage } from '@inertiajs/vue3'
 import AppLayout from '../../Layouts/AppLayout.vue'
 defineOptions({ layout: AppLayout })
 import Icon from '../../Components/Icon.vue'
 
 const props = defineProps({ campaign: Object, metrics: Object, failures: Array, recipients: Object, filters: Object })
+
+// Live polling while the campaign is actively sending.
+const live = ref(props.campaign.status === 'sending')
+let poll = null
+function tick() { router.reload({ only: ['metrics', 'failures', 'recipients', 'campaign'], preserveScroll: true }) }
+onMounted(() => { if (live.value) poll = setInterval(tick, 10000) })
+onUnmounted(() => { if (poll) clearInterval(poll) })
 const pageProps = usePage()
 const isRtl = computed(() => (pageProps.props.locale ?? 'en') === 'ar')
 const t = computed(() => isRtl.value ? {
@@ -46,10 +53,15 @@ const stStyle = (s) => {
     <Head :title="campaign.name + ' · analytics'" />
     <div style="padding:24px; max-width:1200px; margin:0 auto;">
         <button class="btn btn-ghost btn-sm" style="margin-bottom:12px;" @click="router.get(route('v2.wa-module.campaigns'))"><Icon name="arrow-left" :size="14" /> {{ t.back }}</button>
-        <div style="margin-bottom:18px;">
-            <div class="eyebrow">{{ t.eyebrow }}</div>
-            <h1 style="margin:4px 0 0; font-size:22px; font-weight:700; color:var(--fg);">{{ campaign.name }}</h1>
-            <div style="font-size:12px; color:var(--fg-subtle); margin-top:3px;"><span class="mono">{{ campaign.template_name || '—' }}</span> · {{ campaign.status }}</div>
+        <div style="margin-bottom:18px; display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
+            <div>
+                <div class="eyebrow">{{ t.eyebrow }}</div>
+                <h1 style="margin:4px 0 0; font-size:22px; font-weight:700; color:var(--fg);">{{ campaign.name }}</h1>
+                <div style="font-size:12px; color:var(--fg-subtle); margin-top:3px;"><span class="mono">{{ campaign.template_name || '—' }}</span> · {{ campaign.status }}</div>
+            </div>
+            <span v-if="live" style="display:inline-flex; align-items:center; gap:6px; padding:5px 11px; border-radius:20px; background:#dc26261a; color:#dc2626; font-size:12px; font-weight:600;">
+                <span class="wa-live-dot"></span> LIVE
+            </span>
         </div>
 
         <!-- KPI tiles -->
@@ -108,3 +120,8 @@ const stStyle = (s) => {
         </div>
     </div>
 </template>
+
+<style scoped>
+.wa-live-dot { height:8px; width:8px; border-radius:50%; background:#dc2626; animation:wa-pulse 1.4s infinite; }
+@keyframes wa-pulse { 0%,100% { opacity:1; transform:scale(1); } 50% { opacity:.4; transform:scale(.8); } }
+</style>

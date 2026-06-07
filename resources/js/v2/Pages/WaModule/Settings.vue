@@ -4,6 +4,7 @@ import { Head, useForm, usePage } from '@inertiajs/vue3'
 import AppLayout from '../../Layouts/AppLayout.vue'
 defineOptions({ layout: AppLayout })
 import Icon from '../../Components/Icon.vue'
+import SearchableSelect from '../../Components/SearchableSelect.vue'
 
 const props = defineProps({ settings: Object, health: Object, configured: Boolean })
 const pageProps = usePage()
@@ -17,6 +18,7 @@ const t = computed(() => isRtl.value ? {
         welcome_en: 'رسالة التدفق (EN)', welcome_ar: 'رسالة التدفق (AR)', fallback_en: 'رد افتراضي (EN)', fallback_ar: 'رد افتراضي (AR)',
         about_en: 'من نحن (EN)', about_ar: 'من نحن (AR)', pricing_en: 'الأسعار (EN)', pricing_ar: 'الأسعار (AR)',
         privacy_en: 'الخصوصية (EN)', privacy_ar: 'الخصوصية (AR)', whitelist: 'استثناء حد التكرار (أرقام مفصولة بفواصل)', restricted: 'تقييد البدء (1/0)',
+        stopKeywords: 'كلمات الإيقاف (يتخطّى الرد التلقائي)', modeNote: 'الردود الجاهزة أدناه تعمل في وضع «الرد بالكلمات المفتاحية».',
     },
 } : {
     title: 'Settings', eyebrow: 'WhatsApp Platform', desc: 'Bot messages & behavior + number health.', save: 'Save settings',
@@ -27,6 +29,7 @@ const t = computed(() => isRtl.value ? {
         welcome_en: 'Flow welcome (EN)', welcome_ar: 'Flow welcome (AR)', fallback_en: 'Fallback reply (EN)', fallback_ar: 'Fallback reply (AR)',
         about_en: 'About (EN)', about_ar: 'About (AR)', pricing_en: 'Pricing (EN)', pricing_ar: 'Pricing (AR)',
         privacy_en: 'Privacy (EN)', privacy_ar: 'Privacy (AR)', whitelist: 'Frequency-cap whitelist (comma phones)', restricted: 'Restrict initiation (1/0)',
+        stopKeywords: 'Stop keywords (skip auto-reply)', modeNote: 'The canned replies below run in “Keyword auto-reply” mode.',
     },
 })
 
@@ -34,6 +37,17 @@ const form = useForm({ settings: { ...props.settings } })
 function save() { form.post(route('v2.wa-module.settings.update'), { preserveScroll: true }) }
 
 const K = (k) => 'whatsapp.' + k
+
+const entryItems = computed(() => isRtl.value ? [
+    { value: 'flow', label: 'تدفّق (قائمة تفاعلية)' },
+    { value: 'list', label: 'قائمة' },
+    { value: 'keyword', label: 'رد بالكلمات المفتاحية' },
+] : [
+    { value: 'flow', label: 'Flow (interactive menu)' },
+    { value: 'list', label: 'List' },
+    { value: 'keyword', label: 'Keyword auto-reply' },
+])
+const isKeywordMode = computed(() => (form.settings[K('entry_mode')] || '') === 'keyword')
 
 const q = computed(() => String(props.health?.quality_rating || '').toUpperCase())
 const qualityLabel = computed(() => ({ GREEN: 'High quality', HIGH: 'High quality', YELLOW: 'Medium quality', MEDIUM: 'Medium quality', RED: 'Low quality', LOW: 'Low quality' }[q.value] || (props.health?.status === 'ok' ? 'Connected' : props.health?.status || 'Unknown')))
@@ -69,10 +83,17 @@ const qualityStyle = computed(() => ({ background: qualityDot.value + '1a', colo
 
         <div class="card" style="padding:18px;">
             <div style="display:grid; gap:14px;">
-                <div>
-                    <label style="font-size:12px; color:var(--fg-subtle);">{{ t.lbl.entry_mode }}</label>
-                    <input v-model="form.settings[K('entry_mode')]" class="input" placeholder="flow" />
+                <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;">
+                    <div style="flex:1; min-width:220px;">
+                        <label style="font-size:12px; color:var(--fg-subtle);">{{ t.lbl.entry_mode }}</label>
+                        <SearchableSelect v-model="form.settings[K('entry_mode')]" :items="entryItems" :nullable="false" />
+                    </div>
+                    <div style="flex:2; min-width:240px;">
+                        <label style="font-size:12px; color:var(--fg-subtle);">{{ t.lbl.stopKeywords }}</label>
+                        <input v-model="form.settings[K('stop_keywords')]" class="input" placeholder="agent, human, support" />
+                    </div>
                 </div>
+                <div v-if="isKeywordMode" style="font-size:12px; color:#2563eb; background:#2563eb12; padding:8px 12px; border-radius:8px;">💡 {{ t.lbl.modeNote }}</div>
                 <hr style="border:none; border-top:1px solid var(--border);" />
                 <div style="font-size:12px; font-weight:600; color:var(--fg);">{{ t.sec.greet }}</div>
                 <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">

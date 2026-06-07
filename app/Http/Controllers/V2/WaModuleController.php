@@ -158,6 +158,71 @@ class WaModuleController extends Controller
         return back()->with('flash', ['type' => 'success', 'message' => 'Template deleted.']);
     }
 
+    /** Create a CAROUSEL template (multi-card: image + body + buttons per card). */
+    public function storeCarousel(Request $request, WhatsAppService $whatsapp): RedirectResponse
+    {
+        $this->authorizeAccess($request);
+        $v = $request->validate([
+            'name' => ['required', 'string', 'max:512', 'regex:/^[a-z0-9_]+$/'],
+            'category' => ['required', 'in:MARKETING,UTILITY'],
+            'language' => ['required', 'in:en,ar'],
+            'body' => ['required', 'string', 'max:1024'],
+            'cards' => ['required', 'array', 'min:2', 'max:10'],
+            'cards.*.image_url' => ['required', 'url', 'max:2048'],
+            'cards.*.body' => ['required', 'string', 'max:160'],
+            'cards.*.buttons' => ['array', 'max:2'],
+            'cards.*.buttons.*.type' => ['required_with:cards.*.buttons', 'in:QUICK_REPLY,URL'],
+            'cards.*.buttons.*.text' => ['required_with:cards.*.buttons', 'string', 'max:25'],
+            'cards.*.buttons.*.url' => ['nullable', 'string', 'max:2048'],
+            'publish' => ['boolean'],
+        ]);
+
+        $cards = array_map(function ($card) {
+            $comps = [
+                ['type' => 'HEADER', 'format' => 'IMAGE', 'example' => ['header_handle' => [$card['image_url']]], 'media_url' => $card['image_url']],
+                ['type' => 'BODY', 'text' => $card['body']],
+            ];
+            if (! empty($card['buttons'])) {
+                $comps[] = ['type' => 'BUTTONS', 'buttons' => array_map(function ($b) {
+                    $btn = ['type' => $b['type'], 'text' => $b['text']];
+                    if ($b['type'] === 'URL' && ! empty($b['url'])) {
+                        $btn['url'] = $b['url'];
+                    }
+                    return $btn;
+                }, $card['buttons'])];
+            }
+            return ['components' => $comps];
+        }, $v['cards']);
+
+        $components = [
+            ['type' => 'BODY', 'text' => $v['body']],
+            ['type' => 'CAROUSEL', 'cards' => $cards],
+        ];
+
+        $tpl = MessageTemplate::create([
+            'name' => strtolower($v['name']),
+            'category' => $v['category'],
+            'language' => $v['language'],
+            'body' => $v['body'],
+            'body_preview' => \Illuminate\Support\Str::limit($v['body'], 160).' · 🎠 '.count($cards).' cards',
+            'components' => $components,
+            'local_status' => 'draft',
+            'is_auto_reply' => false,
+            'triggers' => [],
+        ]);
+
+        if ($request->boolean('publish')) {
+            try {
+                $whatsapp->publishTemplateToMeta($tpl);
+                return back()->with('flash', ['type' => 'success', 'message' => 'Carousel created and submitted to Meta.']);
+            } catch (\Throwable $e) {
+                return back()->with('flash', ['type' => 'error', 'message' => 'Saved locally, Meta submit failed: '.$e->getMessage()]);
+            }
+        }
+
+        return back()->with('flash', ['type' => 'success', 'message' => 'Carousel template saved as draft.']);
+    }
+
     /** Pull all templates + statuses from Meta into the local table. */
     public function syncTemplates(Request $request, WhatsAppService $whatsapp): RedirectResponse
     {
@@ -741,6 +806,55 @@ class WaModuleController extends Controller
         ]);
     }
 
+    /** Message logs: every WaMessage across conversations, filterable. */
+    public function logs(Request $request)
+    {
+        $this->authorizeAccess($request);
+
+        $filters = [
+            'q' => trim((string) $request->query('q', '')),
+            'direction' => $request->query('direction', 'all'),
+            'status' => $request->query('status', 'all'),
+        ];
+
+        $page = WaMessage::query()
+            ->with('contact')
+            ->when($filters['direction'] !== 'all', fn ($q) => $q->where('direction', $filters['direction']))
+            ->when($filters['status'] !== 'all', fn ($q) => $q->where('status', $filters['status']))
+            ->when($filters['q'] !== '', fn ($q) => $q->where(fn ($w) => $w
+                ->where('body', 'like', "%{$filters['q']}%")
+                ->orWhereHas('contact', fn ($cc) => $cc->where('phone', 'like', "%{$filters['q']}%"))))
+            ->latest('id')
+            ->paginate(40)
+            ->withQueryString()
+            ->through(fn (WaMessage $m) => [
+                'id' => $m->id,
+                'phone' => optional($m->contact)->phone,
+                'direction' => $m->direction,
+                'type' => $m->type,
+                'status' => $m->status,
+                'body' => \Illuminate\Support\Str::limit((string) $m->body, 90),
+                'full_body' => $m->body,
+                'template_name' => $m->template_name,
+                'error' => $m->error_message,
+                'meta_message_id' => $m->meta_message_id,
+                'at' => optional($m->created_at)->toDateTimeString(),
+            ]);
+
+        $stats = [
+            'total' => WaMessage::count(),
+            'in' => WaMessage::where('direction', 'inbound')->count(),
+            'out' => WaMessage::where('direction', 'outbound')->count(),
+            'failed' => WaMessage::where('status', 'failed')->count(),
+        ];
+
+        return Inertia::render('WaModule/Logs', [
+            'filters' => $filters,
+            'page' => $page,
+            'stats' => $stats,
+        ]);
+    }
+
     /** Sessions (legacy flow engine state). */
     public function sessions(Request $request)
     {
@@ -1091,6 +1205,7 @@ class WaModuleController extends Controller
         'whatsapp.pricing_reply_en', 'whatsapp.pricing_reply_ar',
         'whatsapp.privacy_reply_en', 'whatsapp.privacy_reply_ar',
         'whatsapp.frequency_cap_whitelist',
+        'whatsapp.stop_keywords',
         'wa_initiation_restricted',
     ];
 
