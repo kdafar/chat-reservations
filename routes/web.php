@@ -728,6 +728,10 @@ Route::middleware([
     Route::put('/wa-module/campaigns/{campaign}',             [\App\Http\Controllers\V2\WaModuleController::class, 'updateCampaign'])->name('wa-module.campaigns.update');
     Route::delete('/wa-module/campaigns/{campaign}',          [\App\Http\Controllers\V2\WaModuleController::class, 'destroyCampaign'])->name('wa-module.campaigns.destroy');
     Route::post('/wa-module/campaigns/{campaign}/send',       [\App\Http\Controllers\V2\WaModuleController::class, 'sendCampaign'])->name('wa-module.campaigns.send');
+    Route::post('/wa-module/campaigns/{campaign}/test',       [\App\Http\Controllers\V2\WaModuleController::class, 'testCampaign'])->name('wa-module.campaigns.test');
+    Route::post('/wa-module/campaigns/{campaign}/pause',      [\App\Http\Controllers\V2\WaModuleController::class, 'pauseCampaign'])->name('wa-module.campaigns.pause');
+    Route::post('/wa-module/campaigns/{campaign}/resume',     [\App\Http\Controllers\V2\WaModuleController::class, 'resumeCampaign'])->name('wa-module.campaigns.resume');
+    Route::post('/wa-module/campaigns/{campaign}/recipients/{recipient}/retry', [\App\Http\Controllers\V2\WaModuleController::class, 'retryRecipient'])->name('wa-module.campaigns.retry');
     Route::post('/wa-module/campaigns/{campaign}/recipients', [\App\Http\Controllers\V2\WaModuleController::class, 'addCampaignRecipient'])->name('wa-module.campaigns.recipients');
     Route::post('/wa-module/campaigns/{campaign}/import',     [\App\Http\Controllers\V2\WaModuleController::class, 'importRecipients'])->name('wa-module.campaigns.import');
     Route::post('/wa-module/campaigns/{campaign}/from-group',  [\App\Http\Controllers\V2\WaModuleController::class, 'importFromGroup'])->name('wa-module.campaigns.from-group');

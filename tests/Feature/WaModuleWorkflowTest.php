@@ -27,12 +27,18 @@ class WaModuleWorkflowTest extends TestCase
         parent::setUp();
         // phpunit forces DB_DATABASE=:memory:, which leaks into the wa connection
         // fallback. Point the module connection at the real MySQL DB for the test.
+        $db = env('WA_DB_DATABASE', 'barfres');
         config([
             'database.connections.wa.driver' => 'mysql',
-            'database.connections.wa.database' => env('WA_DB_DATABASE', 'barfres'),
+            'database.connections.wa.database' => $db,
             'database.connections.wa.prefix' => 'wam_',
+            // default -> the real MySQL too, so auth (users/roles) resolves for
+            // actingAs(). Base TestCase uses no RefreshDatabase, so nothing wipes.
+            'database.default' => 'mysql',
+            'database.connections.mysql.database' => $db,
         ]);
         \DB::purge('wa');
+        \DB::purge('mysql');
         try {
             \DB::connection('wa')->getPdo();
         } catch (\Throwable $e) {
@@ -123,6 +129,61 @@ class WaModuleWorkflowTest extends TestCase
 
         $cmp->recipients()->delete();
         $cmp->delete();
+    }
+
+    public function test_campaign_send_blocks_until_template_and_variables_set(): void
+    {
+        Queue::fake();
+        $admin = \App\Models\User::whereHas('roles', fn ($q) => $q->whereIn('name', ['admin', 'super_admin', 'clinic_admin']))->first();
+        if (! $admin) {
+            $this->markTestSkipped('no admin user');
+        }
+
+        // template with one body variable
+        $tpl = \App\Wa\Hub\Models\MessageTemplate::create([
+            'name' => 'wf_camp_tpl_en', 'category' => 'MARKETING', 'language' => 'en', 'status' => 'APPROVED',
+            'body' => 'Hi {{1}}!', 'components' => [['type' => 'BODY', 'text' => 'Hi {{1}}!']], 'local_status' => 'published',
+        ]);
+        $c = PromotionalCampaign::create(['name' => 'WF Camp', 'status' => 'draft', 'default_locale' => 'en']);
+        PromotionalCampaignRecipient::create(['promotional_campaign_id' => $c->id, 'msisdn' => '+96599000222', 'status' => 'pending', 'locale' => 'en']);
+
+        // no template selected yet -> blocked
+        $this->actingAs($admin)->post(route('v2.wa-module.campaigns.send', $c))->assertSessionHas('flash.type', 'error');
+        Queue::assertNotPushed(SendPromotionalCampaignMessage::class);
+
+        // attach template but leave the variable empty -> still blocked
+        $c->update(['template_name' => $tpl->name, 'template_details' => ['components' => $tpl->components], 'template_variables' => ['1' => '']]);
+        $this->actingAs($admin)->post(route('v2.wa-module.campaigns.send', $c))->assertSessionHas('flash.type', 'error');
+        Queue::assertNotPushed(SendPromotionalCampaignMessage::class);
+
+        // fill the variable -> queues
+        $c->update(['template_variables' => ['1' => 'Sara']]);
+        $this->actingAs($admin)->post(route('v2.wa-module.campaigns.send', $c))->assertSessionHas('flash.type', 'success');
+        $c->refresh();
+        $this->assertSame('sending', $c->status);
+        Queue::assertPushed(SendPromotionalCampaignMessage::class, 1);
+
+        $c->recipients()->delete();
+        $c->delete();
+        $tpl->delete();
+    }
+
+    public function test_campaign_pause_resume_transitions(): void
+    {
+        $admin = \App\Models\User::whereHas('roles', fn ($q) => $q->whereIn('name', ['admin', 'super_admin', 'clinic_admin']))->first();
+        if (! $admin) {
+            $this->markTestSkipped('no admin user');
+        }
+        Queue::fake();
+        $c = PromotionalCampaign::create(['name' => 'WF PR', 'status' => 'sending', 'default_locale' => 'en']);
+
+        $this->actingAs($admin)->post(route('v2.wa-module.campaigns.pause', $c))->assertSessionHas('flash.type', 'success');
+        $this->assertSame('paused', $c->fresh()->status);
+
+        $this->actingAs($admin)->post(route('v2.wa-module.campaigns.resume', $c))->assertSessionHas('flash.type', 'success');
+        $this->assertSame('sending', $c->fresh()->status);
+
+        $c->delete();
     }
 
     public function test_webhook_stores_incoming_message_as_inbound(): void

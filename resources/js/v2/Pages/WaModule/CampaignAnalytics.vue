@@ -42,6 +42,8 @@ const fnl = computed(() => {
 })
 const statusFilters = ['all', 'pending', 'sent', 'delivered', 'read', 'failed']
 function setStatus(s) { router.get(route('v2.wa-module.campaigns.analytics', { campaign: props.campaign.id }), { status: s === 'all' ? undefined : s }, { preserveState: true, preserveScroll: true, replace: true }) }
+const isFailed = (s) => ['failed', 'limited', 'undeliverable', 'experiment_blocked'].includes(s)
+function retry(r) { router.post(route('v2.wa-module.campaigns.retry', { campaign: props.campaign.id, recipient: r.id }), {}, { preserveScroll: true }) }
 const stStyle = (s) => {
     const map = { read: '#06b6d4', delivered: '#16a34a', sent: '#3b82f6', pending: '#64748b', failed: '#dc2626', limited: '#d97706', undeliverable: '#dc2626' }
     const c = map[s] || '#64748b'
@@ -99,9 +101,9 @@ const stStyle = (s) => {
                 <button v-for="s in statusFilters" :key="s" :class="['btn','btn-sm', filters.status===s ? 'btn-primary':'btn-ghost']" style="text-transform:capitalize;" @click="setStatus(s)">{{ s==='all' ? t.all : s }}</button>
             </div>
             <table class="table">
-                <thead><tr><th>{{ t.col.phone }}</th><th>{{ t.col.name }}</th><th>{{ t.col.status }}</th><th>{{ t.col.sent }}</th><th>{{ t.col.delivered }}</th><th>{{ t.col.read }}</th><th>{{ t.col.error }}</th></tr></thead>
+                <thead><tr><th>{{ t.col.phone }}</th><th>{{ t.col.name }}</th><th>{{ t.col.status }}</th><th>{{ t.col.sent }}</th><th>{{ t.col.delivered }}</th><th>{{ t.col.read }}</th><th>{{ t.col.error }}</th><th></th></tr></thead>
                 <tbody>
-                    <tr v-if="!recipients.data.length"><td colspan="7" style="text-align:center; padding:34px; color:var(--fg-faint);">—</td></tr>
+                    <tr v-if="!recipients.data.length"><td colspan="8" style="text-align:center; padding:34px; color:var(--fg-faint);">—</td></tr>
                     <tr v-for="r in recipients.data" :key="r.id">
                         <td class="mono" style="font-size:12px; font-weight:600;">{{ r.msisdn }}</td>
                         <td style="font-size:12px;">{{ r.name || '—' }}</td>
@@ -109,7 +111,8 @@ const stStyle = (s) => {
                         <td class="mono" style="font-size:11px; color:var(--fg-faint);">{{ r.sent_at || '—' }}</td>
                         <td class="mono" style="font-size:11px; color:var(--fg-faint);">{{ r.delivered_at || '—' }}</td>
                         <td class="mono" style="font-size:11px; color:var(--fg-faint);">{{ r.read_at || '—' }}</td>
-                        <td style="font-size:11px; color:#dc2626; max-width:200px;">{{ r.error || '' }}</td>
+                        <td style="font-size:11px; color:#dc2626; max-width:180px;">{{ r.error || '' }}</td>
+                        <td style="width:60px;"><button v-if="isFailed(r.status)" class="btn btn-ghost btn-sm btn-icon" :title="'Retry'" @click="retry(r)"><Icon name="rotate-cw" :size="13" /></button></td>
                     </tr>
                 </tbody>
             </table>

@@ -647,11 +647,14 @@ class WaModuleController extends Controller
                 'name' => $c->name,
                 'template_name' => $c->template_name,
                 'status' => $c->status,
+                'locked' => $this->campaignLocked($c),
                 'recipients_count' => $c->recipients_count,
                 'pending_count' => $c->pending_count,
                 'sent_count' => $c->sent_count,
                 'default_locale' => $c->default_locale,
                 'send_rate_per_min' => $c->send_rate_per_min,
+                'template_variables' => (array) $c->template_variables,
+                'has_header_media' => filled($c->header_image_path),
                 'scheduled_at' => optional($c->scheduled_at)->format('Y-m-d\TH:i'),
                 'sent_at' => optional($c->sent_at)->toDateTimeString(),
                 'created_at' => optional($c->created_at)->toDateTimeString(),
@@ -664,7 +667,9 @@ class WaModuleController extends Controller
                 'name' => $t->name,
                 'language' => $t->language ?: 'en',
                 'body' => $t->body,
-                'var_count' => preg_match_all('/\{\{\s*\d+\s*\}\}/', (string) $t->body),
+                'components' => $t->components ?? [],
+                'var_indexes' => $this->templateBodyVarIndexes($t->components ?? []),
+                'needs_media' => in_array(strtoupper((string) data_get(collect($t->components ?? [])->firstWhere('type', 'HEADER'), 'format')), ['IMAGE', 'VIDEO', 'DOCUMENT'], true),
             ], $this->templateParts($t)))
             ->values();
 
@@ -742,6 +747,23 @@ class WaModuleController extends Controller
         ]);
     }
 
+    /** True once a campaign is locked (sending/completed/paused, sent, or has recipients). */
+    private function campaignLocked(PromotionalCampaign $c): bool
+    {
+        return in_array($c->status, ['sending', 'completed', 'paused'], true)
+            || filled($c->sent_at)
+            || $c->recipients()->exists();
+    }
+
+    /** Body variable indexes ({{n}}) for the selected template, from its components. */
+    private function templateBodyVarIndexes(?array $components): array
+    {
+        $body = collect($components ?? [])->firstWhere('type', 'BODY');
+        preg_match_all('/\{\{\s*(\d+)\s*\}\}/', (string) ($body['text'] ?? ''), $m);
+
+        return collect($m[1] ?? [])->map(fn ($i) => (int) $i)->unique()->sort()->values()->all();
+    }
+
     public function storeCampaign(Request $request): RedirectResponse
     {
         $this->authorizeAccess($request);
@@ -756,11 +778,10 @@ class WaModuleController extends Controller
     {
         $this->authorizeAccess($request);
         $c = PromotionalCampaign::findOrFail($campaign);
-        if (in_array($c->status, ['sending', 'completed'], true)) {
-            return back()->with('flash', ['type' => 'error', 'message' => 'A sending/completed campaign cannot be edited.']);
+        if ($this->campaignLocked($c)) {
+            return back()->with('flash', ['type' => 'error', 'message' => 'This campaign is locked (sending/sent or has recipients) and cannot be edited.']);
         }
-        $data = $this->validateCampaign($request);
-        // Re-derive scheduled/draft from the (new) scheduled_at while still editable.
+        $data = $this->validateCampaign($request, $c);
         if (in_array($c->status, ['draft', 'scheduled'], true)) {
             $data['status'] = ! empty($data['scheduled_at']) && \Illuminate\Support\Carbon::parse($data['scheduled_at'])->isFuture() ? 'scheduled' : 'draft';
         }
@@ -779,27 +800,112 @@ class WaModuleController extends Controller
         return back()->with('flash', ['type' => 'success', 'message' => 'Campaign deleted.']);
     }
 
-    /** Dispatch send jobs for all pending recipients. */
+    /**
+     * Validate the campaign is sendable (template, header media, variables,
+     * recipients) then queue all pending+failed recipients — ports the source
+     * "Validate & Queue" action.
+     */
     public function sendCampaign(Request $request, int $campaign): RedirectResponse
     {
         $this->authorizeAccess($request);
         $c = PromotionalCampaign::findOrFail($campaign);
+        $err = fn ($msg) => back()->with('flash', ['type' => 'error', 'message' => $msg]);
 
         if (! config('services.whatsapp.api_token')) {
-            return back()->with('flash', ['type' => 'error', 'message' => 'WhatsApp is not configured.']);
+            return $err('WhatsApp is not configured.');
+        }
+        if (! $c->template_name || ! $c->template_details) {
+            return $err('A valid template must be selected before sending.');
+        }
+        if ($c->status === 'completed') {
+            return $err('Campaign is already completed.');
         }
 
-        $pending = $c->recipients()->where('status', 'pending')->pluck('id');
-        if ($pending->isEmpty()) {
-            return back()->with('flash', ['type' => 'error', 'message' => 'No pending recipients. Add recipients first.']);
+        $components = (array) data_get($c->template_details, 'components', []);
+        $header = collect($components)->firstWhere('type', 'HEADER');
+        if ($header && in_array(strtoupper((string) ($header['format'] ?? '')), ['IMAGE', 'VIDEO', 'DOCUMENT'], true) && blank($c->header_image_path)) {
+            return $err('This template needs a header file, but none is set.');
+        }
+        foreach ($this->templateBodyVarIndexes($components) as $i) {
+            if (blank(data_get($c->template_variables, (string) $i))) {
+                return $err("Template variable {{{$i}}} is required but empty.");
+            }
+        }
+        $ids = $c->recipients()->whereIn('status', ['pending', 'failed'])->pluck('id');
+        if ($ids->isEmpty()) {
+            return $err('No pending or failed recipients to queue.');
         }
 
         $c->update(['status' => 'sending', 'sent_at' => $c->sent_at ?? now()]);
-        foreach ($pending as $rid) {
+        $c->recipients()->where('status', 'failed')->update(['status' => 'pending', 'error_message' => null]);
+        foreach ($ids as $rid) {
             SendPromotionalCampaignMessage::dispatch($c->id, $rid);
         }
 
-        return back()->with('flash', ['type' => 'success', 'message' => "Queued {$pending->count()} messages."]);
+        return back()->with('flash', ['type' => 'success', 'message' => "Queued {$ids->count()} messages."]);
+    }
+
+    /** Queue a single test message to one number (bypasses frequency cap). */
+    public function testCampaign(Request $request, int $campaign): RedirectResponse
+    {
+        $this->authorizeAccess($request);
+        $data = $request->validate([
+            'test_msisdn' => ['required', 'string', 'max:32'],
+            'preferred_region' => ['nullable', 'in:KW,SA,AE,QA,BH,OM,EG'],
+        ]);
+        $c = PromotionalCampaign::findOrFail($campaign);
+        if (! $c->template_details) {
+            return back()->with('flash', ['type' => 'error', 'message' => 'Select a template first.']);
+        }
+        $e164 = Phone::parseToE164AcrossRegions($data['test_msisdn'], ['KW', 'SA', 'AE', 'QA', 'BH', 'OM', 'EG'], $data['preferred_region'] ?? 'KW', true);
+        if (! $e164) {
+            return back()->with('flash', ['type' => 'error', 'message' => 'Invalid mobile number (GCC + Egypt).']);
+        }
+        $rec = PromotionalCampaignRecipient::firstOrNew(['promotional_campaign_id' => $c->id, 'msisdn' => $e164]);
+        $rec->fill(['status' => 'pending', 'error_message' => null, 'wa_message_id' => null, 'source' => 'test', 'locale' => $c->default_locale ?? 'en'])->save();
+        SendPromotionalCampaignMessage::dispatch($c->id, $rec->id, true);
+
+        return back()->with('flash', ['type' => 'success', 'message' => "Test queued to {$e164}."]);
+    }
+
+    public function pauseCampaign(Request $request, int $campaign): RedirectResponse
+    {
+        $this->authorizeAccess($request);
+        $c = PromotionalCampaign::findOrFail($campaign);
+        if ($c->status !== 'sending') {
+            return back()->with('flash', ['type' => 'error', 'message' => 'Only a sending campaign can be paused.']);
+        }
+        $c->update(['status' => 'paused']);
+
+        return back()->with('flash', ['type' => 'success', 'message' => 'Campaign paused.']);
+    }
+
+    public function resumeCampaign(Request $request, int $campaign): RedirectResponse
+    {
+        $this->authorizeAccess($request);
+        $c = PromotionalCampaign::findOrFail($campaign);
+        if ($c->status !== 'paused') {
+            return back()->with('flash', ['type' => 'error', 'message' => 'Only a paused campaign can be resumed.']);
+        }
+        // Re-queue still-pending recipients so they continue.
+        $c->update(['status' => 'sending']);
+        foreach ($c->recipients()->where('status', 'pending')->pluck('id') as $rid) {
+            SendPromotionalCampaignMessage::dispatch($c->id, $rid);
+        }
+
+        return back()->with('flash', ['type' => 'success', 'message' => 'Campaign resumed.']);
+    }
+
+    /** Retry a single failed recipient. */
+    public function retryRecipient(Request $request, int $campaign, int $recipient): RedirectResponse
+    {
+        $this->authorizeAccess($request);
+        $c = PromotionalCampaign::findOrFail($campaign);
+        $rec = $c->recipients()->whereKey($recipient)->firstOrFail();
+        $rec->update(['status' => 'pending', 'error_message' => null, 'wa_message_id' => null]);
+        SendPromotionalCampaignMessage::dispatch($c->id, $rec->id, true);
+
+        return back()->with('flash', ['type' => 'success', 'message' => 'Recipient re-queued.']);
     }
 
     /** Add a single recipient phone to a campaign (quick test / manual). */
@@ -820,7 +926,7 @@ class WaModuleController extends Controller
         return back()->with('flash', ['type' => 'success', 'message' => 'Recipient added.']);
     }
 
-    private function validateCampaign(Request $request): array
+    private function validateCampaign(Request $request, ?PromotionalCampaign $existing = null): array
     {
         $v = $request->validate([
             'name' => ['required', 'string', 'max:160'],
@@ -828,15 +934,45 @@ class WaModuleController extends Controller
             'default_locale' => ['nullable', 'in:en,ar'],
             'scheduled_at' => ['nullable', 'date'],
             'send_rate_per_min' => ['nullable', 'integer', 'min:60', 'max:6000'],
+            'template_variables' => ['array'],
+            'template_variables.*' => ['nullable', 'string', 'max:1024'],
+            'header_media' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp,mp4,pdf', 'max:16384'],
         ]);
 
-        return [
+        $out = [
             'name' => $v['name'],
             'template_name' => $v['template_name'] ?? null,
-            'default_locale' => $v['default_locale'] ?? 'en',
             'scheduled_at' => $v['scheduled_at'] ?? null,
             'send_rate_per_min' => $v['send_rate_per_min'] ?? 600,
         ];
+
+        // Hydrate template_details + locale + variable values from the local template.
+        $tpl = ! empty($v['template_name']) ? MessageTemplate::where('name', $v['template_name'])->first() : null;
+        if ($tpl) {
+            $out['template_details'] = ['name' => $tpl->name, 'language' => $tpl->language, 'components' => $tpl->components ?? []];
+            $out['default_locale'] = $v['default_locale'] ?? ($tpl->language ?: 'en');
+            // keep only the variables this template actually has, index-keyed
+            $indexes = $this->templateBodyVarIndexes($tpl->components ?? []);
+            $vars = [];
+            foreach ($indexes as $i) {
+                $vars[(string) $i] = (string) data_get($v, "template_variables.$i", '');
+            }
+            $out['template_variables'] = $vars;
+        } else {
+            $out['default_locale'] = $v['default_locale'] ?? 'en';
+            $out['template_details'] = null;
+            $out['template_variables'] = [];
+        }
+
+        // Header media: store an uploaded sample to the public disk (the send job
+        // resolves it via Storage::disk('public')->url($header_image_path)).
+        if ($request->hasFile('header_media')) {
+            $out['header_image_path'] = $request->file('header_media')->store('wa-campaign-media', 'public');
+        } elseif ($existing) {
+            $out['header_image_path'] = $existing->header_image_path; // keep existing on edit
+        }
+
+        return $out;
     }
 
     /** Conversations (inbox) list. */
