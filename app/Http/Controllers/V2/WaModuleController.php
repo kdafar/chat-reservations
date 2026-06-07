@@ -515,6 +515,70 @@ class WaModuleController extends Controller
         ]);
     }
 
+    /** Flagship two-pane inbox: conversation list + active thread in one view. */
+    public function inbox(Request $request)
+    {
+        $this->authorizeAccess($request);
+
+        $filters = [
+            'q' => trim((string) $request->query('q', '')),
+            'status' => $request->query('status', 'all'),
+        ];
+
+        $conversations = WaConversation::query()
+            ->with(['contact', 'lastMessage'])
+            ->when($filters['status'] !== 'all', fn ($q) => $q->where('status', $filters['status']))
+            ->when($filters['q'] !== '', fn ($q) => $q->whereHas('contact', fn ($w) => $w
+                ->where('name', 'like', "%{$filters['q']}%")->orWhere('msisdn', 'like', "%{$filters['q']}%")))
+            ->orderByDesc('last_message_at')
+            ->limit(100)
+            ->get()
+            ->map(fn (WaConversation $c) => [
+                'id' => $c->id,
+                'name' => optional($c->contact)->name ?: optional($c->contact)->msisdn ?: '—',
+                'msisdn' => optional($c->contact)->msisdn,
+                'status' => $c->status,
+                'last_body' => \Illuminate\Support\Str::limit((string) optional($c->lastMessage)->body, 42) ?: null,
+                'last_dir' => optional($c->lastMessage)->direction,
+                'last_at' => optional($c->last_message_at)->diffForHumans(null, true),
+                'last_ts' => optional($c->last_message_at)->timestamp,
+            ]);
+
+        $activeId = (int) ($request->query('c') ?: ($conversations[0]['id'] ?? 0));
+        $active = null;
+        $messages = [];
+        if ($activeId) {
+            $convo = WaConversation::with('contact')->find($activeId);
+            if ($convo) {
+                $active = [
+                    'id' => $convo->id,
+                    'name' => optional($convo->contact)->name ?: optional($convo->contact)->msisdn ?: '—',
+                    'msisdn' => optional($convo->contact)->msisdn,
+                    'status' => $convo->status,
+                ];
+                $messages = WaMessage::where('conversation_id', $convo->id)
+                    ->orderBy('created_at')->limit(300)->get()
+                    ->map(fn (WaMessage $m) => [
+                        'id' => $m->id,
+                        'direction' => $m->direction,
+                        'type' => $m->type,
+                        'body' => $m->body,
+                        'status' => $m->status,
+                        'at' => optional($m->created_at)->format('H:i'),
+                        'day' => optional($m->created_at)->format('M j'),
+                    ])->values();
+            }
+        }
+
+        return Inertia::render('WaModule/Inbox', [
+            'filters' => $filters,
+            'conversations' => $conversations,
+            'active' => $active,
+            'messages' => $messages,
+            'configured' => (bool) config('services.whatsapp.api_token'),
+        ]);
+    }
+
     /** Single conversation thread. */
     public function conversation(Request $request, int $conversation)
     {

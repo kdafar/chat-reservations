@@ -694,6 +694,7 @@ Route::middleware([
     Route::get('/wa-module/templates',             [\App\Http\Controllers\V2\WaModuleController::class, 'templates'])->name('wa-module.templates');
     Route::get('/wa-module/contacts',              [\App\Http\Controllers\V2\WaModuleController::class, 'contacts'])->name('wa-module.contacts');
     Route::get('/wa-module/campaigns',             [\App\Http\Controllers\V2\WaModuleController::class, 'campaigns'])->name('wa-module.campaigns');
+    Route::get('/wa-module/inbox',                 [\App\Http\Controllers\V2\WaModuleController::class, 'inbox'])->name('wa-module.inbox');
     Route::get('/wa-module/conversations',         [\App\Http\Controllers\V2\WaModuleController::class, 'conversations'])->name('wa-module.conversations');
     Route::get('/wa-module/conversations/{conversation}', [\App\Http\Controllers\V2\WaModuleController::class, 'conversation'])->name('wa-module.conversation');
     Route::get('/wa-module/sessions',              [\App\Http\Controllers\V2\WaModuleController::class, 'sessions'])->name('wa-module.sessions');

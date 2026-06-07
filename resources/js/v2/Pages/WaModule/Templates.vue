@@ -61,6 +61,12 @@ function destroy(r) {
 function publish(r) { router.post(route('v2.wa-module.templates.publish', { template: r.id }), {}, { preserveScroll: true }) }
 function toggleAuto(r) { router.post(route('v2.wa-module.templates.auto-reply', { template: r.id }), {}, { preserveScroll: true }) }
 function sync() { router.post(route('v2.wa-module.templates.sync'), {}, { preserveScroll: true }) }
+
+const statusStyle = (s) => {
+    const m = { APPROVED: ['#16a34a', '#16a34a1a'], PENDING: ['#d97706', '#d977061a'], REJECTED: ['#dc2626', '#dc26261a'] }
+    const [c, bg] = m[s] || ['#64748b', '#64748b1a']
+    return { color: c, background: bg }
+}
 </script>
 
 <template>
@@ -79,28 +85,34 @@ function sync() { router.post(route('v2.wa-module.templates.sync'), {}, { preser
             <button v-if="f.q" class="btn btn-ghost btn-sm" @click="f.q=''; apply()">{{ t.clear }}</button>
         </div>
 
-        <div class="card" style="overflow:hidden;">
-            <table class="table">
-                <thead><tr><th>{{ t.col.name }}</th><th>{{ t.col.category }}</th><th>{{ t.col.lang }}</th><th>{{ t.col.status }}</th><th>{{ t.col.auto }}</th><th>{{ t.col.preview }}</th><th style="width:120px;"></th></tr></thead>
-                <tbody>
-                    <tr v-if="!page.data.length"><td colspan="7" style="text-align:center; padding:40px; color:var(--fg-faint);">{{ t.empty }}</td></tr>
-                    <tr v-for="r in page.data" :key="r.id">
-                        <td style="font-size:12px; font-weight:600;">{{ r.name }}</td>
-                        <td style="font-size:12px;">{{ r.category || '—' }}</td>
-                        <td class="mono" style="font-size:12px;">{{ r.language || '—' }}</td>
-                        <td><span class="badge-muted">{{ r.status || r.local_status || '—' }}</span></td>
-                        <td><button class="btn btn-ghost btn-sm" :title="t.auto" @click="toggleAuto(r)">{{ r.is_auto_reply ? '✓' : '—' }}</button></td>
-                        <td style="font-size:12px; color:var(--fg-subtle); max-width:280px;">{{ r.body_preview || '—' }}</td>
-                        <td>
-                            <div style="display:flex; gap:4px; justify-content:flex-end;">
-                                <button class="btn btn-ghost btn-sm" :title="t.edit" @click="openEdit(r)"><Icon name="pencil" :size="13" /></button>
-                                <button v-if="r.status !== 'APPROVED'" class="btn btn-ghost btn-sm" :title="t.publish" @click="publish(r)"><Icon name="upload" :size="13" /></button>
-                                <button class="btn btn-ghost btn-sm" :title="t.del" @click="destroy(r)"><Icon name="trash-2" :size="13" style="color:#dc2626;" /></button>
-                            </div>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
+        <div v-if="!page.data.length" class="card" style="padding:48px; text-align:center; color:var(--fg-faint);">{{ t.empty }}</div>
+        <div v-else style="display:grid; grid-template-columns:repeat(auto-fill, minmax(300px,1fr)); gap:14px;">
+            <div v-for="r in page.data" :key="r.id" class="card" style="padding:0; overflow:hidden; display:flex; flex-direction:column;">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; padding:14px 14px 8px;">
+                    <div style="min-width:0;">
+                        <div style="font-weight:700; font-size:13.5px; color:var(--fg); word-break:break-all;">{{ r.name }}</div>
+                        <div style="display:flex; gap:5px; margin-top:5px; flex-wrap:wrap;">
+                            <span class="badge-muted" style="font-size:10px;">{{ r.category || '—' }}</span>
+                            <span class="badge-muted mono" style="font-size:10px;">{{ r.language || '—' }}</span>
+                            <span v-if="r.is_auto_reply" class="badge-muted" style="font-size:10px; color:#25D366;">⚡ auto</span>
+                        </div>
+                    </div>
+                    <span :style="{ ...statusStyle(r.status), fontSize:'10px', fontWeight:'700', padding:'3px 8px', borderRadius:'20px', whiteSpace:'nowrap' }">{{ r.status || r.local_status || 'draft' }}</span>
+                </div>
+                <!-- whatsapp bubble preview -->
+                <div style="margin:0 14px 10px; padding:12px; border-radius:10px; background:#efeae2; min-height:64px; display:flex;">
+                    <div style="background:#fff; border-radius:8px; border-top-left-radius:2px; padding:7px 10px; font-size:12.5px; color:#111b21; box-shadow:0 1px .5px rgba(0,0,0,.13); max-width:92%; white-space:pre-wrap; word-break:break-word;">
+                        {{ r.body || r.body_preview || '—' }}
+                        <div v-if="r.footer_text" style="font-size:11px; color:#8696a0; margin-top:4px;">{{ r.footer_text }}</div>
+                    </div>
+                </div>
+                <div style="margin-top:auto; display:flex; gap:4px; justify-content:flex-end; padding:8px 12px; border-top:1px solid var(--border);">
+                    <button class="btn btn-ghost btn-sm" :title="t.auto" @click="toggleAuto(r)"><Icon name="zap" :size="13" :style="{ color: r.is_auto_reply ? '#25D366' : 'var(--fg-faint)' }" /></button>
+                    <button class="btn btn-ghost btn-sm" :title="t.edit" @click="openEdit(r)"><Icon name="pencil" :size="13" /></button>
+                    <button v-if="r.status !== 'APPROVED'" class="btn btn-ghost btn-sm" :title="t.publish" @click="publish(r)"><Icon name="upload" :size="13" /></button>
+                    <button class="btn btn-ghost btn-sm" :title="t.del" @click="destroy(r)"><Icon name="trash-2" :size="13" style="color:#dc2626;" /></button>
+                </div>
+            </div>
         </div>
 
         <div v-if="page.last_page > 1" style="display:flex; justify-content:space-between; align-items:center; margin-top:12px; font-size:12px; color:var(--fg-subtle);">

@@ -142,7 +142,7 @@ const navGates = {
     'wa-sessions':          { roles: ['admin', 'super_admin'] },
     'wa-audience':          { roles: ['admin', 'super_admin'] },
     'wap-dashboard':        { roles: ['admin', 'super_admin', 'clinic_admin'] },
-    'wap-conversations':    { roles: ['admin', 'super_admin', 'clinic_admin'] },
+    'wap-inbox':            { roles: ['admin', 'super_admin', 'clinic_admin'] },
     'wap-templates':        { roles: ['admin', 'super_admin', 'clinic_admin'] },
     'wap-contacts':         { roles: ['admin', 'super_admin', 'clinic_admin'] },
     'wap-campaigns':        { roles: ['admin', 'super_admin', 'clinic_admin'] },
@@ -447,7 +447,7 @@ const navSections = computed(() => ([
         label: locale.value === 'ar' ? 'منصة واتساب' : 'WhatsApp Platform',
         items: [
             { id: 'wap-dashboard',     icon: 'layout-dashboard', label: locale.value === 'ar' ? 'اللوحة' : 'Dashboard', href: '/admin/v2/wa-module', v2: true },
-            { id: 'wap-conversations', icon: 'inbox',            label: locale.value === 'ar' ? 'المحادثات' : 'Conversations', href: '/admin/v2/wa-module/conversations', v2: true },
+            { id: 'wap-inbox',         icon: 'inbox',            label: locale.value === 'ar' ? 'صندوق الوارد' : 'Inbox', href: '/admin/v2/wa-module/inbox', v2: true },
             { id: 'wap-templates',     icon: 'message-square',   label: locale.value === 'ar' ? 'القوالب' : 'Templates', href: '/admin/v2/wa-module/templates', v2: true },
             { id: 'wap-contacts',      icon: 'users-round',      label: locale.value === 'ar' ? 'جهات الاتصال' : 'Contacts', href: '/admin/v2/wa-module/contacts', v2: true },
             { id: 'wap-campaigns',     icon: 'send',             label: locale.value === 'ar' ? 'الحملات' : 'Campaigns', href: '/admin/v2/wa-module/campaigns', v2: true },

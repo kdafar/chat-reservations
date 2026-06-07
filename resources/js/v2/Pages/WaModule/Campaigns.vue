@@ -34,6 +34,13 @@ const showR = ref(false), rCampaign = ref(null)
 const rForm = useForm({ msisdn: '', name: '' })
 function openR(r) { rCampaign.value = r.id; rForm.reset(); rForm.clearErrors(); showR.value = true }
 function saveR() { rForm.post(route('v2.wa-module.campaigns.recipients', { campaign: rCampaign.value }), { preserveScroll: true, onSuccess: () => { showR.value = false } }) }
+
+const statusStyle = (s) => {
+    const m = { draft: ['#64748b', '#64748b1a'], sending: ['#2563eb', '#2563eb1a'], completed: ['#16a34a', '#16a34a1a'], paused: ['#d97706', '#d977061a'], failed: ['#dc2626', '#dc26261a'] }
+    const [c, bg] = m[s] || ['#64748b', '#64748b1a']
+    return { color: c, background: bg, fontSize: '10px', fontWeight: '700', padding: '3px 9px', borderRadius: '20px' }
+}
+const pct = (r) => r.recipients_count ? Math.round((r.sent_count / r.recipients_count) * 100) : 0
 </script>
 
 <template>
@@ -51,9 +58,12 @@ function saveR() { rForm.post(route('v2.wa-module.campaigns.recipients', { campa
                     <tr v-for="r in page.data" :key="r.id">
                         <td style="font-size:12px; font-weight:600;">{{ r.name }}</td>
                         <td class="mono" style="font-size:11px;">{{ r.template_name || '—' }}</td>
-                        <td><span class="badge-muted">{{ r.status || '—' }}</span></td>
+                        <td><span :style="statusStyle(r.status)">{{ r.status || '—' }}</span></td>
                         <td style="font-size:12px;">{{ r.recipients_count }}</td>
-                        <td style="font-size:11px; color:var(--fg-subtle);">{{ r.sent_count }} / {{ r.recipients_count }} · {{ r.pending_count }} pending</td>
+                        <td style="min-width:140px;">
+                            <div style="height:6px; border-radius:4px; background:var(--border); overflow:hidden;"><div :style="{ height:'100%', width: pct(r)+'%', background:'#25D366' }"></div></div>
+                            <div style="font-size:10px; color:var(--fg-faint); margin-top:3px;">{{ r.sent_count }}/{{ r.recipients_count }} · {{ r.pending_count }} pending</div>
+                        </td>
                         <td style="font-size:11px; color:var(--fg-faint);">{{ r.scheduled_at || '—' }}</td>
                         <td>
                             <div style="display:flex; gap:4px; justify-content:flex-end;">
