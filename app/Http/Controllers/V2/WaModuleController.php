@@ -807,11 +807,6 @@ class WaModuleController extends Controller
     }
 
     /**
-     * Validate the campaign is sendable (template, header media, variables,
-     * recipients) then queue all pending+failed recipients — ports the source
-     * "Validate & Queue" action.
-     */
-    /**
      * Shared sendability validation (template, header media, body variables).
      * Returns an error string, or null if the campaign can be sent/tested.
      */
@@ -837,6 +832,11 @@ class WaModuleController extends Controller
         return null;
     }
 
+    /**
+     * Validate the campaign is sendable, then queue all pending+failed
+     * recipients (resetting failed -> pending). Ports the source "Validate &
+     * Queue" action.
+     */
     public function sendCampaign(Request $request, int $campaign): RedirectResponse
     {
         $this->authorizeAccess($request);
