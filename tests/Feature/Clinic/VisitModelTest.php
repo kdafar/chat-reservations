@@ -88,6 +88,29 @@ class VisitModelTest extends TestCase
         );
     }
 
+    public function test_booted_hook_clears_completed_at_when_leaving_completed(): void
+    {
+        // Regression: completed_at must track a TRUE completion only. A visit
+        // reopened from completed back to a billing state has to lose its
+        // completed_at, otherwise reception's discharge gate (which requires an
+        // empty completed_at) stays permanently false and "Complete visit"
+        // never reappears.
+        $visit = $this->makeVisit([
+            'status' => 'completed',
+            'completed_at' => now()->subHour(),
+        ]);
+        $visit->refresh();
+        $this->assertNotNull($visit->completed_at);
+
+        $visit->update(['status' => 'awaiting_payment']);
+        $visit->refresh();
+
+        $this->assertNull(
+            $visit->completed_at,
+            'completed_at must clear when a visit leaves the completed status'
+        );
+    }
+
     public function test_balance_due_accessor_includes_all_components(): void
     {
         $visit = $this->makeVisit([

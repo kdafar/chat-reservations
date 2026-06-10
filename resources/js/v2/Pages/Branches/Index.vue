@@ -75,7 +75,7 @@ const modalMode = ref('create')
 const editing = ref(null)
 const form = reactive({
     partner_id: '', name_en: '', name_ar: '', slug: '', phone: '', email: '',
-    license_number: '', address: '', city_id: '', max_booking_days: 60, is_available: true,
+    license_number: '', address: '', city_id: '', max_booking_days: 60, is_available: true, is_hub: false,
 })
 const errors = ref({})
 const saving = ref(false)
@@ -84,7 +84,7 @@ function openCreate() {
     modalMode.value = 'create'; editing.value = null
     Object.assign(form, {
         partner_id: props.partners[0]?.id ?? '', name_en: '', name_ar: '', slug: '', phone: '', email: '',
-        license_number: '', address: '', city_id: '', max_booking_days: 60, is_available: true,
+        license_number: '', address: '', city_id: '', max_booking_days: 60, is_available: true, is_hub: false,
     })
     errors.value = {}; modalOpen.value = true
 }
@@ -94,7 +94,7 @@ function openEdit(row) {
         partner_id: row.partner_id ?? '', name_en: row.name_en || '', name_ar: row.name_ar || '',
         slug: row.slug || '', phone: row.phone || '', email: row.email || '',
         license_number: row.license_number || '', address: row.address || '', city_id: row.city_id ?? '',
-        max_booking_days: row.max_booking_days ?? 60, is_available: !!row.is_available,
+        max_booking_days: row.max_booking_days ?? 60, is_available: !!row.is_available, is_hub: !!row.is_hub,
     })
     errors.value = {}; modalOpen.value = true
 }
@@ -257,10 +257,14 @@ function deactivate(row) {
                     <label class="label">{{ t.modal.address }}</label>
                     <textarea v-model="form.address" class="input" rows="2" maxlength="1000"></textarea>
                 </div>
-                <div style="grid-column:span 2;">
+                <div style="grid-column:span 2; display:flex; flex-direction:column; gap:8px;">
                     <label class="role-check" style="width:fit-content;">
                         <input type="checkbox" v-model="form.is_available" />
                         <span>{{ t.modal.available }}</span>
+                    </label>
+                    <label class="role-check" style="width:fit-content;">
+                        <input type="checkbox" v-model="form.is_hub" />
+                        <span>{{ locale === 'ar' ? 'المركز الرئيسي (مستودع يوزّع للفروع)' : 'Central hub (warehouse that dispatches to branches)' }}</span>
                     </label>
                 </div>
 

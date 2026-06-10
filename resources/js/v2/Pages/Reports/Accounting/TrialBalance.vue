@@ -14,11 +14,11 @@ const locale = computed(() => pageProps.props.locale ?? 'en')
 const isRtl = computed(() => locale.value === 'ar')
 
 const t = computed(() => isRtl.value ? {
-    title: 'ميزان المراجعة', eyebrow: 'تقارير المحاسبة', from: 'من', to: 'إلى', print: 'طباعة',
+    title: 'ميزان المراجعة', eyebrow: 'تقارير المحاسبة', desc: 'أرصدة المدين والدائن لكل حساب للفترة المحددة.', from: 'من', to: 'إلى', print: 'طباعة',
     balanced: 'متوازن', unbalanced: 'غير متوازن',
     col: { code: 'الرمز', account: 'الحساب', debit: 'مدين', credit: 'دائن' }, total: 'الإجمالي', empty: 'لا توجد حركات في هذه الفترة',
 } : {
-    title: 'Trial Balance', eyebrow: 'Accounting Reports', from: 'From', to: 'To', print: 'Print',
+    title: 'Trial Balance', eyebrow: 'Accounting Reports', desc: 'Debit and credit balances for every account over the selected period.', from: 'From', to: 'To', print: 'Print',
     balanced: 'Balanced', unbalanced: 'Out of balance',
     col: { code: 'Code', account: 'Account', debit: 'Debit', credit: 'Credit' }, total: 'Total', empty: 'No activity in this period',
 })
@@ -33,11 +33,12 @@ const fmt = (n) => Number(n ?? 0).toFixed(3)
 <template>
     <Head :title="t.title" />
         <PrintHeader :title="t.title" />
-    <div style="padding:24px; max-width:1000px; margin:0 auto;">
-        <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:16px;">
+    <div style="padding:24px 28px; max-width:1000px; margin:0 auto;">
+        <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin-bottom:20px; flex-wrap:wrap;">
             <div>
                 <div class="eyebrow">{{ t.eyebrow }}</div>
-                <h1 style="margin:4px 0 0; font-size:22px; font-weight:700; color:var(--fg);">{{ t.title }}</h1>
+                <h1 style="margin:6px 0 4px; font-size:26px; font-weight:500; letter-spacing:-0.02em;">{{ t.title }}</h1>
+                <p style="margin:0; font-size:13.5px; color:var(--fg-muted);">{{ t.desc }}</p>
             </div>
             <button class="btn btn-ghost no-print" onclick="window.print()"><Icon name="printer" :size="14" /><span>{{ t.print }}</span></button>
         </div>
@@ -97,6 +98,6 @@ const fmt = (n) => Number(n ?? 0).toFixed(3)
 .table td { padding:9px 12px; border-bottom:1px solid var(--line); }
 .table tbody tr:hover { background:var(--bg-hover); }
 .table tfoot td { padding:11px 12px; }
-.badge-ok { display:inline-flex; align-items:center; gap:5px; padding:4px 12px; font-size:12px; font-weight:600; border:1px solid var(--ok); color:var(--ok); border-radius:999px; }
-.badge-err { display:inline-flex; align-items:center; gap:5px; padding:4px 12px; font-size:12px; font-weight:600; border:1px solid var(--err, #dc2626); color:var(--err, #dc2626); border-radius:999px; }
+.badge-ok { display:inline-flex; align-items:center; gap:5px; padding:4px 12px; font-size:12px; font-weight:600; border:1px solid var(--success); color:var(--success); border-radius:999px; }
+.badge-err { display:inline-flex; align-items:center; gap:5px; padding:4px 12px; font-size:12px; font-weight:600; border:1px solid var(--destructive); color:var(--destructive); border-radius:999px; }
 </style>

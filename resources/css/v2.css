@@ -551,7 +551,9 @@ input[type="radio"]:disabled { opacity: 0.5; cursor: not-allowed; }
     position: fixed;
     top: 72px;
     inset-inline-end: 16px;
-    z-index: 70;
+    /* Above every modal/overlay (modals top out ~95) so toasts are never
+       hidden behind an open dialog like the visit sheet. */
+    z-index: 1000;
     display: flex; flex-direction: column; gap: 10px;
     pointer-events: none;
 }

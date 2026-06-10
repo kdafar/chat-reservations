@@ -8,6 +8,7 @@ import PrintHeader from '../../Components/PrintHeader.vue'
 import Skeleton from '../../Components/Skeleton.vue'
 import SearchableSelect from '../../Components/SearchableSelect.vue'
 import DateTimePicker from '../../Components/DateTimePicker.vue'
+import EChart from '../../Components/EChart.vue'
 
 const props = defineProps({ filters: Object, branches: Array, report: Object })
 
@@ -16,16 +17,18 @@ const locale = computed(() => pageProps.props.locale ?? 'en')
 const isRtl = computed(() => locale.value === 'ar')
 
 const t = computed(() => isRtl.value ? {
-    title: 'التسوية اليومية', eyebrow: 'التقارير', date: 'التاريخ', branch: 'الفرع', all: 'كل فروعي', print: 'طباعة',
+    title: 'التسوية اليومية', eyebrow: 'التقارير', desc: 'كل الدفعات المحصّلة في اليوم حسب الطريقة والمحصّل.', date: 'التاريخ', branch: 'الفرع', all: 'كل فروعي', print: 'طباعة',
     totalCollected: 'إجمالي المحصّل', payments: 'الدفعات', byMethod: 'حسب طريقة الدفع', byCollector: 'حسب المحصّل',
+    avg: 'متوسط الدفعة', refunds: 'مستردات', outstanding: 'مستحقات غير محصّلة', unpaid: 'زيارة غير مدفوعة',
     empty: 'لا توجد دفعات في هذا اليوم',
-    col: { time: 'الوقت', patient: 'المريض', doctor: 'الطبيب', kind: 'النوع', method: 'الطريقة', collector: 'المحصّل', amount: 'المبلغ' },
+    col: { time: 'الوقت', visit: 'الزيارة', patient: 'المريض', doctor: 'الطبيب', kind: 'النوع', method: 'الطريقة', ref: 'المرجع', collector: 'المحصّل', amount: 'المبلغ' },
     methods: { cash: 'نقدًا', card: 'بطاقة', link: 'رابط', knet: 'كي نت', unknown: 'غير محدد' },
 } : {
-    title: 'Daily Reconciliation', eyebrow: 'Reports', date: 'Date', branch: 'Branch', all: 'All my branches', print: 'Print',
+    title: 'Daily Reconciliation', eyebrow: 'Reports', desc: 'Every payment collected on the day, broken down by method and collector.', date: 'Date', branch: 'Branch', all: 'All my branches', print: 'Print',
     totalCollected: 'Total collected', payments: 'Payments', byMethod: 'By payment method', byCollector: 'By collector',
+    avg: 'Avg payment', refunds: 'Refunds', outstanding: 'Outstanding', unpaid: 'unpaid visits',
     empty: 'No payments on this day',
-    col: { time: 'Time', patient: 'Patient', doctor: 'Doctor', kind: 'Kind', method: 'Method', collector: 'Collector', amount: 'Amount' },
+    col: { time: 'Time', visit: 'Visit', patient: 'Patient', doctor: 'Doctor', kind: 'Kind', method: 'Method', ref: 'Ref', collector: 'Collector', amount: 'Amount' },
     methods: { cash: 'Cash', card: 'Card', link: 'Link', knet: 'KNET', unknown: 'Unknown' },
 })
 
@@ -38,18 +41,35 @@ function apply() {
 }
 const fmt = (n) => Number(n ?? 0).toFixed(3)
 const methodLabel = (m) => t.value.methods[String(m || 'unknown').toLowerCase()] || m
-const methodColor = (m) => ({ cash: 'var(--ok)', card: 'var(--accent, #2563eb)', knet: '#7c3aed', link: '#0891b2' }[String(m || '').toLowerCase()] || 'var(--fg-subtle)')
-const maxMethod = computed(() => Math.max(1, ...((props.report?.by_method || []).map(r => r.amount))))
+// Hex (not CSS vars) so the same colour drives both the ECharts donut and the
+// table badges below.
+const methodColor = (m) => ({ cash: '#16a34a', card: '#2563eb', knet: '#7c3aed', link: '#0891b2' }[String(m || '').toLowerCase()] || '#9ca3af')
+const cl = computed(() => isRtl.value
+    ? { dataView: 'البيانات', zoom: 'تكبير', back: 'إعادة', line: 'خطي', bar: 'أعمدة', restore: 'استعادة', save: 'حفظ صورة', close: 'إغلاق', refresh: 'تحديث' }
+    : { dataView: 'Data', zoom: 'Zoom', back: 'Reset', line: 'Line', bar: 'Bar', restore: 'Restore', save: 'Save', close: 'Close', refresh: 'Refresh' })
+const methodOption = computed(() => ({
+    tooltip: { trigger: 'item', valueFormatter: (v) => fmt(v) },
+    legend: { bottom: 0 },
+    series: [{
+        type: 'pie', radius: ['48%', '72%'], center: ['50%', '44%'], avoidLabelOverlap: true,
+        itemStyle: { borderRadius: 4 }, label: { show: false },
+        data: (props.report?.by_method || []).map(m => ({
+            name: methodLabel(m.method), value: Number(m.amount) || 0,
+            itemStyle: { color: methodColor(m.method) },
+        })),
+    }],
+}))
 </script>
 
 <template>
     <Head :title="t.title" />
         <PrintHeader :title="t.title" />
-    <div style="padding:24px; max-width:1100px; margin:0 auto;">
-        <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:16px;">
+    <div style="padding:24px 28px; max-width:1100px; margin:0 auto;">
+        <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin-bottom:20px; flex-wrap:wrap;">
             <div>
                 <div class="eyebrow">{{ t.eyebrow }}</div>
-                <h1 style="margin:4px 0 0; font-size:22px; font-weight:700; color:var(--fg);">{{ t.title }}</h1>
+                <h1 style="margin:6px 0 4px; font-size:26px; font-weight:500; letter-spacing:-0.02em;">{{ t.title }}</h1>
+                <p style="margin:0; font-size:13.5px; color:var(--fg-muted);">{{ t.desc }}</p>
             </div>
             <button class="btn btn-ghost no-print" onclick="window.print()"><Icon name="printer" :size="14" /><span>{{ t.print }}</span></button>
         </div>
@@ -73,16 +93,30 @@ const maxMethod = computed(() => Math.max(1, ...((props.report?.by_method || [])
 
         <!-- Headline -->
         <div class="card" style="padding:20px; margin-bottom:16px; display:flex; align-items:center; gap:20px;">
-            <div style="width:48px; height:48px; border-radius:12px; background:var(--accent-bg, rgba(37,99,235,0.1)); display:flex; align-items:center; justify-content:center; color:var(--accent, #2563eb);">
+            <div style="width:48px; height:48px; border-radius:12px; background:var(--primary-soft); display:flex; align-items:center; justify-content:center; color:var(--primary);">
                 <Icon name="banknote" :size="24" />
             </div>
             <div>
                 <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.06em; color:var(--fg-faint); font-weight:600;">{{ t.totalCollected }}</div>
                 <div class="mono" style="font-size:28px; font-weight:700; color:var(--fg); line-height:1.1;">{{ fmt(report.total_collected) }}</div>
             </div>
-            <div style="margin-inline-start:auto; text-align:end;">
-                <div class="mono" style="font-size:22px; font-weight:700; color:var(--fg-subtle);">{{ report.count }}</div>
-                <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:var(--fg-faint);">{{ t.payments }}</div>
+            <div style="margin-inline-start:auto; display:flex; gap:24px; text-align:end; flex-wrap:wrap;">
+                <div>
+                    <div class="mono" style="font-size:22px; font-weight:700; color:var(--fg-subtle);">{{ report.count }}</div>
+                    <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:var(--fg-faint);">{{ t.payments }}</div>
+                </div>
+                <div>
+                    <div class="mono" style="font-size:22px; font-weight:700; color:var(--fg-subtle);">{{ fmt(report.avg_transaction) }}</div>
+                    <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:var(--fg-faint);">{{ t.avg }}</div>
+                </div>
+                <div v-if="report.refunds && report.refunds.count">
+                    <div class="mono" style="font-size:22px; font-weight:700; color:var(--destructive);">−{{ fmt(report.refunds.amount) }}</div>
+                    <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:var(--fg-faint);">{{ t.refunds }} · {{ report.refunds.count }}</div>
+                </div>
+                <div v-if="report.outstanding">
+                    <div class="mono" style="font-size:22px; font-weight:700;" :style="{ color: report.outstanding.total > 0.005 ? 'var(--destructive)' : 'var(--success)' }">{{ fmt(report.outstanding.total) }}</div>
+                    <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:var(--fg-faint);">{{ t.outstanding }} · {{ report.outstanding.unpaid_count }} {{ t.unpaid }}</div>
+                </div>
             </div>
         </div>
 
@@ -91,18 +125,7 @@ const maxMethod = computed(() => Math.max(1, ...((props.report?.by_method || [])
             <div class="card" style="padding:16px;">
                 <h3 class="rpt-h">{{ t.byMethod }}</h3>
                 <div v-if="!report.by_method.length" style="color:var(--fg-faint); font-size:13px; padding:8px 0;">—</div>
-                <div v-for="m in report.by_method" :key="m.method" style="margin-bottom:10px;">
-                    <div class="kpi-row" style="margin-bottom:3px;">
-                        <span style="display:inline-flex; align-items:center; gap:6px; text-transform:capitalize;">
-                            <span style="width:8px; height:8px; border-radius:2px;" :style="{ background: methodColor(m.method) }"></span>
-                            {{ methodLabel(m.method) }} <span style="color:var(--fg-faint);">· {{ m.count }}</span>
-                        </span>
-                        <span class="mono" style="font-weight:600;">{{ fmt(m.amount) }}</span>
-                    </div>
-                    <div style="height:6px; background:var(--bg-hover); border-radius:3px; overflow:hidden;">
-                        <div style="height:100%; border-radius:3px;" :style="{ width: (m.amount / maxMethod * 100) + '%', background: methodColor(m.method) }"></div>
-                    </div>
-                </div>
+                <EChart v-else :option="methodOption" :labels="cl" height="240px" />
             </div>
             <div class="card" style="padding:16px;">
                 <h3 class="rpt-h">{{ t.byCollector }}</h3>
@@ -123,24 +146,28 @@ const maxMethod = computed(() => Math.max(1, ...((props.report?.by_method || [])
                 <thead>
                     <tr>
                         <th>{{ t.col.time }}</th>
+                        <th>{{ t.col.visit }}</th>
                         <th>{{ t.col.patient }}</th>
                         <th>{{ t.col.doctor }}</th>
                         <th>{{ t.col.kind }}</th>
                         <th>{{ t.col.method }}</th>
+                        <th>{{ t.col.ref }}</th>
                         <th>{{ t.col.collector }}</th>
                         <th style="text-align:end;">{{ t.col.amount }}</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <tr v-if="!report.rows.length"><td colspan="7" style="text-align:center; padding:40px; color:var(--fg-faint);">{{ t.empty }}</td></tr>
+                    <tr v-if="!report.rows.length"><td colspan="9" style="text-align:center; padding:40px; color:var(--fg-faint);">{{ t.empty }}</td></tr>
                     <tr v-for="r in report.rows" :key="r.id">
                         <td class="mono" style="font-size:12px;">{{ r.time }}</td>
+                        <td class="mono" style="font-size:12px; color:var(--fg-subtle);">{{ r.visit || '—' }}</td>
                         <td style="font-weight:600;">{{ r.patient || '—' }}</td>
                         <td>{{ r.doctor || '—' }}</td>
                         <td style="text-transform:capitalize; color:var(--fg-subtle); font-size:12px;">{{ r.kind || '—' }}</td>
                         <td>
                             <span class="badge-method" :style="{ borderColor: methodColor(r.method), color: methodColor(r.method) }">{{ methodLabel(r.method) }}</span>
                         </td>
+                        <td class="mono" style="font-size:11px; color:var(--fg-faint);">{{ r.reference || '—' }}</td>
                         <td style="font-size:12px; color:var(--fg-subtle);">{{ r.collector }}</td>
                         <td class="mono" style="text-align:end; font-weight:600;">{{ fmt(r.amount) }}</td>
                     </tr>

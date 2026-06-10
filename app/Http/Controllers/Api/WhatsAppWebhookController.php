@@ -153,6 +153,43 @@ class WhatsAppWebhookController extends Controller
                                 'error' => $e->getMessage(),
                             ]);
                         }
+
+                        // Sync the bulk-campaign recipient so delivery analytics + failure
+                        // reasons reflect what Meta actually reported (not just the 200 send).
+                        try {
+                            $rec = \App\Wa\Hub\Models\PromotionalCampaignRecipient::where('wa_message_id', $wamid)->first();
+                            if ($rec) {
+                                $at = ! empty($s['timestamp']) ? \Illuminate\Support\Carbon::createFromTimestamp((int) $s['timestamp']) : now();
+                                $rank = ['pending' => 0, 'sent' => 1, 'delivered' => 2, 'read' => 3];
+
+                                if ($status === 'failed') {
+                                    $err = $s['errors'][0] ?? [];
+                                    $code = (int) ($err['code'] ?? 0);
+                                    // 131049 / 130472 = "healthy-ecosystem" engagement throttle → limited, not a hard fail.
+                                    $rec->status = in_array($code, [131049, 130472], true) ? 'limited' : 'failed';
+                                    $rec->wa_error_code = (string) $code;
+                                    $rec->wa_error_title = $err['title'] ?? 'Failed';
+                                    $rec->error_message = data_get($err, 'error_data.details') ?: ($err['message'] ?? $rec->error_message);
+                                } elseif ($status === 'read') {
+                                    $rec->read_at = $rec->read_at ?: $at;
+                                    $rec->delivered_at = $rec->delivered_at ?: $at;
+                                    $rec->status = 'read';
+                                } elseif ($status === 'delivered') {
+                                    $rec->delivered_at = $rec->delivered_at ?: $at;
+                                    if (($rank['delivered']) >= ($rank[$rec->status] ?? 0)) {
+                                        $rec->status = 'delivered';
+                                    }
+                                } elseif ($status === 'sent') {
+                                    $rec->sent_at = $rec->sent_at ?: $at;
+                                    if (($rank['sent']) >= ($rank[$rec->status] ?? 0)) {
+                                        $rec->status = 'sent';
+                                    }
+                                }
+                                $rec->save();
+                            }
+                        } catch (\Throwable $e) {
+                            Log::warning('WA status: recipient sync failed', $ctx + ['id' => $wamid, 'error' => $e->getMessage()]);
+                        }
                     }
 
                     return response('ok', 200);

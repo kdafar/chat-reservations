@@ -126,7 +126,7 @@ onMounted(() => { if (props.open_record) openEdit(props.open_record) })
                 </div>
                 <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
                     <a class="btn btn-sm btn-outline" :href="route('v2.clinic-items.export', { ...f })"><Icon name="download" :size="13" /><span>{{ isRtl ? 'تصدير Excel' : 'Export Excel' }}</span></a>
-                    <ImportButton type="clinic-items" />
+                    <ImportButton v-if="can_edit" type="clinic-items" />
                     <button v-if="can_edit" class="btn btn-primary" @click="openCreate"><Icon name="plus" :size="14" /><span>{{ t.new }}</span></button>
                 </div>
             </div>

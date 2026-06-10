@@ -130,6 +130,90 @@ class PaymentCallbackController extends Controller
         ]);
     }
 
+    /**
+     * Finalizer for VISIT-balance payment links (VisitPaymentLinkService).
+     * Same security model as finalize(): verify the account signature, confirm
+     * the charge with MyFatoorah's API (never the browser), then idempotently
+     * record the VisitPayment. CustomerReference is "VISIT-{id}|{kind}".
+     */
+    public function finalizeVisit(Request $request)
+    {
+        $paymentId = $request->input('paymentId');
+        $accountId = $request->input('account_id');
+        $sig = (string) $request->input('sig', '');
+
+        if (! $paymentId || ! $accountId) {
+            return $this->failed($request, 'Invalid payment link parameters.');
+        }
+
+        if (! hash_equals(MyFatoorahService::accountSig((string) $accountId), $sig)) {
+            Log::warning('[VisitPaymentCallback] invalid account_id signature', ['payment_id' => $paymentId, 'account_id' => $accountId]);
+
+            return $this->failed($request, 'Invalid payment link signature.');
+        }
+
+        $gatewayAccount = GatewayAccount::find($accountId);
+        if (! $gatewayAccount || empty($gatewayAccount->credentials['api_key'])) {
+            return $this->failed($request, 'Clinic payment configuration invalid.');
+        }
+
+        $status = $this->checkPaymentStatus($paymentId, $gatewayAccount);
+        if (! $status['success']) {
+            return $this->failed($request, $status['message']);
+        }
+
+        $paidAmount = $status['data']['InvoiceValue'] ?? 0;
+
+        // Reference is "VISIT-{id}|{kind}".
+        $ref = (string) ($status['data']['CustomerReference'] ?? '');
+        [$visitToken, $kind] = array_pad(explode('|', $ref, 2), 2, 'other');
+        $visitId = (int) str_replace('VISIT-', '', $visitToken);
+        $kind = in_array($kind, ['consultation', 'services', 'medicines', 'other'], true) ? $kind : 'other';
+
+        $visit = Visit::find($visitId);
+        if (! $visit) {
+            Log::error('[VisitPaymentCallback] visit not found after successful payment', [
+                'payment_id' => $paymentId, 'reference' => $ref, 'amount' => $paidAmount,
+            ]);
+
+            return $this->failed($request, 'Visit record not found. Please contact the clinic.');
+        }
+
+        try {
+            DB::transaction(function () use ($visit, $status, $paymentId, $paidAmount, $kind) {
+                try {
+                    VisitPayment::updateOrCreate(
+                        ['reference_no' => $paymentId, 'method' => 'myfatoorah'],
+                        [
+                            'visit_id' => $visit->id,
+                            'amount' => $paidAmount,
+                            'kind' => $kind,
+                            'status' => 'paid',
+                            'paid_at' => Carbon::parse($status['data']['CreatedDate'] ?? now()),
+                            'collected_by_user_id' => null,
+                            'meta' => $status['data'],
+                        ]
+                    );
+                } catch (\Illuminate\Database\QueryException $e) {
+                    // Parallel-callback race — the unique (method, reference_no)
+                    // index already holds the row. Idempotent success.
+                    if (($e->errorInfo[0] ?? null) === '23000') {
+                        return;
+                    }
+                    throw $e;
+                }
+            });
+        } catch (\Throwable $e) {
+            Log::critical('[VisitPaymentCallback] money received, DB save failed', [
+                'payment_id' => $paymentId, 'visit_id' => $visitId, 'amount' => $paidAmount, 'error' => $e->getMessage(),
+            ]);
+
+            return $this->failed($request, 'Payment received but system update failed. Please show this screen to reception.');
+        }
+
+        return view('payments.visit-success', ['amount' => $paidAmount, 'ref' => $paymentId]);
+    }
+
     public function failed(Request $request, $message = null)
     {
         return view('bookings.payment.failed', [

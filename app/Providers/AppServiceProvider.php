@@ -39,6 +39,13 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        // Land every successful login on the v2 admin instead of the legacy
+        // Filament dashboard.
+        $this->app->bind(
+            \Filament\Http\Responses\Auth\Contracts\LoginResponse::class,
+            \App\Http\Responses\LoginResponse::class,
+        );
+
         $this->app->singleton(WhatsAppApiServiceFactory::class, function ($app) {
             return new WhatsAppApiServiceFactory;
         });

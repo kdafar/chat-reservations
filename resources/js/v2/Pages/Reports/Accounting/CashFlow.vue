@@ -14,7 +14,7 @@ const locale = computed(() => pageProps.props.locale ?? 'en')
 const isRtl = computed(() => locale.value === 'ar')
 
 const t = computed(() => isRtl.value ? {
-    title: 'قائمة التدفقات النقدية', eyebrow: 'تقارير المحاسبة', from: 'من', to: 'إلى', print: 'طباعة',
+    title: 'قائمة التدفقات النقدية', eyebrow: 'تقارير المحاسبة', desc: 'التدفقات النقدية التشغيلية والاستثمارية والتمويلية للفترة.', from: 'من', to: 'إلى', print: 'طباعة',
     ops: 'التدفقات التشغيلية', netIncome: 'صافي الدخل',
     deltaAP: 'التغير في الدائنين', deltaDoc: 'التغير في مستحقات الأطباء', deltaAR: 'التغير في المدينين', deltaInv: 'التغير في المخزون',
     cashOps: 'صافي النقد من التشغيل', investing: 'التدفقات الاستثمارية', deltaFA: 'شراء أصول ثابتة', cashInv: 'صافي النقد من الاستثمار',
@@ -22,7 +22,7 @@ const t = computed(() => isRtl.value ? {
     netChange: 'صافي التغير في النقد', cashStart: 'النقد أول المدة', cashEnd: 'النقد آخر المدة',
     reconciles: 'مطابق', notReconcile: 'غير مطابق',
 } : {
-    title: 'Cash Flow', eyebrow: 'Accounting Reports', from: 'From', to: 'To', print: 'Print',
+    title: 'Cash Flow', eyebrow: 'Accounting Reports', desc: 'Operating, investing, and financing cash flows for the period.', from: 'From', to: 'To', print: 'Print',
     ops: 'Operating activities', netIncome: 'Net income',
     deltaAP: 'Change in accounts payable', deltaDoc: 'Change in doctor payable', deltaAR: 'Change in receivables', deltaInv: 'Change in inventory',
     cashOps: 'Net cash from operations', investing: 'Investing activities', deltaFA: 'Purchase of fixed assets', cashInv: 'Net cash from investing',
@@ -43,11 +43,12 @@ const signed = (n) => (Number(n) < 0 ? '−' : '') + fmt(Math.abs(Number(n ?? 0)
 <template>
     <Head :title="t.title" />
         <PrintHeader :title="t.title" />
-    <div style="padding:24px; max-width:760px; margin:0 auto;">
-        <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:16px;">
+    <div style="padding:24px 28px; max-width:760px; margin:0 auto;">
+        <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin-bottom:20px; flex-wrap:wrap;">
             <div>
                 <div class="eyebrow">{{ t.eyebrow }}</div>
-                <h1 style="margin:4px 0 0; font-size:22px; font-weight:700; color:var(--fg);">{{ t.title }}</h1>
+                <h1 style="margin:6px 0 4px; font-size:26px; font-weight:500; letter-spacing:-0.02em;">{{ t.title }}</h1>
+                <p style="margin:0; font-size:13.5px; color:var(--fg-muted);">{{ t.desc }}</p>
             </div>
             <button class="btn btn-ghost no-print" onclick="window.print()"><Icon name="printer" :size="14" /><span>{{ t.print }}</span></button>
         </div>
@@ -103,13 +104,13 @@ const signed = (n) => (Number(n) < 0 ? '−' : '') + fmt(Math.abs(Number(n ?? 0)
 .cf td { padding:7px 16px; }
 .cf td:first-child { padding-inline-start:24px; }
 .cf .num { text-align:end; white-space:nowrap; font-variant-numeric:tabular-nums; }
-.cf .neg { color:var(--err, #dc2626); }
-.cf .pos { color:var(--ok); }
+.cf .neg { color:var(--destructive); }
+.cf .pos { color:var(--success); }
 .cf .muted { color:var(--fg-faint); }
 .cf tr.sec td { font-size:11px; text-transform:uppercase; letter-spacing:0.05em; color:var(--fg-faint); font-weight:700; padding-top:14px; padding-inline-start:16px; border-bottom:1px solid var(--line); }
 .cf tr.subtotal td { font-weight:600; border-top:1px solid var(--line); background:var(--bg-hover); }
 .cf tr.net td { font-weight:700; border-top:2px solid var(--line); padding-top:10px; }
 .cf tr.total td { font-weight:700; border-top:1px solid var(--line); }
-.badge-ok { display:inline-flex; align-items:center; gap:5px; padding:4px 12px; font-size:12px; font-weight:600; border:1px solid var(--ok); color:var(--ok); border-radius:999px; }
-.badge-warn { display:inline-flex; align-items:center; gap:5px; padding:4px 12px; font-size:12px; font-weight:600; border:1px solid var(--warn, #d97706); color:var(--warn, #d97706); border-radius:999px; }
+.badge-ok { display:inline-flex; align-items:center; gap:5px; padding:4px 12px; font-size:12px; font-weight:600; border:1px solid var(--success); color:var(--success); border-radius:999px; }
+.badge-warn { display:inline-flex; align-items:center; gap:5px; padding:4px 12px; font-size:12px; font-weight:600; border:1px solid var(--warning); color:var(--warning); border-radius:999px; }
 </style>

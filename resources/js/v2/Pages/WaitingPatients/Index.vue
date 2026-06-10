@@ -68,9 +68,11 @@ const props = defineProps({
     visits: { type: Array, required: true },
     counts: { type: Object, required: true },
     is_admin: { type: Boolean, default: false },
+    is_reception: { type: Boolean, default: false },
     is_doctor: { type: Boolean, default: false },
     doctor_id: { type: [Number, null], default: null },
     doctor_schedule: { type: Array, default: () => [] },
+    doctor_options: { type: Array, default: () => [] },
     attendance: { type: Object, default: null },
 })
 
@@ -101,6 +103,47 @@ onUnmounted(() => clearInterval(tick))
 
 function refresh() {
     router.reload({ only: ['visits', 'counts'], preserveScroll: true, preserveState: true })
+}
+
+// Reception/admin: reassign the visit's doctor from the queue.
+const canReassignDoctor = computed(() => props.is_admin || props.is_reception)
+const reassigningId = ref(null)
+
+// Only offer doctors at the open visit's branch — the backend rejects
+// cross-branch reassignment, so showing them would just produce errors.
+const doctorOptionsForOpen = computed(() => {
+    const bid = openPatient.value?.branch?.id ?? null
+    if (!bid) return props.doctor_options
+    return props.doctor_options.filter((d) => !d.branch_id || Number(d.branch_id) === Number(bid))
+})
+function csrfToken() {
+    return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ?? ''
+}
+async function reassignDoctor(visitId, doctorId, force = false) {
+    if (!visitId || !doctorId) return
+    reassigningId.value = visitId
+    try {
+        const resp = await fetch(`/admin/v2/api/visits/${visitId}/reassign-doctor`, {
+            method: 'POST', credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken(), Accept: 'application/json' },
+            body: JSON.stringify({ doctor_id: Number(doctorId), force }),
+        })
+        const data = await resp.json().catch(() => ({}))
+        if (!resp.ok || !data.ok) {
+            // Visit already started: an admin may override after confirming.
+            if (data.requires_force && !force) {
+                const ok = window.confirm(locale.value === 'ar'
+                    ? 'بدأت هذه الزيارة بالفعل. تغيير الطبيب الآن سيعيد كتابة من عالج المريض. هل تريد المتابعة؟'
+                    : 'This visit has already started. Changing the doctor now rewrites who treated the patient. Continue anyway?')
+                if (ok) return reassignDoctor(visitId, doctorId, true)
+                return
+            }
+            pushToast({ kind: 'warning', icon: 'alert-triangle', title: locale.value === 'ar' ? 'تعذر تغيير الطبيب' : 'Could not change doctor', desc: data.error })
+            return
+        }
+        pushToast({ kind: 'success', icon: 'check', title: locale.value === 'ar' ? 'تم تغيير الطبيب' : 'Doctor changed', desc: data.doctor?.name })
+        refresh()
+    } finally { reassigningId.value = null }
 }
 
 const doctors = computed(() => {
@@ -134,6 +177,13 @@ function docName(name) {
     return String(name ?? '').replace(/^\s*(dr\.\s*|dr\s+|د\.?\s*)/i, '').trim()
 }
 
+// Tooltip / aria text for an insurance chip: "Insurer · Plan · #policy".
+function insuranceTitle(policy) {
+    if (!policy) return ''
+    return [policy.insurer, policy.plan, policy.number ? `#${policy.number}` : null]
+        .filter(Boolean).join(' · ')
+}
+
 function waitTone(min) {
     if (min < 15) return 'success'
     if (min < 30) return 'warning'
@@ -158,15 +208,24 @@ function initialsOf(name) {
     return (name ?? '?').split(/\s+/).filter(Boolean).slice(0, 2).map((s) => s[0].toUpperCase()).join('')
 }
 
+// Strip everything but digits — lets a phone search match regardless of
+// spaces / +965 / dashes the number was stored with.
+const onlyDigits = (x) => String(x ?? '').replace(/\D+/g, '')
+
 const filtered = computed(() => {
     const s = q.value.trim().toLowerCase()
+    const sDigits = onlyDigits(s)
     return [...props.visits]
         .filter((v) => {
             if (filter.value !== 'all' && v.status !== filter.value) return false
             if (doctorFilter.value !== 'all' && v.doctor?.name !== doctorFilter.value) return false
             if (s) {
-                const hay = `${v.patient?.name ?? ''} ${v.booking_code ?? ''} ${v.doctor?.name ?? ''} ${v.room?.name ?? ''}`.toLowerCase()
-                if (!hay.includes(s)) return false
+                // Text haystack: name, booking code, doctor, room, file # (patient id), phone.
+                const hay = `${v.patient?.name ?? ''} ${v.booking_code ?? ''} ${v.doctor?.name ?? ''} ${v.room?.name ?? ''} ${v.patient?.id ?? ''} ${v.patient?.msisdn ?? ''}`.toLowerCase()
+                // Digit haystack: match a typed number against the patient's
+                // phone even when formatting differs (need ≥3 digits to avoid noise).
+                const phoneMatch = sDigits.length >= 3 && onlyDigits(v.patient?.msisdn).includes(sDigits)
+                if (!hay.includes(s) && !phoneMatch) return false
             }
             return true
         })
@@ -289,7 +348,9 @@ const gridCols = 'repeat(auto-fill, minmax(320px, 1fr))'
                             {{ t.total }}
                         </div>
                     </div>
-                    <div class="num-xl" style="color: var(--fg);">{{ counts.awaiting_doctor + counts.in_progress + counts.awaiting_stock }}</div>
+                    <!-- Must equal the "All" filter chip below: pending check-ins +
+                         active visits + the awaiting-payment cards reception sees. -->
+                    <div class="num-xl" style="color: var(--fg);">{{ (counts.pending_checkin || 0) + counts.awaiting_doctor + counts.in_progress + counts.awaiting_stock + (counts.awaiting_payment_visible || 0) }}</div>
                 </button>
 
                 <button
@@ -512,6 +573,57 @@ const gridCols = 'repeat(auto-fill, minmax(320px, 1fr))'
                         </template>
                     </div>
 
+                    <!-- Info chips: phone · paid/balance · insurance · discount -->
+                    <div
+                        v-if="v.patient?.msisdn || (v.fee && v.fee.amount > 0) || v.policy || (v.discount_total > 0)"
+                        style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 2px;"
+                    >
+                        <span
+                            v-if="v.patient?.msisdn"
+                            class="wp-chip tnum"
+                            :title="locale === 'ar' ? 'الجوال' : 'Phone'"
+                        >
+                            <Icon name="phone" :size="11" :style="{ color: 'var(--fg-subtle)' }" />
+                            {{ v.patient.msisdn }}
+                        </span>
+                        <span
+                            v-if="v.fee && (v.fee.balance > 0)"
+                            class="wp-chip tnum"
+                            style="color: var(--warning); border-color: var(--warning);"
+                            :title="locale === 'ar' ? 'المبلغ المتبقي' : 'Outstanding balance'"
+                        >
+                            <Icon name="alert-circle" :size="11" />
+                            {{ v.fee.balance.toFixed(3) }} {{ locale === 'ar' ? 'متبقّي' : 'due' }}
+                        </span>
+                        <span
+                            v-else-if="v.fee && (v.fee.paid_total > 0)"
+                            class="wp-chip tnum"
+                            style="color: var(--success); border-color: var(--success);"
+                            :title="locale === 'ar' ? 'المبلغ المدفوع' : 'Amount paid'"
+                        >
+                            <Icon name="check" :size="11" />
+                            {{ v.fee.paid_total.toFixed(3) }} {{ locale === 'ar' ? 'مدفوع' : 'paid' }}
+                        </span>
+                        <span
+                            v-if="v.policy"
+                            class="wp-chip"
+                            style="color: var(--info); border-color: var(--info);"
+                            :title="insuranceTitle(v.policy)"
+                        >
+                            <Icon name="shield" :size="11" />
+                            {{ v.policy.insurer || (locale === 'ar' ? 'تأمين' : 'Insured') }}
+                        </span>
+                        <span
+                            v-if="v.discount_total > 0"
+                            class="wp-chip tnum"
+                            style="color: var(--violet); border-color: var(--violet);"
+                            :title="locale === 'ar' ? 'الخصم' : 'Discount'"
+                        >
+                            <Icon name="tag" :size="11" />
+                            -{{ v.discount_total.toFixed(3) }}
+                        </span>
+                    </div>
+
                     <!-- Footer -->
                     <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 2px;">
                         <span class="badge" :class="`badge-${statusTone(v.status)}`">
@@ -621,7 +733,20 @@ const gridCols = 'repeat(auto-fill, minmax(320px, 1fr))'
                     <div class="rgrid-2" style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
                         <div style="display: flex; flex-direction: column; gap: 4px;">
                             <div class="eyebrow" style="font-size: 10px;">{{ t.doctor }}</div>
-                            <div style="font-size: 13px; display: inline-flex; align-items: center; gap: 6px; color: var(--fg);">
+                            <div v-if="canReassignDoctor && doctorOptionsForOpen.length" style="display: inline-flex; align-items: center; gap: 6px;">
+                                <Icon name="stethoscope" :size="13" :style="{ color: 'var(--fg-subtle)' }" />
+                                <select
+                                    class="input"
+                                    style="font-size: 13px; padding: 4px 8px; max-width: 180px;"
+                                    :disabled="reassigningId === openPatient.id"
+                                    :value="openPatient.doctor?.id ?? ''"
+                                    @change="(e) => reassignDoctor(openPatient.id, e.target.value)"
+                                >
+                                    <option value="" disabled>{{ locale === 'ar' ? 'اختر طبيباً' : 'Select doctor' }}</option>
+                                    <option v-for="d in doctorOptionsForOpen" :key="d.id" :value="d.id">{{ docName(d.name) }}</option>
+                                </select>
+                            </div>
+                            <div v-else style="font-size: 13px; display: inline-flex; align-items: center; gap: 6px; color: var(--fg);">
                                 <Icon name="stethoscope" :size="13" :style="{ color: 'var(--fg-subtle)' }" />
                                 {{ openPatient.doctor ? docName(openPatient.doctor.name) : '—' }}
                             </div>
@@ -662,6 +787,40 @@ const gridCols = 'repeat(auto-fill, minmax(320px, 1fr))'
                                 <Icon name="alert-circle" :size="10" />
                                 {{ locale === 'ar' ? 'غير مدفوع' : 'Unpaid' }}
                             </span>
+                        </div>
+
+                        <!-- Total paid (all kinds) + outstanding balance + discount -->
+                        <div
+                            v-if="(openPatient.fee.paid_total > 0) || (openPatient.fee.balance > 0) || (openPatient.discount_total > 0)"
+                            style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; font-size: 12.5px;"
+                        >
+                            <div v-if="openPatient.fee.paid_total > 0" style="display: flex; justify-content: space-between; align-items: center;">
+                                <span style="color: var(--fg-muted);">{{ locale === 'ar' ? 'إجمالي المدفوع' : 'Total paid' }}</span>
+                                <span class="tnum" style="font-weight: 500; color: var(--success);">{{ openPatient.fee.paid_total.toFixed(3) }} <span style="font-size: 10px; color: var(--fg-subtle);">KWD</span></span>
+                            </div>
+                            <div v-if="openPatient.fee.balance > 0" style="display: flex; justify-content: space-between; align-items: center;">
+                                <span style="color: var(--fg-muted);">{{ locale === 'ar' ? 'الرصيد المتبقي' : 'Outstanding balance' }}</span>
+                                <span class="tnum" style="font-weight: 500; color: var(--warning);">{{ openPatient.fee.balance.toFixed(3) }} <span style="font-size: 10px; color: var(--fg-subtle);">KWD</span></span>
+                            </div>
+                            <div v-if="openPatient.discount_total > 0" style="display: flex; justify-content: space-between; align-items: center;">
+                                <span style="color: var(--fg-muted);">{{ locale === 'ar' ? 'الخصم' : 'Discount' }}</span>
+                                <span class="tnum" style="font-weight: 500; color: var(--violet);">-{{ openPatient.discount_total.toFixed(3) }} <span style="font-size: 10px; color: var(--fg-subtle);">KWD</span></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Insurance policy -->
+                    <div v-if="openPatient.policy" class="card" style="padding: 14px; background: var(--bg-sunken);">
+                        <div class="eyebrow" style="margin-bottom: 10px; display: inline-flex; align-items: center; gap: 6px;">
+                            <Icon name="shield" :size="11" :style="{ color: 'var(--info)' }" />
+                            {{ locale === 'ar' ? 'التأمين' : 'Insurance' }}
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 4px; font-size: 13px;">
+                            <div style="font-weight: 500;">{{ openPatient.policy.insurer || (locale === 'ar' ? 'تأمين' : 'Insured') }}</div>
+                            <div v-if="openPatient.policy.plan" style="color: var(--fg-muted);">{{ openPatient.policy.plan }}</div>
+                            <div v-if="openPatient.policy.number" class="tnum" style="color: var(--fg-subtle); font-size: 12px;">
+                                {{ locale === 'ar' ? 'رقم البوليصة' : 'Policy' }} #{{ openPatient.policy.number }}
+                            </div>
                         </div>
                     </div>
 
@@ -738,6 +897,24 @@ const gridCols = 'repeat(auto-fill, minmax(320px, 1fr))'
     transition: background 0.1s;
 }
 .wp-menu-row:hover { background: var(--bg-hover); }
+
+/* Small info chips on the queue card (phone / paid-balance / insurance / discount). */
+.wp-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 7px;
+    border: 1px solid var(--line);
+    border-radius: 9999px;
+    background: var(--bg-sunken);
+    font-size: 11px;
+    line-height: 1.6;
+    color: var(--fg-muted);
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
 
 .wp-schedule {
     margin-bottom: 16px;

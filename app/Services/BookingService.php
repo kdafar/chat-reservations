@@ -170,6 +170,12 @@ class BookingService
                 ],
             ];
 
+            // Identity review: phone matched an existing patient under a
+            // different name (see resolveOrCreatePatientId). Stamp the hint so
+            // reception can confirm/split at check-in. When the name matches
+            // (or no patient matched) we explicitly clear any stale hint.
+            $metaPatch['identity_review'] = $this->identityReview;
+
             // 3) Update existing booking OR create new
             if ($existingId > 0) {
                 /** @var Booking|null $b */
@@ -351,10 +357,35 @@ class BookingService
     }
 
     /**
+     * Identity-review hint produced by resolveOrCreatePatientId(): when a
+     * booking's phone matches an existing patient but the *name* differs,
+     * we still link to the existing patient (so the booking works) but stash
+     * a review payload here so the caller can fold it into booking.meta.
+     * Reception confirms (or splits) the identity at check-in. Reset on each
+     * resolution so a re-confirm without mismatch clears stale state.
+     *
+     * @var array<string,mixed>|null
+     */
+    protected ?array $identityReview = null;
+
+    /**
+     * Normalize a name for tolerant comparison: trim, collapse internal
+     * whitespace, lowercase. Genuinely different names still differ; only
+     * whitespace/case noise is ignored. No fuzzy matching by design.
+     */
+    protected function normalizeNameForCompare(string $name): string
+    {
+        return mb_strtolower(trim((string) preg_replace('/\s+/u', ' ', $name)));
+    }
+
+    /**
      * Patient resolution (conservative, partner-scoped when possible).
      */
     protected function resolveOrCreatePatientId(string $phone, Branch $branch, array $attrs): ?int
     {
+        // Clear any hint from a previous resolution (idempotent per call).
+        $this->identityReview = null;
+
         if (! class_exists(Patient::class)) {
             return null;
         }
@@ -366,8 +397,32 @@ class BookingService
             $q->where('partner_id', $branch->partner_id);
         }
 
-        $existing = $q->first();
+        // Most recent first: once reception splits a reassigned number into a
+        // new patient, two patients can share a phone — the latest one is the
+        // current owner, so match that rather than an arbitrary row.
+        $existing = $q->orderByDesc('id')->first();
         if ($existing) {
+            // Phone matches an existing patient. Real-life phone numbers get
+            // reassigned, so a *different* incoming name is a red flag: link
+            // to the existing patient (so the booking still works) but stamp
+            // a review hint for reception to confirm at check-in. Only flag
+            // when the incoming name is non-blank AND genuinely differs.
+            $incomingName = trim((string) ($attrs['name'] ?? ''));
+            if ($incomingName !== '') {
+                $existingName = is_array($existing->name)
+                    ? (string) ($existing->name[app()->getLocale()] ?? $existing->name['en'] ?? reset($existing->name))
+                    : (string) $existing->name;
+
+                if ($this->normalizeNameForCompare($incomingName) !== $this->normalizeNameForCompare($existingName)) {
+                    $this->identityReview = [
+                        'matched_patient_id' => (int) $existing->id,
+                        'matched_patient_name' => $existingName,
+                        'proposed_name' => $incomingName,
+                        'phone' => $phone,
+                    ];
+                }
+            }
+
             return (int) $existing->id;
         }
 

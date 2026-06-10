@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\V2;
 
 use App\Http\Controllers\Controller;
+use App\Support\ResolvesAccessibleClinics;
 use App\Models\Branch;
 use App\Services\Reporting\ExecutiveDashboardService;
 use Illuminate\Http\Request;
@@ -16,6 +17,8 @@ use Inertia\Response;
  */
 class ExecutiveDashboardController extends Controller
 {
+    use ResolvesAccessibleClinics;
+
     public function __construct(protected ExecutiveDashboardService $svc) {}
 
     public function index(Request $request): Response
@@ -38,7 +41,7 @@ class ExecutiveDashboardController extends Controller
                 $filters['period'], $filters['start_date'], $filters['end_date'], $filters['branch_id']
             )),
             'periods' => ['today', 'week', 'month', 'quarter', 'year', 'custom'],
-            'branches' => Branch::query()->orderBy('id')->get(['id', 'name'])
+            'branches' => Branch::query()->when($this->accessibleBranchIds() !== null, fn ($q) => $q->whereIn('id', $this->accessibleBranchIds() ?: [0]))->orderBy('id')->get(['id', 'name'])
                 ->map(fn ($b) => ['id' => $b->id, 'name' => $b->localized_name ?? ('#'.$b->id)])->all(),
         ]);
     }

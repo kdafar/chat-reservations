@@ -30,7 +30,131 @@ class ClinicRoleStructureSeeder extends Seeder
     {
         $this->seedNurse();
         $this->seedClinicalLibrary();
+        $this->seedStockTransfers();
+        $this->restrictDoctorCatalogToReadOnly();
+        $this->pruneLegacyOverGrants();
         $this->consolidateRoles();
+    }
+
+    /**
+     * Inter-branch stock transfers: clinical/front-desk staff can REQUEST a
+     * transfer (view+create); dispatching it (update — moves hub stock) and
+     * cancelling are limited to clinic_admin + reception (the hub/front desk).
+     * Admin bypasses. Additive.
+     */
+    protected function seedStockTransfers(): void
+    {
+        $grants = [
+            'clinic_admin' => $this->verbs(['view', 'create', 'update', 'delete'], ['stock_transfers']),
+            'clinic_reception' => $this->verbs(['view', 'create', 'update', 'delete'], ['stock_transfers']),
+            'clinic_doctor' => $this->verbs(['view', 'create'], ['stock_transfers']),
+            'clinic_nurse' => $this->verbs(['view', 'create'], ['stock_transfers']),
+        ];
+
+        foreach ($grants as $roleName => $names) {
+            $role = Role::firstOrCreate(['name' => $roleName, 'guard_name' => 'web']);
+            $perms = Permission::where('guard_name', 'web')->whereIn('name', $names->all())->get();
+            $existing = $role->permissions()->pluck('id')->all();
+            $role->syncPermissions(array_values(array_unique(array_merge($existing, $perms->pluck('id')->all()))));
+        }
+    }
+
+    /**
+     * Strip legacy/over-broad permissions that accumulated on non-admin roles:
+     *  - clinic_doctor could read EVERY doctor's pay (compensation ledgers +
+     *    profiles) — an orphan grant from old seeding. Revoke.
+     *  - clinic_doctor held the destructive delete family (delete_any /
+     *    force_delete / restore / delete) on the shared medications + quick-phrase
+     *    catalogs (verbs('delete') over-expands). Doctors keep view/create/update
+     *    only; hard catalog management stays with admin/clinic_admin.
+     *  - clinic_reception could DELETE lab orders + results (clinical records);
+     *    front desk should create/update only.
+     */
+    protected function pruneLegacyOverGrants(): void
+    {
+        $revoke = function (string $roleName, array $names): void {
+            $role = Role::where('name', $roleName)->where('guard_name', 'web')->first();
+            if (! $role) {
+                return;
+            }
+            foreach ($names as $name) {
+                if (($p = Permission::where('guard_name', 'web')->where('name', $name)->first()) && $role->hasPermissionTo($p)) {
+                    $role->revokePermissionTo($p);
+                }
+            }
+        };
+
+        // Doctor: no staff pay-data, no destructive catalog ops.
+        $doctorRevoke = [
+            'view_any_doctor_compensation_ledgers', 'view_doctor_compensation_ledgers',
+            'view_any_doctor_compensation_profiles', 'view_doctor_compensation_profiles',
+        ];
+        foreach (['medications', 'clinical_phrases'] as $r) {
+            $doctorRevoke[] = "delete_{$r}";
+            $doctorRevoke[] = "delete_any_{$r}";
+            $doctorRevoke[] = "force_delete_{$r}";
+            $doctorRevoke[] = "force_delete_any_{$r}";
+            $doctorRevoke[] = "restore_{$r}";
+            $doctorRevoke[] = "restore_any_{$r}";
+        }
+        $revoke('clinic_doctor', $doctorRevoke);
+
+        // Reception: cannot delete clinical lab records.
+        $revoke('clinic_reception', ['delete_lab_orders', 'delete_lab_order_items']);
+
+        // Accounting audit trail: posted journal entries + accounting periods must
+        // never be destroyed (they have no soft-delete column, so any delete is a
+        // hard delete). The correct correction is a reversing entry / re-open, not
+        // deletion. Strip the whole delete family from finance roles; keep
+        // view/create/update.
+        $glDelete = [];
+        foreach (['accounting_journal_entries', 'accounting_periods'] as $r) {
+            foreach (['delete', 'delete_any', 'force_delete', 'force_delete_any', 'restore', 'restore_any'] as $v) {
+                $glDelete[] = "{$v}_{$r}";
+            }
+        }
+        $revoke('accountant', $glDelete);
+        $revoke('clinic_admin', $glDelete);
+
+        app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
+    }
+
+    /**
+     * Doctors may VIEW the items / stock / packages catalogs (to check
+     * availability) but must not edit pricing or adjust inventory — that's
+     * management/pharmacy work. Revoke every non-view verb on those resources
+     * from clinic_doctor while keeping read access. (Legacy seeding had granted
+     * doctors update_clinic_items / update_clinic_item_stocks.)
+     */
+    protected function restrictDoctorCatalogToReadOnly(): void
+    {
+        $doctor = Role::where('name', 'clinic_doctor')->where('guard_name', 'web')->first();
+        if (! $doctor) {
+            return;
+        }
+
+        foreach (['clinic_items', 'clinic_item_stocks', 'clinic_packages'] as $r) {
+            // Revoke create/update/delete/restore/reorder — everything but view.
+            $toRevoke = Permission::query()
+                ->where('guard_name', 'web')
+                ->where('name', 'like', '%_'.$r)
+                ->whereNotIn('name', ["view_any_{$r}", "view_{$r}"])
+                ->get();
+            foreach ($toRevoke as $perm) {
+                if ($doctor->hasPermissionTo($perm)) {
+                    $doctor->revokePermissionTo($perm);
+                }
+            }
+
+            // Ensure read access stays.
+            foreach (["view_any_{$r}", "view_{$r}"] as $name) {
+                if ($p = Permission::where('guard_name', 'web')->where('name', $name)->first()) {
+                    $doctor->givePermissionTo($p);
+                }
+            }
+        }
+
+        app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
     }
 
     /**
@@ -44,7 +168,9 @@ class ClinicRoleStructureSeeder extends Seeder
 
         $grants = [
             'clinic_admin' => $this->verbs(['view', 'create', 'update', 'delete'], $resources),
-            'clinic_doctor' => $this->verbs(['view', 'create', 'update', 'delete'], $resources),
+            // Doctors contribute phrases/drugs but don't destructively manage the
+            // shared catalogs — view/create/update only (no delete family).
+            'clinic_doctor' => $this->verbs(['view', 'create', 'update'], $resources),
             'clinic_nurse' => $this->verbs(['view'], $resources),
         ];
 

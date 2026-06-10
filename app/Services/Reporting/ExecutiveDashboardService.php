@@ -35,6 +35,8 @@ class ExecutiveDashboardService
             'item_profitability' => $this->guard('item_profitability', fn () => $this->getItemProfitability($start, $end, $branchId), []),
             'cancellation_analysis' => $this->guard('cancellation', fn () => $this->getCancellationAnalysis($start, $end, $branchId), []),
             'follow_up_funnel' => $this->guard('funnel', fn () => $this->getFollowUpFunnel($start, $end, $branchId), []),
+            'patients' => $this->guard('patients', fn () => $this->getPatients($start, $end, $branchId), ['total' => 0, 'new' => 0, 'returning' => 0, 'repeat_rate' => 0]),
+            'receivables' => $this->guard('receivables', fn () => $this->getReceivables($end, $branchId), ['total' => 0, 'count' => 0, 'buckets' => []]),
         ];
     }
 
@@ -91,12 +93,23 @@ class ExecutiveDashboardService
         $prevProfit = (float) (clone $pBase())->sum('profit_total');
         $prevVisits = (int) (clone $pBase())->count();
 
-        // Show rate over bookings in range.
-        $bk = Booking::query()->whereBetween('res_date', [$start->toDateString(), $end->toDateString()])
-            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId));
-        $totalBookings = (int) (clone $bk)->count();
-        $completedBookings = (int) (clone $bk)->whereIn('status', ['completed', 'checked_in'])->count();
-        $showRate = $totalBookings > 0 ? ($completedBookings / $totalBookings) * 100 : 0;
+        // Show rate = patients who showed ÷ (showed + no-shows). Cancelled and
+        // not-yet-due bookings are excluded so the rate reflects attendance, not
+        // booking volume. (Previously this used all bookings as the denominator.)
+        $showRateFor = function (Carbon $s, Carbon $e) use ($branchId) {
+            $bk = Booking::query()->whereBetween('res_date', [$s->toDateString(), $e->toDateString()])
+                ->when($branchId, fn ($q) => $q->where('branch_id', $branchId));
+            $shown = (int) (clone $bk)->whereIn('status', ['completed', 'checked_in'])->count();
+            $noShow = (int) (clone $bk)->where(fn ($q) => $q->where('status', 'no_show')->orWhereNotNull('no_show_at'))->count();
+            $denom = $shown + $noShow;
+            return $denom > 0 ? ($shown / $denom) * 100 : 0;
+        };
+        $showRate = $showRateFor($start, $end);
+        $prevShowRate = $showRateFor($prevStart, $prevEnd);
+
+        $margin = $revenue > 0 ? ($profit / $revenue) * 100 : 0;
+        $prevMargin = $prevRevenue > 0 ? ($prevProfit / $prevRevenue) * 100 : 0;
+        $prevAvgTx = $prevVisits > 0 ? $prevRevenue / $prevVisits : 0;
 
         $pct = fn ($cur, $prev) => $prev > 0 ? (($cur - $prev) / $prev) * 100 : 0;
         $trend = fn ($cur, $prev) => $cur >= $prev ? 'up' : 'down';
@@ -104,10 +117,54 @@ class ExecutiveDashboardService
         return [
             'revenue' => ['value' => $revenue, 'change' => $pct($revenue, $prevRevenue), 'trend' => $trend($revenue, $prevRevenue)],
             'profit' => ['value' => $profit, 'change' => $pct($profit, $prevProfit), 'trend' => $trend($profit, $prevProfit)],
-            'margin' => ['value' => $revenue > 0 ? ($profit / $revenue) * 100 : 0, 'change' => 0, 'trend' => 'neutral'],
-            'avg_transaction' => ['value' => $avgTx, 'change' => 0, 'trend' => 'neutral'],
+            'margin' => ['value' => $margin, 'change' => $pct($margin, $prevMargin), 'trend' => $trend($margin, $prevMargin)],
+            'avg_transaction' => ['value' => $avgTx, 'change' => $pct($avgTx, $prevAvgTx), 'trend' => $trend($avgTx, $prevAvgTx)],
             'visits' => ['value' => $visits, 'change' => $pct($visits, $prevVisits), 'trend' => $trend($visits, $prevVisits)],
-            'show_rate' => ['value' => $showRate, 'change' => 0, 'trend' => 'neutral'],
+            'show_rate' => ['value' => $showRate, 'change' => $pct($showRate, $prevShowRate), 'trend' => $trend($showRate, $prevShowRate)],
+        ];
+    }
+
+    protected function getPatients(Carbon $start, Carbon $end, ?int $branchId): array
+    {
+        $base = Visit::query()->where('status', 'completed')->whereBetween('completed_at', [$start, $end])
+            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId));
+        $ids = (clone $base)->whereNotNull('patient_id')->distinct()->pluck('patient_id');
+        $total = $ids->count();
+        $returning = $total > 0
+            ? (int) Visit::query()->whereIn('patient_id', $ids)->where('completed_at', '<', $start)->distinct()->count('patient_id')
+            : 0;
+        $new = max(0, $total - $returning);
+        return [
+            'total' => $total,
+            'new' => $new,
+            'returning' => $returning,
+            'repeat_rate' => $total > 0 ? round(($returning / $total) * 100, 1) : 0,
+        ];
+    }
+
+    protected function getReceivables(Carbon $end, ?int $branchId): array
+    {
+        $rows = \Illuminate\Support\Facades\DB::table('visits')
+            ->where('status', 'completed')->whereNotNull('completed_at')->where('completed_at', '<=', $end)
+            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
+            ->selectRaw("(COALESCE(fees_total,0)+COALESCE(packages_price_total,0)+COALESCE(items_price_total,0)-COALESCE(discount_total,0)) - COALESCE((SELECT SUM(amount) FROM visit_payments WHERE visit_payments.visit_id=visits.id AND status='paid'),0) as bal, DATEDIFF(?, completed_at) as age", [$end->toDateString()])
+            ->havingRaw('bal > 0.005')->get();
+
+        $b0 = 0.0; $b1 = 0.0; $b2 = 0.0; $total = 0.0;
+        foreach ($rows as $r) {
+            $bal = (float) $r->bal; $total += $bal;
+            if ((int) $r->age <= 30) $b0 += $bal;
+            elseif ((int) $r->age <= 60) $b1 += $bal;
+            else $b2 += $bal;
+        }
+        return [
+            'total' => round($total, 3),
+            'count' => $rows->count(),
+            'buckets' => [
+                ['label' => '0–30', 'amount' => round($b0, 3)],
+                ['label' => '31–60', 'amount' => round($b1, 3)],
+                ['label' => '60+', 'amount' => round($b2, 3)],
+            ],
         ];
     }
 

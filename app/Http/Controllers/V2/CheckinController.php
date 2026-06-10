@@ -53,7 +53,10 @@ class CheckinController extends Controller
             $query->where(function ($w) use ($like) {
                 $w->where('booking_code', 'like', $like)
                     ->orWhere('msisdn', 'like', $like)
-                    ->orWhereHas('patient', fn ($p) => $p->where('name', 'like', $like));
+                    // Also match the patient's *current* phone — the booking's
+                    // msisdn can be stale if the patient's number changed since.
+                    ->orWhereHas('patient', fn ($p) => $p->where('name', 'like', $like)
+                        ->orWhere('phone', 'like', $like));
             });
         }
 
@@ -336,6 +339,116 @@ class CheckinController extends Controller
                 'id' => $b->branch->id,
                 'name' => $b->branch->getTranslation('name', app()->getLocale(), true),
             ] : null,
+            // Identity review (Phase 3): present when this booking's phone
+            // matched an existing patient under a *different* name. Reception
+            // resolves it at check-in via confirm-identity / split-patient.
+            'identity_review' => $this->identityReviewPayload($b),
         ], $extra);
+    }
+
+    /**
+     * Returns the booking's pending identity-review hint, or null. Reads
+     * booking.meta['identity_review'] (set by BookingService when a phone
+     * matched an existing patient but the incoming name differed).
+     */
+    protected function identityReviewPayload(Booking $b): ?array
+    {
+        $meta = $b->meta;
+        if (is_string($meta)) {
+            $decoded = json_decode($meta, true);
+            $meta = json_last_error() === JSON_ERROR_NONE ? $decoded : [];
+        }
+        $review = is_array($meta) ? ($meta['identity_review'] ?? null) : null;
+        if (! is_array($review) || empty($review['matched_patient_id'])) {
+            return null;
+        }
+
+        return [
+            'matched_patient_id' => (int) $review['matched_patient_id'],
+            'matched_patient_name' => (string) ($review['matched_patient_name'] ?? ''),
+            'proposed_name' => (string) ($review['proposed_name'] ?? ''),
+            'phone' => (string) ($review['phone'] ?? ($b->msisdn ?? '')),
+        ];
+    }
+
+    /**
+     * Identity review — CONFIRM. The phone really does belong to the existing
+     * patient; keep the link as-is and just clear the review flag.
+     */
+    public function confirmIdentity(Request $request, Booking $booking): JsonResponse
+    {
+        $this->abortIfNotReception();
+
+        $this->clearIdentityReview($booking);
+
+        return $this->booking($request, $booking);
+    }
+
+    /**
+     * Identity review — SPLIT (it's a new person). The number was reassigned:
+     * create a NEW patient from the booking's proposed name + phone, repoint
+     * the booking (and its visit, if one exists) to the new patient, then
+     * clear the flag.
+     */
+    public function splitPatient(Request $request, Booking $booking): JsonResponse
+    {
+        $this->abortIfNotReception();
+
+        $review = $this->identityReviewPayload($booking);
+        if (! $review) {
+            // Nothing to split (already resolved) — just return current state.
+            return $this->booking($request, $booking);
+        }
+
+        $name = trim($review['proposed_name']) !== '' ? trim($review['proposed_name']) : trim($review['phone']);
+        $phone = (string) $review['phone'];
+
+        try {
+            DB::transaction(function () use ($booking, $name, $phone) {
+                /** @var Booking $fresh */
+                $fresh = Booking::query()->lockForUpdate()->findOrFail($booking->id);
+
+                $data = ['name' => $name, 'phone' => $phone];
+                // Inherit partner scoping from the existing patient / branch so
+                // the new patient lands in the same clinic.
+                if (\Illuminate\Support\Facades\Schema::hasColumn('patients', 'partner_id')) {
+                    $partnerId = $fresh->patient?->partner_id ?? $fresh->branch?->partner_id;
+                    if ($partnerId) {
+                        $data['partner_id'] = $partnerId;
+                    }
+                }
+
+                $newPatient = \App\Models\Patient::create($data);
+
+                // Repoint the booking.
+                $fresh->patient_id = $newPatient->id;
+                $meta = is_array($fresh->meta) ? $fresh->meta : [];
+                unset($meta['identity_review']);
+                $fresh->meta = $meta;
+                $fresh->save();
+
+                // Repoint any visit already created for this booking.
+                Visit::query()
+                    ->where('booking_id', $fresh->id)
+                    ->update(['patient_id' => $newPatient->id]);
+            });
+        } catch (\Throwable $e) {
+            report($e);
+
+            return response()->json(['ok' => false, 'error' => 'Could not create the new patient.'], 422);
+        }
+
+        return $this->booking($request, $booking->refresh());
+    }
+
+    /** Remove the identity_review hint from booking.meta (idempotent). */
+    protected function clearIdentityReview(Booking $booking): void
+    {
+        $meta = is_array($booking->meta) ? $booking->meta : [];
+        if (array_key_exists('identity_review', $meta)) {
+            unset($meta['identity_review']);
+            $booking->meta = $meta;
+            $booking->save();
+        }
     }
 }

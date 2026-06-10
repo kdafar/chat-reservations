@@ -131,6 +131,39 @@ class GatewayAccount extends Model
             ->first();
     }
 
+    /**
+     * Best usable MyFatoorah account for a branch (visit-balance payment links).
+     * Mirrors bestForBooking() but keyed on branch/partner instead of a booking:
+     * branch override > partner > system, skipping accounts without a real key.
+     */
+    public static function bestForBranch(int $branchId, ?int $partnerId): ?self
+    {
+        return self::query()
+            ->with('gateway')
+            ->where('is_active', true)
+            ->where(function ($q) use ($branchId, $partnerId) {
+                $q->where(function ($sq) use ($branchId) {
+                    $sq->where('owner_type', 'branch')->where('branch_id', $branchId);
+                })
+                    ->when($partnerId, fn ($qq) => $qq->orWhere(function ($sq) use ($partnerId) {
+                        $sq->where('owner_type', 'partner')->where('partner_id', $partnerId);
+                    }))
+                    ->orWhere('owner_type', 'system');
+            })
+            ->orderByRaw("FIELD(owner_type, 'branch', 'partner', 'system')")
+            ->orderByDesc('is_default')
+            ->orderByDesc('id')
+            ->get()
+            ->first(function (self $acc) {
+                if (($acc->gateway?->driver ?? null) !== 'myfatoorah') {
+                    return false;
+                }
+                $apiKey = (string) data_get($acc->credentials, 'api_key', '');
+
+                return $apiKey !== '' && ! str_contains($apiKey, 'XXXX');
+            });
+    }
+
     public static function paymentOptionsForBooking(\App\Models\Booking $booking): array
     {
         $branchId = (int) $booking->branch_id;

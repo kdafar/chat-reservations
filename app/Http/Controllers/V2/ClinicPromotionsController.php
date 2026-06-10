@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\V2;
 
 use App\Http\Controllers\Controller;
+use App\Support\ResolvesAccessibleClinics;
 use App\Models\Branch;
 use App\Models\ClinicItem;
 use App\Models\ClinicPackage;
@@ -19,9 +20,11 @@ use Inertia\Response;
  */
 class ClinicPromotionsController extends Controller
 {
+    use ResolvesAccessibleClinics;
+
     protected function authorize(Request $request): void
     {
-        if (! $request->user() || ! $request->user()->hasAnyRole(['admin', 'super_admin', 'clinic_admin'])) {
+        if (! $request->user() || ! $request->user()->hasAnyRole(['admin', 'super_admin', 'clinic_admin', 'clinic_reception'])) {
             abort(403, 'Not authorized to manage promotions.');
         }
     }
@@ -49,7 +52,7 @@ class ClinicPromotionsController extends Controller
         return Inertia::render('Promotions/Index', [
             'filters' => ['q' => $q, 'status' => $status],
             'page' => $page,
-            'branches' => Branch::query()->orderBy('id')->get(['id', 'name'])
+            'branches' => Branch::query()->when($this->accessibleBranchIds() !== null, fn ($q) => $q->whereIn('id', $this->accessibleBranchIds() ?: [0]))->orderBy('id')->get(['id', 'name'])
                 ->map(fn ($b) => ['id' => $b->id, 'name' => $b->localized_name])->all(),
             'clinicItems' => ClinicItem::query()->where('is_active', 1)->orderBy('name')->get(['id', 'name', 'type'])
                 ->map(fn ($it) => ['id' => $it->id, 'name' => $it->localized_name, 'sublabel' => ucfirst($it->type)])->all(),

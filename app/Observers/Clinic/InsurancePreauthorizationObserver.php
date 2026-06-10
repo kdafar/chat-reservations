@@ -85,7 +85,15 @@ class InsurancePreauthorizationObserver
             $userIds->push($preauth->requested_by_user_id);
         }
 
-        $recipients = User::query()->whereIn('id', $userIds->unique()->all())->get();
+        // Final gate: only notify users who can actually open the linked
+        // pre-authorizations page (it aborts 403 without the permission).
+        // The requester is added unconditionally above, but a doctor/nurse
+        // who raised the preauth may lack view access — drop them so they
+        // don't get a toast whose link only 403s. Mirrors
+        // PreauthorizationsController::authorizeAccess().
+        $recipients = User::query()->whereIn('id', $userIds->unique()->all())->get()
+            ->filter(fn (User $u) => $u->can('view_any_insurance_preauthorizations'))
+            ->values();
         if ($recipients->isEmpty()) {
             return;
         }

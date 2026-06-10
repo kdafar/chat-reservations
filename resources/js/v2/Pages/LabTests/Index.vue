@@ -12,6 +12,7 @@ const props = defineProps({
     page: { type: Object, required: true },
     branches: { type: Array, required: true },
     counts: { type: Object, required: true },
+    can_edit: { type: Boolean, default: false },
 })
 
 const pageProps = usePage()
@@ -171,8 +172,8 @@ function rowIsArchived(row) { return !!row.deleted_at || !row.is_active }
                 </div>
                 <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
                     <a class="btn btn-sm btn-outline" :href="route('v2.lab-tests.export', { ...f })"><Icon name="download" :size="13" /><span>{{ isRtl ? 'تصدير Excel' : 'Export Excel' }}</span></a>
-                    <ImportButton type="lab-tests" />
-                    <button class="btn btn-primary" @click="openCreate">
+                    <ImportButton v-if="can_edit" type="lab-tests" />
+                    <button v-if="can_edit" class="btn btn-primary" @click="openCreate">
                         <Icon name="plus" :size="14" />
                         <span>{{ t.new }}</span>
                     </button>
@@ -248,8 +249,8 @@ function rowIsArchived(row) { return !!row.deleted_at || !row.is_active }
                             v-for="row in page.data"
                             :key="row.id"
                             :class="rowIsArchived(row) ? 'is-archived' : ''"
-                            @click="openEdit(row)"
-                            style="cursor:pointer;"
+                            @click="can_edit && openEdit(row)"
+                            :style="can_edit ? 'cursor:pointer;' : ''"
                         >
                             <td class="mono" style="font-weight:600;">{{ row.code }}</td>
                             <td>{{ row.name }}</td>
@@ -261,22 +262,24 @@ function rowIsArchived(row) { return !!row.deleted_at || !row.is_active }
                                 {{ row.branch?.name || t.branch.shared }}
                             </td>
                             <td @click.stop>
-                                <button
-                                    v-if="!rowIsArchived(row)"
-                                    class="btn btn-ghost btn-sm btn-icon"
-                                    :title="t.modal.archive"
-                                    @click="archive(row)"
-                                >
-                                    <Icon name="archive" :size="14" />
-                                </button>
-                                <button
-                                    v-else
-                                    class="btn btn-ghost btn-sm btn-icon"
-                                    :title="t.modal.restore"
-                                    @click="restore(row)"
-                                >
-                                    <Icon name="undo-2" :size="14" />
-                                </button>
+                                <template v-if="can_edit">
+                                    <button
+                                        v-if="!rowIsArchived(row)"
+                                        class="btn btn-ghost btn-sm btn-icon"
+                                        :title="t.modal.archive"
+                                        @click="archive(row)"
+                                    >
+                                        <Icon name="archive" :size="14" />
+                                    </button>
+                                    <button
+                                        v-else
+                                        class="btn btn-ghost btn-sm btn-icon"
+                                        :title="t.modal.restore"
+                                        @click="restore(row)"
+                                    >
+                                        <Icon name="undo-2" :size="14" />
+                                    </button>
+                                </template>
                             </td>
                         </tr>
                     </tbody>

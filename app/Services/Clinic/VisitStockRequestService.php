@@ -261,6 +261,106 @@ class VisitStockRequestService
     }
 
     /**
+     * Reverse a previously-requested set of consumables from the visit's
+     * PENDING stock request — used when the thing that asked for them (e.g. a
+     * package) is removed from the visit before the request is fulfilled.
+     *
+     * Because createForVisit() MERGES every source (packages, service BOMs,
+     * manual requests) into one pending request keyed by clinic_item_id, there
+     * is no per-source line linkage. So we subtract exactly the quantities that
+     * the removed source contributed: a line's qty is decremented, and only
+     * removed when it reaches zero — quantities still owed to other packages /
+     * services / manual requests are preserved.
+     *
+     * If the pending request has no lines left after subtraction it is marked
+     * CANCELLED (with $reason) so it shows on the worklist as resolved and is
+     * no longer fulfillable.
+     *
+     * @param  array<int, array{clinic_item_id:int, qty_base:float}>  $requirements
+     */
+    public function reduceForVisit(Visit $visit, array $requirements, ?string $reason = null): void
+    {
+        if (! $this->enabled()) {
+            return;
+        }
+
+        $visitId = (int) $visit->id;
+        if ($visitId <= 0) {
+            return;
+        }
+
+        // Subtract amounts keyed by clinic_item_id (services already filtered
+        // out at request time, but normalizing here is harmless and consistent).
+        $subtract = collect($requirements)
+            ->map(fn ($r) => [
+                'clinic_item_id' => (int) ($r['clinic_item_id'] ?? 0),
+                'qty_base' => (float) ($r['qty_base'] ?? 0),
+            ])
+            ->filter(fn ($r) => $r['clinic_item_id'] > 0 && $r['qty_base'] > 0)
+            ->groupBy('clinic_item_id')
+            ->map(fn ($g) => (float) $g->sum('qty_base'));
+
+        if ($subtract->isEmpty()) {
+            return;
+        }
+
+        DB::transaction(function () use ($visitId, $subtract, $reason) {
+            /** @var VisitStockRequest|null $req */
+            $req = VisitStockRequest::query()
+                ->where('visit_id', $visitId)
+                ->where('status', VisitStockRequest::STATUS_PENDING)
+                ->lockForUpdate()
+                ->first();
+
+            if (! $req) {
+                return;
+            }
+
+            foreach ($subtract as $itemId => $qty) {
+                /** @var VisitStockRequestLine|null $line */
+                $line = VisitStockRequestLine::query()
+                    ->where('visit_stock_request_id', (int) $req->id)
+                    ->where('clinic_item_id', (int) $itemId)
+                    ->lockForUpdate()
+                    ->first();
+
+                if (! $line) {
+                    continue;
+                }
+
+                $remaining = (float) $line->qty_base - (float) $qty;
+
+                // Use a small epsilon so float drift doesn't leave a 0.0001 ghost.
+                if ($remaining <= 0.00005) {
+                    $line->delete();
+                } else {
+                    $line->forceFill(['qty_base' => $remaining])->save();
+                }
+            }
+
+            $remainingLines = VisitStockRequestLine::query()
+                ->where('visit_stock_request_id', (int) $req->id)
+                ->count();
+
+            if ($remainingLines === 0) {
+                $req->status = VisitStockRequest::STATUS_CANCELLED;
+                $req->notes = $this->appendNote(
+                    (string) ($req->notes ?? ''),
+                    $reason ?? 'Package removed from visit',
+                );
+                $req->save();
+
+                // Nothing left awaiting stock — resume the visit like cancel() does.
+                $visit = Visit::query()->lockForUpdate()->find($visitId);
+                if ($visit && ($visit->status ?? null) === 'awaiting_stock') {
+                    $visit->status = 'awaiting_doctor';
+                    $visit->save();
+                }
+            }
+        });
+    }
+
+    /**
      * Upsert a VisitItem from a fulfillment event.
      *
      * The caller may pass an explicit cost/price snapshot — used when fulfilling

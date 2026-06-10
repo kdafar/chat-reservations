@@ -86,7 +86,14 @@ class ClinicStockMovementObserver
             );
         }
 
-        $recipients = User::query()->whereIn('id', $userIds->unique()->all())->get();
+        // Final gate: only notify users who can actually open the linked
+        // clinic-items page (it aborts 403 without view_any_clinic_items).
+        // Without this, branch staff / clinic_admin lacking the permission
+        // would get a low-stock toast whose link only 403s. Mirrors
+        // ClinicItemsController::authorizeAccess().
+        $recipients = User::query()->whereIn('id', $userIds->unique()->all())->get()
+            ->filter(fn (User $u) => $u->can('view_any_clinic_items'))
+            ->values();
         if ($recipients->isEmpty()) {
             return;
         }

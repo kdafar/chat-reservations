@@ -115,7 +115,9 @@ class ClinicItemsController extends Controller
     {
         $this->authorizeAccess($request);
         if (! $this->canEdit($request)) abort(403);
-        $item = ClinicItem::create($this->validated($request));
+        $data = $this->validated($request);
+        $data['partner_id'] = $this->defaultPartnerId($data['branch_id'] ?? null); // clinic-owned
+        $item = ClinicItem::create($data);
         $this->syncComponents($request, $item);
         return back()->with('flash', ['type' => 'success', 'message' => 'Item added.']);
     }

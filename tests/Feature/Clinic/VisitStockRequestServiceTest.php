@@ -137,6 +137,52 @@ class VisitStockRequestServiceTest extends TestCase
         $this->assertSame('awaiting_doctor', $visit->status);
     }
 
+    public function test_reduce_for_visit_cancels_request_when_all_lines_removed(): void
+    {
+        // Orphaned-package scenario: a single package opened the request; removing
+        // it reverses all its consumables, leaving nothing → request is cancelled.
+        $visit = $this->makeVisit(['status' => 'awaiting_doctor']);
+        $item = $this->makeClinicItem();
+
+        $req = $this->svc->createForVisit($visit, [
+            ['clinic_item_id' => $item->id, 'qty_base' => 3],
+        ]);
+        $this->assertSame('awaiting_stock', $visit->refresh()->status);
+
+        $this->svc->reduceForVisit($visit, [
+            ['clinic_item_id' => $item->id, 'qty_base' => 3],
+        ], 'Package removed from visit');
+
+        $req->refresh();
+        $this->assertSame(VisitStockRequest::STATUS_CANCELLED, $req->status);
+        $this->assertStringContainsString('Package removed from visit', (string) $req->notes);
+        $this->assertSame(0, VisitStockRequestLine::where('visit_stock_request_id', $req->id)->count());
+        $this->assertSame('awaiting_doctor', $visit->refresh()->status);
+    }
+
+    public function test_reduce_for_visit_keeps_quantities_owed_to_other_sources(): void
+    {
+        // Two sources contributed the same item (qty 5 total); removing one source
+        // (qty 2) decrements the line but leaves the request pending and the rest.
+        $visit = $this->makeVisit(['status' => 'awaiting_doctor']);
+        $item = $this->makeClinicItem();
+
+        $req = $this->svc->createForVisit($visit, [
+            ['clinic_item_id' => $item->id, 'qty_base' => 5],
+        ]);
+
+        $this->svc->reduceForVisit($visit, [
+            ['clinic_item_id' => $item->id, 'qty_base' => 2],
+        ], 'Package removed from visit');
+
+        $req->refresh();
+        $this->assertSame(VisitStockRequest::STATUS_PENDING, $req->status);
+        $line = VisitStockRequestLine::where('visit_stock_request_id', $req->id)
+            ->where('clinic_item_id', $item->id)->first();
+        $this->assertNotNull($line);
+        $this->assertEqualsWithDelta(3.0, (float) $line->qty_base, 0.001);
+    }
+
     public function test_issue_or_request_for_visit_issues_when_stock_available(): void
     {
         $visit = $this->makeVisit(['status' => 'in_progress']);

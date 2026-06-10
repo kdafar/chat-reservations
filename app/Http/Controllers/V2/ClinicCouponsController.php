@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\V2;
 
 use App\Http\Controllers\Controller;
+use App\Support\ResolvesAccessibleClinics;
 use App\Models\Branch;
 use App\Models\ClinicCoupon;
 use Illuminate\Http\RedirectResponse;
@@ -15,6 +16,8 @@ use Inertia\Response;
  */
 class ClinicCouponsController extends Controller
 {
+    use ResolvesAccessibleClinics;
+
     protected function authorize(Request $request): void
     {
         if (! $request->user() || ! $request->user()->hasAnyRole(['admin', 'super_admin', 'clinic_admin'])) {
@@ -45,7 +48,7 @@ class ClinicCouponsController extends Controller
         return Inertia::render('Coupons/Index', [
             'filters' => ['q' => $q, 'status' => $status],
             'page' => $page,
-            'branches' => Branch::query()->orderBy('id')->get(['id', 'name'])
+            'branches' => Branch::query()->when($this->accessibleBranchIds() !== null, fn ($q) => $q->whereIn('id', $this->accessibleBranchIds() ?: [0]))->orderBy('id')->get(['id', 'name'])
                 ->map(fn ($b) => ['id' => $b->id, 'name' => $b->localized_name])->all(),
             'counts' => [
                 'total' => ClinicCoupon::query()->count(),

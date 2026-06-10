@@ -671,6 +671,37 @@ class WhatsAppService
     }
 
     /**
+     * The WhatsApp Business account's own profile picture URL (the avatar shown
+     * to customers in chat). Cached — it's an external Graph call. Returns null
+     * if not configured or none is set.
+     */
+    public function getBusinessProfilePictureUrl(): ?string
+    {
+        if (! $this->apiToken || ! $this->phoneNumberId) {
+            return null;
+        }
+
+        return Cache::remember("wa_profile_pic_{$this->phoneNumberId}", now()->addHours(6), function () {
+            try {
+                $version = $this->graphVersion();
+                $resp = Http::withToken($this->apiToken)->acceptJson()
+                    ->get("https://graph.facebook.com/{$version}/{$this->phoneNumberId}/whatsapp_business_profile", [
+                        'fields' => 'profile_picture_url',
+                    ])->throw();
+
+                return data_get($resp->json(), 'data.0.profile_picture_url');
+            } catch (\Throwable $e) {
+                Log::warning('[WA] Business profile picture fetch failed', [
+                    'phone_number_id' => $this->phoneNumberId,
+                    'error' => $e->getMessage(),
+                ]);
+
+                return null;
+            }
+        });
+    }
+
+    /**
      * Fetch health data from /{phoneNumberId}.
      * Returns keys matching the final payload + internal _status marker.
      */

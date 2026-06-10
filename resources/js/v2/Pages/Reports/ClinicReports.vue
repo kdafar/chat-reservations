@@ -3,24 +3,39 @@ import { computed, reactive } from 'vue'
 import { Deferred, Head, router, usePage } from '@inertiajs/vue3'
 import AppLayout from '../../Layouts/AppLayout.vue'
 defineOptions({ layout: AppLayout })
+import Icon from '../../Components/Icon.vue'
+import PrintHeader from '../../Components/PrintHeader.vue'
 import Skeleton from '../../Components/Skeleton.vue'
 import SearchableSelect from '../../Components/SearchableSelect.vue'
 import DateTimePicker from '../../Components/DateTimePicker.vue'
+import EChart from '../../Components/EChart.vue'
+import Delta from '../../Components/Delta.vue'
+import ReportSummary from '../../Components/ReportSummary.vue'
 
-const props = defineProps({ filters: Object, overview: Object, trend: Array, top_doctors: Array, top_items: Array, branches: Array, doctors: Array })
+const props = defineProps({
+    filters: Object, overview: Object, comparison: Object, payment_mix: Array,
+    outstanding: Object, patients: Object, by_weekday: Array,
+    trend: Array, top_doctors: Array, top_items: Array, branches: Array, doctors: Array,
+})
 
 const pageProps = usePage()
 const locale = computed(() => pageProps.props.locale ?? 'en')
 const isRtl = computed(() => locale.value === 'ar')
 const t = computed(() => isRtl.value ? {
-    title: 'تقارير العيادة', eyebrow: 'التقارير', from: 'من', to: 'إلى', branchAll: 'كل الفروع', doctorAll: 'كل الأطباء',
-    kpi: { visits: 'الزيارات', fees: 'الأتعاب', cost: 'تكلفة الأصناف', profit: 'الربح', cut: 'حصة الأطباء' },
+    title: 'تقارير العيادة', eyebrow: 'التقارير', desc: 'نظرة عامة على الزيارات والأتعاب والأرباح وأداء الأطباء والأصناف.', print: 'طباعة', from: 'من', to: 'إلى', branchAll: 'كل الفروع', doctorAll: 'كل الأطباء',
+    kpi: { visits: 'الزيارات', revenue: 'الإيراد', fees: 'الأتعاب', cost: 'تكلفة الأصناف', profit: 'الربح', cut: 'حصة الأطباء', avg: 'متوسط الزيارة', outstanding: 'مستحقات غير محصّلة' },
     trend: 'اتجاه الربح', topDoctors: 'أعلى الأطباء', topItems: 'أعلى الأصناف',
+    summaryTitle: 'الخلاصة', vsPrev: 'مقابل الفترة السابقة', paymentMix: 'طرق الدفع', patients: 'المرضى', newP: 'جدد', returningP: 'عائدون', byWeekday: 'الزيارات حسب اليوم', unpaidVisits: 'زيارة غير مدفوعة', discountGiven: 'من الفاتورة كخصومات',
+    weekdays: ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'],
+    methods: { cash: 'نقدًا', card: 'بطاقة', knet: 'كي نت', link: 'رابط', transfer: 'تحويل', insurance: 'تأمين', unknown: 'غير محدد' },
     col: { doctor: 'الطبيب', visits: 'زيارات', cut: 'الحصة', item: 'الصنف', type: 'النوع', qty: 'كمية', revenue: 'إيراد', profit: 'ربح' },
 } : {
-    title: 'Clinic Reports', eyebrow: 'Reports', from: 'From', to: 'To', branchAll: 'All branches', doctorAll: 'All doctors',
-    kpi: { visits: 'Visits', fees: 'Fees', cost: 'Items cost', profit: 'Profit', cut: 'Doctor cut' },
+    title: 'Clinic Reports', eyebrow: 'Reports', desc: 'Visits, fees, profit, and top-performing doctors & items at a glance.', print: 'Print', from: 'From', to: 'To', branchAll: 'All branches', doctorAll: 'All doctors',
+    kpi: { visits: 'Visits', revenue: 'Revenue', fees: 'Fees', cost: 'Items cost', profit: 'Profit', cut: 'Doctor cut', avg: 'Avg visit value', outstanding: 'Outstanding' },
     trend: 'Profit trend', topDoctors: 'Top doctors', topItems: 'Top items',
+    summaryTitle: 'Summary', vsPrev: 'vs previous period', paymentMix: 'How you got paid', patients: 'Patients', newP: 'new', returningP: 'returning', byWeekday: 'Visits by day of week', unpaidVisits: 'unpaid visits', discountGiven: 'of billing given as discounts',
+    weekdays: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+    methods: { cash: 'Cash', card: 'Card', knet: 'KNET', link: 'Link', transfer: 'Transfer', insurance: 'Insurance', unknown: 'Unknown' },
     col: { doctor: 'Doctor', visits: 'Visits', cut: 'Cut', item: 'Item', type: 'Type', qty: 'Qty', revenue: 'Revenue', profit: 'Profit' },
 })
 
@@ -30,46 +45,122 @@ function apply() {
         { preserveState: true, preserveScroll: true, replace: true })
 }
 const fmt = (n) => Number(n ?? 0).toFixed(3)
-const maxProfit = computed(() => Math.max(1, ...((props.trend || []).map(r => Math.abs(r.profit)))))
+
+// Bilingual labels for the ECharts toolbox (save image / data view / zoom / …).
+const cl = computed(() => isRtl.value
+    ? { dataView: 'البيانات', zoom: 'تكبير', back: 'إعادة', line: 'خطي', bar: 'أعمدة', restore: 'استعادة', save: 'حفظ صورة', close: 'إغلاق', refresh: 'تحديث' }
+    : { dataView: 'Data', zoom: 'Zoom', back: 'Reset', line: 'Line', bar: 'Bar', restore: 'Restore', save: 'Save', close: 'Close', refresh: 'Refresh' })
+
+const trendOption = computed(() => ({
+    xAxis: { type: 'category', boundaryGap: false, data: (props.trend || []).map(r => r.date), axisLabel: { hideOverlap: true } },
+    yAxis: { type: 'value' },
+    tooltip: { trigger: 'axis', valueFormatter: (v) => fmt(v) },
+    series: [{
+        name: t.value.trend, type: 'line', smooth: true, showSymbol: (props.trend || []).length <= 2, symbolSize: 6,
+        lineStyle: { width: 2 }, areaStyle: { opacity: 0.12 },
+        data: (props.trend || []).map(r => Number(r.profit) || 0),
+    }],
+}))
+
+const methodLabel = (m) => t.value.methods[String(m || 'unknown').toLowerCase()] || m
+const paymentOption = computed(() => ({
+    tooltip: { trigger: 'item', valueFormatter: (v) => fmt(v) },
+    legend: { bottom: 0 },
+    series: [{
+        type: 'pie', radius: ['48%', '72%'], center: ['50%', '44%'], avoidLabelOverlap: true,
+        itemStyle: { borderRadius: 4 }, label: { show: false },
+        data: (props.payment_mix || []).map(p => ({ name: methodLabel(p.method), value: Number(p.amount) || 0 })),
+    }],
+}))
+const weekdayOption = computed(() => ({
+    xAxis: { type: 'category', data: t.value.weekdays },
+    yAxis: { type: 'value', minInterval: 1 },
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    series: [{ type: 'bar', data: props.by_weekday || [], barMaxWidth: 30, itemStyle: { borderRadius: [3, 3, 0, 0] } }],
+}))
+
+// Plain-English takeaway lines, built once the deferred data lands.
+const summaryLines = computed(() => {
+    const o = props.overview, c = props.comparison, out = props.outstanding, p = props.patients
+    if (!o || !c) return []
+    const lines = []
+    const money = (n) => fmt(n)
+    const signed = (v) => (v > 0 ? '+' : '') + Number(v).toFixed(1) + '%'
+    if (c.revenue != null) {
+        lines.push({ lead: money(o.revenue), text: `${t.value.kpi.revenue.toLowerCase()} · ${signed(c.revenue)} ${t.value.vsPrev}`, tone: c.revenue >= 0 ? 'positive' : 'negative' })
+    } else {
+        lines.push({ lead: money(o.revenue), text: t.value.kpi.revenue.toLowerCase(), tone: 'neutral' })
+    }
+    if (c.profit != null) {
+        lines.push({ lead: money(o.profit_total), text: `${t.value.kpi.profit.toLowerCase()} · ${signed(c.profit)} ${t.value.vsPrev}`, tone: c.profit >= 0 ? 'positive' : 'negative' })
+    }
+    if (out && out.total > 0.005) {
+        lines.push({ lead: money(out.total), text: `${t.value.outstanding ?? ''} · ${out.unpaid_count} ${t.value.unpaidVisits}`, tone: 'warning' })
+    }
+    if (p && p.total > 0) {
+        lines.push({ lead: `${p.new} ${t.value.newP} / ${p.returning} ${t.value.returningP}`, text: t.value.patients.toLowerCase(), tone: 'neutral' })
+    }
+    if (o.discount_pct > 0) {
+        lines.push({ lead: o.discount_pct + '%', text: t.value.discountGiven, tone: 'neutral' })
+    }
+    return lines
+})
 </script>
 
 <template>
     <Head :title="t.title" />
-        <div style="padding:24px; max-width:1100px; margin:0 auto;">
-            <div style="margin-bottom:16px;">
-                <div class="eyebrow">{{ t.eyebrow }}</div>
-                <h1 style="margin:4px 0 0; font-size:22px; font-weight:700; color:var(--fg);">{{ t.title }}</h1>
+        <PrintHeader :title="t.title" />
+        <div style="padding:24px 28px; max-width:1100px; margin:0 auto;">
+            <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin-bottom:20px; flex-wrap:wrap;">
+                <div>
+                    <div class="eyebrow">{{ t.eyebrow }}</div>
+                    <h1 style="margin:6px 0 4px; font-size:26px; font-weight:500; letter-spacing:-0.02em;">{{ t.title }}</h1>
+                    <p style="margin:0; font-size:13.5px; color:var(--fg-muted);">{{ t.desc }}</p>
+                </div>
+                <button class="btn btn-ghost no-print" onclick="window.print()"><Icon name="printer" :size="14" /><span>{{ t.print }}</span></button>
             </div>
 
-            <div class="card" style="padding:12px; margin-bottom:16px; display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;">
+            <div class="card no-print" style="padding:12px; margin-bottom:16px; display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;">
                 <div><label class="label">{{ t.from }}</label><DateTimePicker v-model="f.from" :with-time="false" :locale="locale" :width="170" :placeholder="t.from" @update:model-value="apply" /></div>
                 <div><label class="label">{{ t.to }}</label><DateTimePicker v-model="f.to" :with-time="false" :locale="locale" :width="170" :placeholder="t.to" @update:model-value="apply" /></div>
                 <div><label class="label">&nbsp;</label><SearchableSelect v-model="f.branch_id" :items="branches" :null-label="t.branchAll" :width="200" @update:model-value="apply" /></div>
                 <div><label class="label">&nbsp;</label><SearchableSelect v-model="f.doctor_id" :items="doctors" :null-label="t.doctorAll" :width="200" @update:model-value="apply" /></div>
             </div>
 
-            <Deferred :data="['overview','trend','top_doctors','top_items']">
+            <Deferred :data="['overview','comparison','payment_mix','outstanding','patients','by_weekday','trend','top_doctors','top_items']">
             <template #fallback>
-                <div class="rgrid-5" style="display:grid; grid-template-columns:repeat(5,1fr); gap:10px; margin-bottom:16px;">
-                    <Skeleton v-for="i in 5" :key="i" height="64px" radius="12px" />
+                <Skeleton height="60px" radius="12px" style="margin-bottom:16px;" />
+                <div class="rgrid-6" style="display:grid; grid-template-columns:repeat(6,1fr); gap:10px; margin-bottom:16px;">
+                    <Skeleton v-for="i in 6" :key="i" height="74px" radius="12px" />
                 </div>
                 <Skeleton height="170px" radius="12px" />
             </template>
 
-            <div class="statgrid rgrid-5" style="display:grid; grid-template-columns:repeat(5,1fr); gap:10px; margin-bottom:16px;">
-                <div class="card kpi"><div class="kpi-n">{{ overview.visits_count }}</div><div class="kpi-l">{{ t.kpi.visits }}</div></div>
-                <div class="card kpi"><div class="kpi-n mono">{{ fmt(overview.fees_total) }}</div><div class="kpi-l">{{ t.kpi.fees }}</div></div>
-                <div class="card kpi"><div class="kpi-n mono">{{ fmt(overview.items_cost_total) }}</div><div class="kpi-l">{{ t.kpi.cost }}</div></div>
-                <div class="card kpi"><div class="kpi-n mono" style="color:var(--ok);">{{ fmt(overview.profit_total) }}</div><div class="kpi-l">{{ t.kpi.profit }}</div></div>
-                <div class="card kpi"><div class="kpi-n mono">{{ fmt(overview.doctor_cut) }}</div><div class="kpi-l">{{ t.kpi.cut }}</div></div>
+            <ReportSummary :title="t.summaryTitle" :lines="summaryLines" />
+
+            <div class="rgrid-6" style="display:grid; grid-template-columns:repeat(6,1fr); gap:12px; margin-bottom:16px;">
+                <div class="card" style="padding:14px 16px;"><div class="eyebrow" style="margin-bottom:4px;">{{ t.kpi.visits }}</div><div class="num-lg">{{ overview.visits_count }}</div><Delta :value="comparison.visits ?? 0" :neutral="comparison.visits == null" /></div>
+                <div class="card" style="padding:14px 16px;"><div class="eyebrow" style="margin-bottom:4px;">{{ t.kpi.revenue }}</div><div class="num-lg">{{ fmt(overview.revenue) }}</div><Delta :value="comparison.revenue ?? 0" :neutral="comparison.revenue == null" /></div>
+                <div class="card" style="padding:14px 16px;"><div class="eyebrow" style="margin-bottom:4px;">{{ t.kpi.profit }}</div><div class="num-lg" style="color:var(--success);">{{ fmt(overview.profit_total) }}</div><Delta :value="comparison.profit ?? 0" :neutral="comparison.profit == null" /></div>
+                <div class="card" style="padding:14px 16px;"><div class="eyebrow" style="margin-bottom:4px;">{{ t.kpi.avg }}</div><div class="num-lg">{{ fmt(overview.avg_visit_value) }}</div></div>
+                <div class="card" style="padding:14px 16px;"><div class="eyebrow" style="margin-bottom:4px;">{{ t.kpi.cut }}</div><div class="num-lg">{{ fmt(overview.doctor_cut) }}</div><Delta :value="comparison.doctor_cut ?? 0" :neutral="comparison.doctor_cut == null" /></div>
+                <div class="card" style="padding:14px 16px;"><div class="eyebrow" style="margin-bottom:4px;">{{ t.kpi.outstanding }}</div><div class="num-lg" :style="{ color: outstanding.total > 0.005 ? 'var(--destructive)' : 'var(--fg)' }">{{ fmt(outstanding.total) }}</div><div style="font-size:11px; color:var(--fg-faint); margin-top:2px;">{{ outstanding.unpaid_count }} {{ t.unpaidVisits }}</div></div>
             </div>
 
             <div class="card" style="padding:16px; margin-bottom:16px;">
                 <h3 class="rpt-h">{{ t.trend }}</h3>
-                <div style="display:flex; align-items:flex-end; gap:3px; height:140px;">
-                    <div v-for="(r, i) in trend" :key="i" :title="r.date + ': ' + fmt(r.profit)" style="flex:1; display:flex; flex-direction:column; justify-content:flex-end; align-items:center;">
-                        <div style="width:100%; background:var(--ok, #16a34a); border-radius:2px 2px 0 0; min-height:1px;" :style="{ height: (Math.abs(r.profit) / maxProfit * 110) + 'px' }"></div>
-                    </div>
+                <EChart :option="trendOption" :labels="cl" height="220px" />
+            </div>
+
+            <div class="rgrid-2" style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px;">
+                <div class="card" style="padding:16px;">
+                    <h3 class="rpt-h">{{ t.paymentMix }}</h3>
+                    <div v-if="!payment_mix.length" style="color:var(--fg-faint); font-size:13px; padding:8px 0;">—</div>
+                    <EChart v-else :option="paymentOption" :labels="cl" height="220px" />
+                </div>
+                <div class="card" style="padding:16px;">
+                    <h3 class="rpt-h">{{ t.byWeekday }}</h3>
+                    <EChart :option="weekdayOption" :labels="cl" height="220px" />
                 </div>
             </div>
 
@@ -90,7 +181,7 @@ const maxProfit = computed(() => Math.max(1, ...((props.trend || []).map(r => Ma
                         <thead><tr><th>{{ t.col.item }}</th><th style="text-align:end;">{{ t.col.qty }}</th><th style="text-align:end;">{{ t.col.profit }}</th></tr></thead>
                         <tbody>
                             <tr v-if="!top_items.length"><td colspan="3" style="text-align:center; padding:24px; color:var(--fg-faint);">—</td></tr>
-                            <tr v-for="(it, i) in top_items" :key="i"><td>{{ it.name }}</td><td class="mono" style="text-align:end;">{{ it.qty_total }}</td><td class="mono" style="text-align:end; color:var(--ok);">{{ fmt(it.profit_total) }}</td></tr>
+                            <tr v-for="(it, i) in top_items" :key="i"><td>{{ it.name }}</td><td class="mono" style="text-align:end;">{{ it.qty_total }}</td><td class="mono" style="text-align:end; color:var(--success);">{{ fmt(it.profit_total) }}</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -101,7 +192,4 @@ const maxProfit = computed(() => Math.max(1, ...((props.trend || []).map(r => Ma
 
 <style scoped>
 .rpt-h { margin:0 0 12px; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:var(--fg-subtle); }
-.kpi { padding:14px; text-align:center; }
-.kpi-n { font-size:20px; font-weight:700; color:var(--fg); }
-.kpi-l { font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:var(--fg-faint); margin-top:4px; }
 </style>

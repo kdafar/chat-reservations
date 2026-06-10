@@ -13,6 +13,7 @@ const props = defineProps({
     branches: { type: Array, required: true },
     clinicItems: { type: Array, required: true },
     counts: { type: Object, required: true },
+    can_manage: { type: Boolean, default: false },
 })
 
 const pageProps = usePage()
@@ -125,8 +126,8 @@ const fmt = (n) => Number(n ?? 0).toFixed(3)
             </div>
             <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
                 <a class="btn btn-sm btn-outline" :href="route('v2.clinic-packages.export', { ...f })"><Icon name="download" :size="13" /><span>{{ isRtl ? 'تصدير Excel' : 'Export Excel' }}</span></a>
-                <ImportButton type="clinic-packages" />
-                <button class="btn btn-primary" @click="openCreate"><Icon name="plus" :size="14" /><span>{{ t.new }}</span></button>
+                <ImportButton v-if="can_manage" type="clinic-packages" />
+                <button v-if="can_manage" class="btn btn-primary" @click="openCreate"><Icon name="plus" :size="14" /><span>{{ t.new }}</span></button>
             </div>
         </div>
 
@@ -169,14 +170,14 @@ const fmt = (n) => Number(n ?? 0).toFixed(3)
                             <div style="font-size:12px; margin-top:4px;">{{ t.emptyDesc }}</div>
                         </td>
                     </tr>
-                    <tr v-for="row in page.data" :key="row.id" @click="openEdit(row)" style="cursor:pointer;">
+                    <tr v-for="row in page.data" :key="row.id" @click="can_manage && openEdit(row)" :style="can_manage ? 'cursor:pointer;' : ''">
                         <td style="font-weight:600;">{{ row.name }}</td>
                         <td>{{ row.branch_name || t.global }}</td>
                         <td class="mono" style="text-align:end;">{{ fmt(row.default_price) }}</td>
                         <td class="mono" style="text-align:end;">{{ row.items_count }}</td>
                         <td><span :class="row.is_active ? 'badge-ok' : 'badge-muted'">{{ row.is_active ? t.status.active : t.status.inactive }}</span></td>
                         <td @click.stop>
-                            <button class="btn btn-ghost btn-sm btn-icon" :title="t.modal.delete" @click="destroy(row)"><Icon name="trash-2" :size="14" /></button>
+                            <button v-if="can_manage" class="btn btn-ghost btn-sm btn-icon" :title="t.modal.delete" @click.stop="destroy(row)"><Icon name="trash-2" :size="14" /></button>
                         </td>
                     </tr>
                 </tbody>

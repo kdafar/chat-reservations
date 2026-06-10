@@ -5,7 +5,9 @@ namespace App\Http\Controllers\V2;
 use App\Http\Controllers\Controller;
 use App\Models\Accounting\Account;
 use App\Models\Insurance\InsuranceClaim;
+use App\Models\Insurance\PatientInsurancePolicy;
 use App\Models\Visit;
+use App\Models\VisitPayment;
 use App\Services\Insurance\ClaimStateMachine;
 use App\Services\Insurance\InsuranceService;
 use Illuminate\Http\JsonResponse;
@@ -136,6 +138,175 @@ class ClaimsController extends Controller
         ]);
     }
 
+    /**
+     * A visit may only back a claim once it has been served + billed: status is
+     * awaiting_payment or completed, and it carries non-zero charges. Excludes
+     * created/future/cancelled/no_show and zero-gross visits. Shared by the
+     * picker query, the preview, and the draft POST so they can't disagree.
+     */
+    protected const CLAIMABLE_STATUSES = [Visit::STATUS_AWAITING_PAYMENT, Visit::STATUS_COMPLETED];
+
+    protected function visitIsClaimable(Visit $visit): bool
+    {
+        if (! in_array($visit->status, self::CLAIMABLE_STATUSES, true)) {
+            return false;
+        }
+
+        $gross = (float) ($visit->fees_total ?? 0)
+            + (float) ($visit->packages_price_total ?? 0)
+            + (float) ($visit->items_price_total ?? 0);
+
+        return $gross > 0.0005;
+    }
+
+    /**
+     * JSON: recent visits that are claimable — the patient has an active policy
+     * AND there is no existing non-void claim for the visit. Powers the searchable
+     * visit picker in the "draft a claim" modal. Optional ?q= matches the patient
+     * name or the visit booking_code. Returns up to ~20 rows.
+     */
+    public function claimableVisits(Request $request): JsonResponse
+    {
+        $this->authorizeAccess($request);
+
+        $q = trim((string) $request->input('q', ''));
+
+        $visits = Visit::query()
+            ->with([
+                'patient:id,name',
+                'branch:id,name',
+            ])
+            // Patient must have at least one active policy. PatientInsurancePolicy
+            // carries the canonical `active` scope (status + effective window), so
+            // build the existence check off that query rather than a raw subquery.
+            ->whereIn('patient_id', PatientInsurancePolicy::query()
+                ->active()
+                ->select('patient_id'))
+            // No existing non-void claim already drafted for this visit.
+            ->whereDoesntHave('insuranceClaims', function ($c) {
+                $c->where('status', '!=', InsuranceClaim::STATUS_VOID);
+            })
+            // Only visits that have actually been served + billed are claimable —
+            // never created/future/cancelled/no_show, and never a zero-charge visit.
+            ->whereIn('status', self::CLAIMABLE_STATUSES)
+            ->whereRaw('(COALESCE(fees_total,0) + COALESCE(packages_price_total,0) + COALESCE(items_price_total,0)) > 0.0005')
+            ->when($q !== '', function ($query) use ($q) {
+                $query->where(function ($w) use ($q) {
+                    $w->where('booking_code', 'like', "%{$q}%")
+                        ->orWhereHas('patient', fn ($p) => $p->where('name', 'like', "%{$q}%"));
+                });
+            })
+            ->orderByDesc('id')
+            ->limit(20)
+            ->get();
+
+        $rows = $visits->map(function (Visit $visit) {
+            $policy = $this->insurance->primaryPolicyFor($visit->patient);
+            $policy?->loadMissing(['insurer:id,name', 'plan:id,code,name']);
+
+            return [
+                'id' => $visit->id,
+                'booking_code' => $visit->booking_code,
+                'patient_name' => $visit->patient?->name,
+                'branch' => $this->branchName($visit->branch),
+                'date' => optional($visit->created_at)->toDateString(),
+                'primary_policy' => $policy ? [
+                    'insurer' => $policy->insurer?->name,
+                    'plan' => $policy->plan?->name,
+                    'policy_number' => $policy->policy_number,
+                ] : null,
+            ];
+        })->values();
+
+        return response()->json(['data' => $rows]);
+    }
+
+    /**
+     * JSON: coverage preview for a chosen visit, used by the draft modal before
+     * the user commits. Per-kind rows (gross / insurer covers / coverage % /
+     * patient copay), totals, already-paid (sum of paid VisitPayments) and the
+     * primary-policy header. Also flags whether a claim already exists.
+     */
+    public function previewVisit(Request $request, Visit $visit): JsonResponse
+    {
+        $this->authorizeAccess($request);
+
+        if (! $this->visitIsClaimable($visit)) {
+            return response()->json(['ok' => false, 'error' => 'This visit is not in a claimable state.'], 422);
+        }
+
+        $visit->loadMissing(['patient:id,name', 'branch:id,name']);
+
+        $policy = $this->insurance->primaryPolicyFor($visit->patient);
+        $policy?->loadMissing(['insurer:id,name', 'plan:id,code,name']);
+
+        $estimate = $this->insurance->estimateForVisit($visit);
+
+        $rows = [];
+        foreach (($estimate['by_kind'] ?? []) as $kind => $bucket) {
+            $gross = round((float) ($bucket['gross'] ?? 0), 3);
+            $copay = round((float) ($bucket['patient_copay'] ?? 0), 3);
+            $insurerCovers = round((float) array_sum(array_column($bucket['insurer_portions'] ?? [], 'amount')), 3);
+            $rows[] = [
+                'kind' => $bucket['kind'] ?? $kind,
+                'gross' => $gross,
+                'insurer_covers' => $insurerCovers,
+                'patient_copay' => $copay,
+                'coverage_pct' => $gross > 0 ? round(($insurerCovers / $gross) * 100, 1) : 0.0,
+            ];
+        }
+
+        $totals = $estimate['totals'] ?? ['gross' => 0, 'patient_total' => 0, 'insurer_total' => 0];
+
+        $alreadyPaid = round((float) VisitPayment::query()
+            ->where('visit_id', $visit->getKey())
+            ->where('status', 'paid')
+            ->sum('amount'), 3);
+
+        $claimExists = InsuranceClaim::query()
+            ->where('visit_id', $visit->getKey())
+            ->where('status', '!=', InsuranceClaim::STATUS_VOID)
+            ->exists();
+
+        return response()->json([
+            'visit' => [
+                'id' => $visit->id,
+                'booking_code' => $visit->booking_code,
+                'patient_name' => $visit->patient?->name,
+                'branch' => $this->branchName($visit->branch),
+                'date' => optional($visit->created_at)->toDateString(),
+            ],
+            'primary_policy' => $policy ? [
+                'insurer' => $policy->insurer?->name,
+                'plan' => $policy->plan?->name,
+                'policy_number' => $policy->policy_number,
+            ] : null,
+            'rows' => $rows,
+            'totals' => [
+                'gross' => round((float) ($totals['gross'] ?? 0), 3),
+                'insurer_total' => round((float) ($totals['insurer_total'] ?? 0), 3),
+                'patient_total' => round((float) ($totals['patient_total'] ?? 0), 3),
+            ],
+            'already_paid' => $alreadyPaid,
+            'claim_exists' => $claimExists,
+            'has_policy' => (bool) $policy,
+        ]);
+    }
+
+    /** Branch names are translatable arrays/JSON; resolve to the current locale string. */
+    protected function branchName($branch): ?string
+    {
+        if (! $branch) {
+            return null;
+        }
+        $name = $branch->name;
+        if (is_array($name)) {
+            return $name[app()->getLocale()] ?? $name['en'] ?? reset($name) ?: null;
+        }
+
+        return $name;
+    }
+
     /** Draft a claim from a completed visit's primary policy (proper coverage-calc path). */
     public function createFromVisit(Request $request): RedirectResponse
     {
@@ -147,6 +318,11 @@ class ClaimsController extends Controller
         ]);
 
         $visit = Visit::query()->findOrFail($data['visit_id']);
+
+        if (! $this->visitIsClaimable($visit)) {
+            return back()->with('flash', ['type' => 'error', 'message' => 'This visit cannot be claimed — it must be completed or awaiting payment, with charges on it.']);
+        }
+
         $policy = $this->insurance->primaryPolicyFor($visit->patient);
         if (! $policy) {
             return back()->with('flash', ['type' => 'error', 'message' => 'That visit\'s patient has no active insurance policy.']);

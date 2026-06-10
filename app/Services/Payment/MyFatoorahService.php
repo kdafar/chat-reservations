@@ -68,22 +68,32 @@ class MyFatoorahService
             'CustomerName' => $data['name'] ?? 'Guest Patient',
             'InvoiceValue' => $amount,
             'DisplayCurrencyIso' => 'KWD',
-            'CustomerMobile' => $cleanPhone,
             'CustomerReference' => $refId,
             'Language' => app()->getLocale() === 'ar' ? 'ar' : 'en',
             'NotificationOption' => 'LNK',
             // HMAC the account_id so the callback can verify it wasn't tampered with.
             // We can't use Laravel's signedRoute here because MyFatoorah appends paymentId/Id
             // to the query string, which breaks the signed-route signature check.
-            'CallBackUrl' => route('bookings.payment.finalize', [
+            // Callers may pass their own callback/error URLs (e.g. the visit-balance
+            // flow points at the visit finalizer); bookings fall back to the
+            // booking routes for backward compatibility.
+            'CallBackUrl' => $data['callback_url'] ?? route('bookings.payment.finalize', [
                 'account_id' => $accountId,
                 'sig' => $this->accountSig((string) $accountId),
             ]),
-            'ErrorUrl' => route('bookings.payment.failed', [
+            'ErrorUrl' => $data['error_url'] ?? route('bookings.payment.failed', [
                 'account_id' => $accountId,
                 'sig' => $this->accountSig((string) $accountId),
             ]),
         ];
+
+        // MyFatoorah caps CustomerMobile at 11 chars and rejects invalid ones.
+        // Only send it when it normalizes to a sane Kuwait length (8 local, or
+        // 11 with the 965 code) — otherwise omit it; the invoice link still
+        // generates, we just don't trigger MyFatoorah's own SMS/LNK notification.
+        if (in_array(strlen($cleanPhone), [8, 11], true)) {
+            $curlData['CustomerMobile'] = $cleanPhone;
+        }
 
         Log::info('[MyFatoorah] createInvoice request', [
             'account_id' => $accountId,
@@ -166,21 +176,26 @@ class MyFatoorahService
 
     private function normalizeKuwaitPhone(string $phone): string
     {
-        // Keep digits only
+        // Keep digits only.
         $digits = preg_replace('/[^0-9]/', '', $phone);
-
-        // If already includes country code 965 (11 digits typical: 965 + 8 digits)
-        if (str_starts_with($digits, '965') && strlen($digits) >= 11) {
-            return $digits;
+        if ($digits === '') {
+            return '';
         }
 
-        // If local Kuwait number (8 digits), prefix 965
-        if (strlen($digits) === 8) {
-            return '965'.$digits;
+        // Drop a leading 965 country code, then keep the last 8 subscriber
+        // digits (Kuwait mobiles are 8 digits). This guarantees we never emit
+        // more than 11 chars, which MyFatoorah rejects.
+        if (str_starts_with($digits, '965')) {
+            $digits = substr($digits, 3);
+        }
+        if (strlen($digits) > 8) {
+            $digits = substr($digits, -8);
         }
 
-        // Otherwise return what we have (still logged)
-        return $digits;
+        // A clean 8-digit local number → prefix the country code (965 + 8 = 11).
+        // Anything shorter is malformed; return the digits and let the caller
+        // decide whether to send them.
+        return strlen($digits) === 8 ? '965'.$digits : $digits;
     }
 
     private function maskKeyPrefix(string $apiKey): string

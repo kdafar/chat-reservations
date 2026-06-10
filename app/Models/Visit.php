@@ -83,6 +83,15 @@ class Visit extends Model
             if ($newStatus === self::STATUS_COMPLETED && empty($visit->completed_at)) {
                 $visit->completed_at = now();
             }
+
+            // completed_at marks a TRUE completion only. If a visit leaves the
+            // completed status (e.g. reopened, or moved back to awaiting_payment),
+            // clear it — otherwise reception's discharge gate (which requires an
+            // empty completed_at) stays permanently false and "Complete visit"
+            // never appears again.
+            if ($newStatus !== self::STATUS_COMPLETED && ! empty($visit->completed_at)) {
+                $visit->completed_at = null;
+            }
         });
     }
 

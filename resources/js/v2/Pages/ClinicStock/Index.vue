@@ -1,5 +1,5 @@
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { Head, Link, router, usePage } from '@inertiajs/vue3'
 import { confirm } from '../../Composables/useConfirm.js'
 import AppLayout from '../../Layouts/AppLayout.vue'
@@ -28,7 +28,7 @@ const t = computed(() => isRtl.value ? {
     col: { item: 'الصنف', branch: 'الفرع', onHand: 'المتوفر', threshold: 'حد التنبيه', bin: 'الموقع', status: '' },
     low: 'منخفض', empty: 'لا توجد سجلات', showing: 'عرض', of: 'من',
     modal: { createTitle: 'سجل مخزون جديد', editTitle: 'تحرير سجل المخزون', receiveTitle: 'استلام مخزون', save: 'حفظ', cancel: 'إلغاء', deleteConfirm: 'حذف سجل المخزون؟', receiveDo: 'استلام' },
-    fields: { branch: 'الفرع', item: 'الصنف', threshold: 'حد التنبيه', bin: 'الموقع', qty_stock_units: 'الكمية (وحدات تخزين)', qty_base: 'الكمية (وحدات أساسية)', notes: 'ملاحظات', qtyHint: 'أدخل إحدى الكميتين.' },
+    fields: { branch: 'الفرع', item: 'الصنف', threshold: 'حد التنبيه', bin: 'الموقع', qty_stock_units: 'الكمية (وحدات تخزين)', qty_base: 'الكمية (وحدات أساسية)', notes: 'ملاحظات', qtyHint: 'أدخل وحدات التخزين وتُحتسب الوحدات الأساسية تلقائياً، أو أدخل الوحدات الأساسية مباشرة.' },
     stats: { total: 'الكل', low: 'منخفض' },
 } : {
     title: 'Clinic Stock', eyebrow: 'Pharmacy & Stock',
@@ -37,7 +37,7 @@ const t = computed(() => isRtl.value ? {
     col: { item: 'Item', branch: 'Branch', onHand: 'On hand', threshold: 'Threshold', bin: 'Bin', status: '' },
     low: 'Low', empty: 'No stock records', showing: 'Showing', of: 'of',
     modal: { createTitle: 'New stock record', editTitle: 'Edit stock record', receiveTitle: 'Receive stock', save: 'Save', cancel: 'Cancel', deleteConfirm: 'Delete this stock record?', receiveDo: 'Receive' },
-    fields: { branch: 'Branch', item: 'Item', threshold: 'Alert threshold', bin: 'Bin location', qty_stock_units: 'Qty (stock units)', qty_base: 'Qty (base units)', notes: 'Notes', qtyHint: 'Enter one of the two quantities.' },
+    fields: { branch: 'Branch', item: 'Item', threshold: 'Alert threshold', bin: 'Bin location', qty_stock_units: 'Qty (stock units)', qty_base: 'Qty (base units)', notes: 'Notes', qtyHint: 'Enter stock units and base units fill in automatically, or type base units directly.' },
     stats: { total: 'Total', low: 'Low' },
 })
 
@@ -52,6 +52,30 @@ function clearFilters() { f.q = ''; f.low = false; apply() }
 
 const itemName = (id) => props.items.find(i => i.id === id)?.name ?? ('#' + id)
 const branchName = (id) => props.branches.find(b => b.id === id)?.name ?? ('#' + id)
+
+// Stock is per (branch, item) and the catalog has one row per clinic, so the
+// item picker must follow the chosen branch: show only that branch's clinic's
+// items (global rows included) plus this-branch overrides. This is what stops
+// a super-admin from seeing the same item name once per clinic.
+const branchPartnerId = (branchId) => props.branches.find(b => b.id === branchId)?.partner_id ?? null
+// Specificity: a this-branch override beats a clinic row beats a global row.
+const itemSpecificity = (i) => (i.branch_id != null ? 2 : (i.partner_id != null ? 1 : 0))
+function itemsForBranch(branchId) {
+    const pid = branchPartnerId(branchId)
+    const inScope = props.items.filter((i) => {
+        if (i.partner_id != null && pid != null && Number(i.partner_id) !== Number(pid)) return false
+        if (i.branch_id != null && branchId != null && Number(i.branch_id) !== Number(branchId)) return false
+        return true
+    })
+    // Collapse same-name rows (e.g. a global "Cotton Roll" + a clinic-specific
+    // one) to the most specific single entry, so the picker never shows dupes.
+    const byName = new Map()
+    for (const i of inScope) {
+        const cur = byName.get(i.name)
+        if (!cur || itemSpecificity(i) > itemSpecificity(cur)) byName.set(i.name, i)
+    }
+    return [...byName.values()]
+}
 
 // Create / edit
 const modalOpen = ref(false)
@@ -97,6 +121,7 @@ function openReceive(row = null) {
         clinic_item_id: row?.clinic_item_id ?? props.items[0]?.id ?? null,
         qty_stock_units: null, qty_base: null, notes: '',
     })
+    recvBaseAuto.value = false
     recvErr.value = {}; recvOpen.value = true
 }
 function submitReceive() {
@@ -105,6 +130,52 @@ function submitReceive() {
         preserveScroll: true, onSuccess: () => { recvOpen.value = false; recving.value = false }, onError: (e) => { recvErr.value = e; recving.value = false },
     })
 }
+// Branch-scoped item lists for the two modals.
+const formItems = computed(() => itemsForBranch(form.branch_id))
+const recvItems = computed(() => itemsForBranch(recvForm.branch_id))
+
+// When the branch changes, the previously-selected item may not belong to the
+// new branch's clinic — drop it (defaulting to the first valid item).
+watch(() => form.branch_id, () => {
+    if (!formItems.value.some(i => i.id === form.clinic_item_id)) {
+        form.clinic_item_id = formItems.value[0]?.id ?? null
+    }
+})
+watch(() => recvForm.branch_id, () => {
+    if (!recvItems.value.some(i => i.id === recvForm.clinic_item_id)) {
+        recvForm.clinic_item_id = recvItems.value[0]?.id ?? null
+    }
+})
+
+// Receive modal: prefill "base units" from "stock units" using the item's
+// conversion factor (e.g. 1 box × 100 = 100 doses). The user can still override
+// base directly; once they do, we stop auto-managing it.
+const selectedRecvItem = computed(() => props.items.find(i => i.id === recvForm.clinic_item_id) ?? null)
+const stepFor = (item) => {
+    const s = Number(item?.consume_step ?? 0)
+    return s > 0 ? s : 1
+}
+const recvStep = computed(() => stepFor(selectedRecvItem.value))
+const formStep = computed(() => stepFor(props.items.find(i => i.id === form.clinic_item_id) ?? null))
+
+// Whether the base-units field currently holds an auto-computed value (vs one
+// the user typed). Lets us safely clear a stale auto value when its basis goes
+// away (stock units cleared, or item has no conversion factor).
+const recvBaseAuto = ref(false)
+function onRecvBaseInput() { recvBaseAuto.value = false } // user took manual control
+watch(() => [recvForm.qty_stock_units, recvForm.clinic_item_id], () => {
+    const cf = Number(selectedRecvItem.value?.conversion_factor ?? 0)
+    const su = Number(recvForm.qty_stock_units ?? 0)
+    if (cf > 0 && su > 0) {
+        recvForm.qty_base = Math.round(su * cf * 10000) / 10000
+        recvBaseAuto.value = true
+    } else if (recvBaseAuto.value) {
+        // The auto basis is gone — drop the stale value rather than submit it.
+        recvForm.qty_base = null
+        recvBaseAuto.value = false
+    }
+})
+
 const fmt = (n) => Number(n ?? 0).toFixed(4)
 </script>
 
@@ -119,7 +190,7 @@ const fmt = (n) => Number(n ?? 0).toFixed(4)
                 </div>
                 <div style="display:flex; gap:8px;">
                     <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-                        <ImportButton type="clinic-stock" />
+                        <ImportButton v-if="can_edit" type="clinic-stock" />
                         <a class="btn btn-sm btn-outline" :href="route('v2.clinic-stock.export', { ...f })"><Icon name="download" :size="13" /><span>{{ isRtl ? 'تصدير Excel' : 'Export Excel' }}</span></a>
                     <button v-if="can_edit" class="btn btn-outline" @click="openReceive()"><Icon name="truck" :size="14" /><span>{{ t.receive }}</span></button>
                         <button v-if="can_edit" class="btn btn-primary" @click="openCreate"><Icon name="plus" :size="14" /><span>{{ t.new }}</span></button>
@@ -204,12 +275,12 @@ const fmt = (n) => Number(n ?? 0).toFixed(4)
                     </div>
                     <div>
                         <label class="label">{{ t.fields.item }} <span class="req">*</span></label>
-                        <SearchableSelect v-model="form.clinic_item_id" :items="items" :nullable="false" :placeholder="t.fields.item" :disabled="modalMode === 'edit'" />
+                        <SearchableSelect v-model="form.clinic_item_id" :items="formItems" :nullable="false" :placeholder="t.fields.item" :disabled="modalMode === 'edit'" />
                         <div v-if="errors.clinic_item_id" class="err">{{ errors.clinic_item_id }}</div>
                     </div>
                     <div>
                         <label class="label">{{ t.fields.threshold }}</label>
-                        <input v-model.number="form.min_qty_threshold_base" type="number" step="0.0001" min="0" class="input" />
+                        <input v-model.number="form.min_qty_threshold_base" type="number" :step="formStep" min="0" class="input" />
                     </div>
                     <div>
                         <label class="label">{{ t.fields.bin }}</label>
@@ -237,16 +308,16 @@ const fmt = (n) => Number(n ?? 0).toFixed(4)
                     </div>
                     <div>
                         <label class="label">{{ t.fields.item }} <span class="req">*</span></label>
-                        <SearchableSelect v-model="recvForm.clinic_item_id" :items="items" :nullable="false" :placeholder="t.fields.item" />
+                        <SearchableSelect v-model="recvForm.clinic_item_id" :items="recvItems" :nullable="false" :placeholder="t.fields.item" />
                     </div>
                     <div style="display:flex; gap:12px;">
                         <div style="flex:1;">
                             <label class="label">{{ t.fields.qty_stock_units }}</label>
-                            <input v-model.number="recvForm.qty_stock_units" type="number" step="0.0001" min="0" class="input" />
+                            <input v-model.number="recvForm.qty_stock_units" type="number" step="1" min="0" class="input" />
                         </div>
                         <div style="flex:1;">
                             <label class="label">{{ t.fields.qty_base }}</label>
-                            <input v-model.number="recvForm.qty_base" type="number" step="0.0001" min="0" class="input" />
+                            <input v-model.number="recvForm.qty_base" type="number" :step="recvStep" min="0" class="input" @input="onRecvBaseInput" />
                         </div>
                     </div>
                     <div style="font-size:11px; color:var(--fg-faint);">{{ t.fields.qtyHint }}</div>

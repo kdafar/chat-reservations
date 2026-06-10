@@ -120,6 +120,11 @@ class ClinicStockController extends Controller
             'bin_location' => ['nullable', 'string', 'max:191'],
         ]);
 
+        $item = ClinicItem::query()->findOrFail($data['clinic_item_id']);
+        if (! $this->itemFitsBranch($item, (int) $data['branch_id'])) {
+            return back()->withErrors(['clinic_item_id' => "That item isn't eligible for stock at the selected branch."]);
+        }
+
         ClinicItemStock::create($data + ['qty_on_hand_base' => 0]);
         return back()->with('flash', ['type' => 'success', 'message' => 'Stock record created.']);
     }
@@ -167,6 +172,9 @@ class ClinicStockController extends Controller
         }
 
         $item = ClinicItem::query()->findOrFail($data['clinic_item_id']);
+        if (! $this->itemFitsBranch($item, (int) $data['branch_id'])) {
+            return back()->with('flash', ['type' => 'error', 'message' => "That item isn't eligible for stock at the selected branch."]);
+        }
         try {
             $this->stock->restock(
                 branchId: (int) $data['branch_id'],
@@ -189,9 +197,58 @@ class ClinicStockController extends Controller
         return $this->accessibleBranches()->all();
     }
 
+    /**
+     * Whether a clinic item may receive / hold stock at a branch. It must be:
+     *   - active and stockable (you can't stock a service or a retired item), and
+     *   - global, or belonging to that branch's clinic, and not pinned to a
+     *     different branch.
+     * The picker already enforces this in the UI; this is the server-side guard
+     * against a stale tab or a crafted request hitting the wrong/ineligible row.
+     */
+    protected function itemFitsBranch(ClinicItem $item, int $branchId): bool
+    {
+        if (! $item->is_active || ! $item->is_stockable) {
+            return false;
+        }
+        $branch = \App\Models\Branch::query()->find($branchId);
+        if (! $branch) {
+            return false;
+        }
+        if ($item->partner_id !== null && (int) $item->partner_id !== (int) $branch->partner_id) {
+            return false;
+        }
+        if ($item->branch_id !== null && (int) $item->branch_id !== $branchId) {
+            return false;
+        }
+
+        return true;
+    }
+
     protected function itemOptions(): array
     {
-        return ClinicItem::query()->where('is_active', true)->orderByDesc('id')->get(['id', 'name'])
-            ->map(fn ($i) => ['id' => $i->id, 'name' => $i->localized_name])->all();
+        $partnerIds = $this->accessiblePartnerIds(); // null = unrestricted (super admin sees all clinics)
+
+        return ClinicItem::query()
+            ->where('is_active', true)
+            // You can only receive / track stock for stockable items — services
+            // and pure billables were polluting the picker (and are the bulk of
+            // the same-name "duplicates": one catalog row per clinic).
+            ->where('is_stockable', true)
+            ->when($partnerIds !== null, fn ($w) => $w->where(function ($w2) use ($partnerIds) {
+                $w2->whereIn('partner_id', $partnerIds)->orWhereNull('partner_id');
+            }))
+            ->orderBy('name')
+            ->get(['id', 'name', 'partner_id', 'branch_id', 'conversion_factor', 'consume_step'])
+            // partner_id/branch_id let the modal narrow items to the chosen
+            // branch's clinic (so a super-admin no longer sees one row per clinic);
+            // conversion_factor drives base-unit prepopulation.
+            ->map(fn ($i) => [
+                'id' => $i->id,
+                'name' => $i->localized_name,
+                'partner_id' => $i->partner_id,
+                'branch_id' => $i->branch_id,
+                'conversion_factor' => (float) ($i->conversion_factor ?? 0),
+                'consume_step' => (float) ($i->consume_step ?? 0),
+            ])->all();
     }
 }

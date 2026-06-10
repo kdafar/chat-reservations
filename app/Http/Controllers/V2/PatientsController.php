@@ -108,10 +108,11 @@ class PatientsController extends Controller
         $data = $request->validate([
             'partner_id' => ['nullable', 'integer', Rule::exists('partners', 'id')],
             'name' => ['required', 'string', 'max:191'],
-            'phone' => [
-                'required', 'string', 'max:32',
-                Rule::unique('patients', 'phone')->where(fn ($q) => $q->where('partner_id', $partnerId))->ignore($patient?->id)->whereNull('deleted_at'),
-            ],
+            // Phone is intentionally NOT unique: in real life numbers get
+            // reassigned, so reception must be able to create a second patient
+            // on the same phone (the identity-split case at check-in). Format
+            // validation stays; the old unique:phone constraint was dropped.
+            'phone' => ['required', 'string', 'max:32'],
             'email' => ['nullable', 'email', 'max:191'],
             'dob' => ['nullable', 'date', 'before_or_equal:today'],
             'gender' => ['nullable', Rule::in(['male', 'female'])],
@@ -135,6 +136,7 @@ class PatientsController extends Controller
             'page' => $this->queryPatients($filters),
             'counts' => $this->statusCounts($filters),
             'partners' => $this->partnerOptions(),
+            'can_create' => (bool) $request->user()?->can('create_patients'),
         ]);
     }
 

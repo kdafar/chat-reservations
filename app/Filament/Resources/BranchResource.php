@@ -94,6 +94,11 @@ class BranchResource extends Resource
                         ->unique(ignoreRecord: true)
                         ->live(onBlur: true)
                         ->afterStateUpdated(fn ($set, $state) => $set('slug', Str::slug((string) $state))),
+
+                    Forms\Components\Toggle::make('is_hub')
+                        ->label('Central hub / warehouse')
+                        ->helperText('This branch holds bulk stock and dispatches it to the clinic\'s other branches.')
+                        ->default(false),
                 ])->columns(3),
 
             Forms\Components\Section::make(__('clinic_misc.branch.section_media'))

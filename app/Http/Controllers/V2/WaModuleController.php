@@ -7,7 +7,10 @@ use App\Wa\Hub\Models\Contact;
 use App\Wa\Hub\Models\ContactEngagementStat;
 use App\Wa\Hub\Models\ContactGroup;
 use App\Wa\Hub\Models\MessageTemplate;
+use App\Wa\Hub\Models\PointPurchase;
 use App\Wa\Hub\Models\PromotionalCampaign;
+use App\Wa\Models\PointUsage;
+use App\Wa\Services\GlobalPointService;
 use App\Wa\Hub\Models\WhatsappSession;
 use App\Wa\Hub\Models\PromotionalCampaignRecipient;
 use App\Wa\Jobs\ImportBulkInviteRecipients;
@@ -19,6 +22,7 @@ use App\Wa\Models\WhatsApp\WaCredential;
 use App\Wa\Models\WhatsApp\WaMessage;
 use App\Wa\Models\WhatsApp\WaNumber;
 use App\Wa\Services\WhatsApp\WhatsAppService;
+use App\Wa\Support\Curator\Media;
 use App\Wa\Support\Phone;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -111,6 +115,8 @@ class WaModuleController extends Controller
         return Inertia::render('WaModule/Templates', [
             'filters' => $filters,
             'page' => $page,
+            'business_name' => $this->numberBusinessName(),
+            'business_logo' => $this->numberLogoUrl(),
             'can_edit' => true,
         ]);
     }
@@ -122,17 +128,18 @@ class WaModuleController extends Controller
         $data = $this->validateTemplate($request, null, $whatsapp);
 
         $tpl = MessageTemplate::create($data + ['local_status' => 'draft']);
+        $to = redirect()->route('v2.wa-module.templates');
 
         if ($request->boolean('publish')) {
             try {
                 $whatsapp->publishTemplateToMeta($tpl);
-                return back()->with('flash', ['type' => 'success', 'message' => 'Template created and submitted to Meta for review.']);
+                return $to->with('flash', ['type' => 'success', 'message' => 'Template created and submitted to Meta for review.']);
             } catch (\Throwable $e) {
-                return back()->with('flash', ['type' => 'error', 'message' => 'Saved locally, but Meta submit failed: '.$e->getMessage()]);
+                return $to->with('flash', ['type' => 'error', 'message' => 'Saved locally, but Meta submit failed: '.$e->getMessage()]);
             }
         }
 
-        return back()->with('flash', ['type' => 'success', 'message' => 'Template saved as draft.']);
+        return $to->with('flash', ['type' => 'success', 'message' => 'Template saved as draft.']);
     }
 
     /** Update a local template (blocked once approved by Meta). */
@@ -147,7 +154,7 @@ class WaModuleController extends Controller
 
         $tpl->update($this->validateTemplate($request, $tpl, $whatsapp));
 
-        return back()->with('flash', ['type' => 'success', 'message' => 'Template updated.']);
+        return redirect()->route('v2.wa-module.templates')->with('flash', ['type' => 'success', 'message' => 'Template updated.']);
     }
 
     /** Refresh a template's Meta status (APPROVED/PENDING/REJECTED + components). */
@@ -184,7 +191,7 @@ class WaModuleController extends Controller
             'language' => ['required', 'in:en,ar'],
             'body' => ['required', 'string', 'max:1024'],
             'cards' => ['required', 'array', 'min:2', 'max:10'],
-            'cards.*.image_url' => ['required', 'url', 'max:2048'],
+            'cards.*.image_path' => ['required', 'string', 'max:2048'],
             'cards.*.body' => ['required', 'string', 'max:160'],
             'cards.*.buttons' => ['array', 'max:2'],
             'cards.*.buttons.*.type' => ['required_with:cards.*.buttons', 'in:QUICK_REPLY,URL'],
@@ -193,9 +200,22 @@ class WaModuleController extends Controller
             'publish' => ['boolean'],
         ]);
 
+        // Each card image must be a WhatsApp-supported JPG/PNG from the media library.
+        $cardErrors = [];
+        foreach ($v['cards'] as $i => $card) {
+            $mime = strtolower((string) optional(Media::where('path', $card['image_path'])->first())->type);
+            if ($mime !== '' && ! in_array($mime, ['image/jpeg', 'image/png'], true)) {
+                $cardErrors["cards.{$i}.image_path"] = 'Carousel images must be JPG or PNG (WebP/GIF are not supported).';
+            }
+        }
+        if ($cardErrors) {
+            throw \Illuminate\Validation\ValidationException::withMessages($cardErrors);
+        }
+
         $cards = array_map(function ($card) {
+            $url = Storage::disk('public')->url($card['image_path']);
             $comps = [
-                ['type' => 'HEADER', 'format' => 'IMAGE', 'example' => ['header_handle' => [$card['image_url']]], 'media_url' => $card['image_url']],
+                ['type' => 'HEADER', 'format' => 'IMAGE', 'example' => ['header_handle' => [$url]], 'media_url' => $url],
                 ['type' => 'BODY', 'text' => $card['body']],
             ];
             if (! empty($card['buttons'])) {
@@ -227,16 +247,17 @@ class WaModuleController extends Controller
             'triggers' => [],
         ]);
 
+        $to = redirect()->route('v2.wa-module.templates');
         if ($request->boolean('publish')) {
             try {
                 $whatsapp->publishTemplateToMeta($tpl);
-                return back()->with('flash', ['type' => 'success', 'message' => 'Carousel created and submitted to Meta.']);
+                return $to->with('flash', ['type' => 'success', 'message' => 'Carousel created and submitted to Meta.']);
             } catch (\Throwable $e) {
-                return back()->with('flash', ['type' => 'error', 'message' => 'Saved locally, Meta submit failed: '.$e->getMessage()]);
+                return $to->with('flash', ['type' => 'error', 'message' => 'Saved locally, Meta submit failed: '.$e->getMessage()]);
             }
         }
 
-        return back()->with('flash', ['type' => 'success', 'message' => 'Carousel template saved as draft.']);
+        return $to->with('flash', ['type' => 'success', 'message' => 'Carousel template saved as draft.']);
     }
 
     /** Pull all templates + statuses from Meta into the local table. */
@@ -300,11 +321,10 @@ class WaModuleController extends Controller
             'name' => ['required', 'string', 'max:512'],
             'category' => ['required', 'in:MARKETING,UTILITY,AUTHENTICATION'],
             'language' => ['required', 'in:en,ar'],
-            'header_type' => ['nullable', 'in:NONE,TEXT,IMAGE,VIDEO,DOCUMENT'],
+            'header_type' => ['nullable', 'in:NONE,TEXT,IMAGE,VIDEO,DOCUMENT,LOCATION'],
             'header_text' => ['nullable', 'string', 'max:60'],
             'header_example' => ['nullable', 'string', 'max:120'],
-            'header_media_url' => ['nullable', 'url', 'max:2048'],
-            'header_media_type' => ['nullable', 'string', 'max:120'], // mime of the sample, for type match
+            'header_sample_path' => ['nullable', 'string', 'max:2048'], // relative path in the media library
             'body' => ['required', 'string', 'max:1024'],
             'body_examples' => ['array'],
             'body_examples.*' => ['nullable', 'string', 'max:200'],
@@ -381,18 +401,22 @@ class WaModuleController extends Controller
                 $errors['header_example'] = 'A sample is required for the header variable.';
             }
         } elseif (in_array($headerType, ['IMAGE', 'VIDEO', 'DOCUMENT'], true)) {
-            if (blank($v['header_media_url'] ?? null)) {
-                $errors['header_media_url'] = "A sample {$headerType} is required for approval.";
-            } elseif (! empty($v['header_media_type'])) {
-                $type = strtolower($v['header_media_type']);
-                $ok = match ($headerType) {
-                    'IMAGE' => str_starts_with($type, 'image/'),
-                    'VIDEO' => str_starts_with($type, 'video/'),
-                    'DOCUMENT' => $type === 'application/pdf',
+            $samplePath = $v['header_sample_path'] ?? null;
+            if (blank($samplePath)) {
+                $errors['header_sample_path'] = "A sample {$headerType} is required for approval.";
+            } else {
+                $mime = strtolower((string) optional(Media::where('path', $samplePath)->first())->type);
+                // WhatsApp-supported header media only: JPG/PNG image, MP4 video, PDF document.
+                $ok = $mime === '' || match ($headerType) {
+                    'IMAGE' => in_array($mime, ['image/jpeg', 'image/png'], true),
+                    'VIDEO' => $mime === 'video/mp4',
+                    'DOCUMENT' => $mime === 'application/pdf',
                     default => true,
                 };
                 if (! $ok) {
-                    $errors['header_media_url'] = "Sample media does not match header type ({$headerType}).";
+                    $errors['header_sample_path'] = $headerType === 'IMAGE'
+                        ? 'WhatsApp image headers must be JPG or PNG (WebP/GIF are not supported).'
+                        : "Sample media does not match header type ({$headerType}).";
                 }
             }
         }
@@ -439,9 +463,10 @@ class WaModuleController extends Controller
                 if (! empty($v['header_example'])) {
                     $header['example'] = ['header_text' => [$v['header_example']]];
                 }
-            } elseif (! empty($v['header_media_url'])) {
-                $header['example'] = ['header_handle' => [$v['header_media_url']]];
-                $header['media_url'] = $v['header_media_url'];
+            } elseif (! empty($v['header_sample_path'])) {
+                $url = Storage::disk('public')->url($v['header_sample_path']);
+                $header['example'] = ['header_handle' => [$url]];
+                $header['media_url'] = $url;
             }
             $components[] = array_filter($header);
         }
@@ -476,6 +501,8 @@ class WaModuleController extends Controller
             'components' => $components,
             'is_auto_reply' => (bool) ($v['is_auto_reply'] ?? false),
             'triggers' => $v['triggers'] ?? [],
+            // persist the sample path so publishTemplateToMeta() uploads it to Meta for a header_handle
+            'header_sample_path' => in_array($headerType, ['IMAGE', 'VIDEO', 'DOCUMENT'], true) ? ($v['header_sample_path'] ?? null) : null,
         ];
     }
 
@@ -493,7 +520,8 @@ class WaModuleController extends Controller
             'header_type' => $header['format'] ?? 'NONE',
             'header_text' => $header['text'] ?? null,
             'header_example' => $header['example']['header_text'][0] ?? null,
-            'header_media_url' => $header['media_url'] ?? ($header['example']['header_handle'][0] ?? null),
+            'header_media_url' => $t->header_sample_path ? Storage::disk('public')->url($t->header_sample_path) : ($header['media_url'] ?? ($header['example']['header_handle'][0] ?? null)),
+            'header_sample_path' => $t->header_sample_path,
             'footer_text' => $footer['text'] ?? null,
             'body_examples' => $body['example']['body_text'][0] ?? [],
             'locked' => $t->local_status === 'published' || $t->status === 'APPROVED',
@@ -634,39 +662,99 @@ class WaModuleController extends Controller
         return back()->with('flash', ['type' => 'success', 'message' => $added ? 'Added to group.' : 'Removed from group.']);
     }
 
+    /** Statuses that count as a hard failure/issue across the module. */
+    private const FAIL_STATUSES = ['failed', 'limited', 'undeliverable', 'experiment_blocked'];
+
     /** Promotional / bulk campaigns. */
     public function campaigns(Request $request)
     {
         $this->authorizeAccess($request);
 
+        $filters = [
+            'q' => trim((string) $request->query('q', '')),
+            'status' => $request->query('status', 'all'),
+        ];
+
         $page = PromotionalCampaign::query()
             ->withCount([
                 'recipients',
                 'recipients as pending_count' => fn ($q) => $q->where('status', 'pending'),
-                'recipients as sent_count' => fn ($q) => $q->whereIn('status', ['sent', 'delivered', 'read']),
+                'recipients as raw_sent_count' => fn ($q) => $q->where('status', 'sent'),
+                'recipients as delivered_count' => fn ($q) => $q->where('status', 'delivered'),
+                'recipients as read_count' => fn ($q) => $q->where('status', 'read'),
+                'recipients as failed_count' => fn ($q) => $q->where('status', 'failed'),
+                'recipients as issues_count' => fn ($q) => $q->whereIn('status', self::FAIL_STATUSES),
+                'recipients as done_count' => fn ($q) => $q->where('status', '!=', 'pending'),
             ])
+            ->when($filters['q'] !== '', fn ($q) => $q->where(fn ($w) => $w
+                ->where('name', 'like', "%{$filters['q']}%")
+                ->orWhere('template_name', 'like', "%{$filters['q']}%")))
+            ->when($filters['status'] !== 'all', fn ($q) => $q->where('status', $filters['status']))
             ->latest('created_at')
             ->paginate(25)
             ->withQueryString()
-            ->through(fn (PromotionalCampaign $c) => [
-                'id' => $c->id,
-                'name' => $c->name,
-                'template_name' => $c->template_name,
-                'status' => $c->status,
-                'locked' => $this->campaignLocked($c),
-                'recipients_count' => $c->recipients_count,
-                'pending_count' => $c->pending_count,
-                'sent_count' => $c->sent_count,
-                'default_locale' => $c->default_locale,
-                'send_rate_per_min' => $c->send_rate_per_min,
-                'template_variables' => (array) $c->template_variables,
-                'has_header_media' => filled($c->header_image_path),
-                'scheduled_at' => optional($c->scheduled_at)->format('Y-m-d\TH:i'),
-                'sent_at' => optional($c->sent_at)->toDateTimeString(),
-                'created_at' => optional($c->created_at)->toDateTimeString(),
-            ]);
+            ->through(function (PromotionalCampaign $c) {
+                $other = max(0, $c->recipients_count - $c->raw_sent_count - $c->delivered_count - $c->read_count - $c->failed_count);
 
-        $templates = MessageTemplate::query()
+                return [
+                    'id' => $c->id,
+                    'name' => $c->name,
+                    'template_name' => $c->template_name,
+                    'status' => $c->status,
+                    'locked' => $this->campaignLocked($c),
+                    'recipients_count' => $c->recipients_count,
+                    'pending_count' => $c->pending_count,
+                    // raw, mutually-exclusive status counts (drive the delivery breakdown chips)
+                    'breakdown' => [
+                        'sent' => $c->raw_sent_count,
+                        'delivered' => $c->delivered_count,
+                        'read' => $c->read_count,
+                        'failed' => $c->failed_count,
+                        'other' => $other,
+                    ],
+                    'done_count' => $c->done_count, // anything no longer pending (for the progress bar)
+                    'default_locale' => $c->default_locale,
+                    'send_rate_per_min' => $c->send_rate_per_min,
+                    'template_variables' => (array) $c->template_variables,
+                    'has_header_media' => filled($c->header_image_path),
+                    'scheduled_at' => optional($c->scheduled_at)->format('Y-m-d\TH:i'),
+                    'sent_at' => optional($c->sent_at)->toDateTimeString(),
+                    'created_at' => optional($c->created_at)->toDateTimeString(),
+                ];
+            });
+
+        // Account-wide totals (raw status counts, matching the per-row chips).
+        $fails = "'".implode("','", self::FAIL_STATUSES)."'";
+        $agg = PromotionalCampaignRecipient::query()
+            ->selectRaw("COUNT(*) recipients,
+                SUM(status = 'delivered') delivered,
+                SUM(status = 'read') `read`,
+                SUM(status IN ({$fails})) failed")
+            ->first();
+        $recipients = (int) ($agg->recipients ?? 0);
+        $stats = [
+            'campaigns' => PromotionalCampaign::count(),
+            'recipients' => $recipients,
+            'delivered' => (int) ($agg->delivered ?? 0),
+            'read' => (int) ($agg->read ?? 0),
+            'failed' => (int) ($agg->failed ?? 0),
+            'delivery_rate' => $recipients ? round(((int) $agg->delivered) / $recipients * 100) : 0,
+        ];
+
+        return Inertia::render('WaModule/Campaigns', [
+            'filters' => $filters,
+            'page' => $page,
+            'stats' => $stats,
+            'number' => $this->numberHealthCard(),
+            'points_balance' => app(GlobalPointService::class)->getSystemBalance(),
+            'can_edit' => true,
+        ]);
+    }
+
+    /** Local templates shaped for the campaign builder (vars, media need, preview parts). */
+    private function campaignTemplateOptions()
+    {
+        return MessageTemplate::query()
             ->orderBy('name')
             ->get()
             ->map(fn (MessageTemplate $t) => array_merge([
@@ -678,15 +766,392 @@ class WaModuleController extends Controller
                 'needs_media' => in_array(strtoupper((string) data_get(collect($t->components ?? [])->firstWhere('type', 'HEADER'), 'format')), ['IMAGE', 'VIDEO', 'DOCUMENT'], true),
             ], $this->templateParts($t)))
             ->values();
+    }
 
-        $groups = ContactGroup::query()->withCount('contacts')->orderBy('name')->get()
+    /** Contact groups shaped for the "add from group" picker. */
+    private function campaignGroupOptions()
+    {
+        return ContactGroup::query()->withCount('contacts')->orderBy('name')->get()
             ->map(fn (ContactGroup $g) => ['id' => $g->id, 'name' => $g->name, 'count' => $g->contacts_count]);
+    }
 
-        return Inertia::render('WaModule/Campaigns', [
-            'page' => $page,
-            'templates' => $templates,
-            'groups' => $groups,
+    /** Dedicated page: create a message template. */
+    public function createTemplate(Request $request)
+    {
+        $this->authorizeAccess($request);
+
+        return Inertia::render('WaModule/TemplateForm', ['mode' => 'create', 'template' => null, 'business_name' => $this->numberBusinessName(), 'business_logo' => $this->numberLogoUrl(), 'business_number' => $this->numberDisplay()]);
+    }
+
+    /** Dedicated page: edit/view a message template. */
+    public function editTemplate(Request $request, int $template)
+    {
+        $this->authorizeAccess($request);
+        $t = MessageTemplate::findOrFail($template);
+
+        return Inertia::render('WaModule/TemplateForm', [
+            'mode' => 'edit',
+            'business_name' => $this->numberBusinessName(),
+            'business_logo' => $this->numberLogoUrl(),
+            'business_number' => $this->numberDisplay(),
+            'template' => array_merge([
+                'id' => $t->id,
+                'name' => $t->name,
+                'category' => $t->category,
+                'language' => $t->language,
+                'status' => $t->status,
+                'local_status' => $t->local_status,
+                'is_auto_reply' => (bool) $t->is_auto_reply,
+                'body' => $t->body,
+                'triggers' => $t->triggers ?? [],
+                'has_meta_id' => filled($t->meta_id),
+            ], $this->templateParts($t)),
+        ]);
+    }
+
+    /** Dedicated page: carousel template builder. */
+    public function createCarousel(Request $request)
+    {
+        $this->authorizeAccess($request);
+
+        return Inertia::render('WaModule/CarouselForm');
+    }
+
+    /** Dedicated page: create a campaign. */
+    public function createCampaign(Request $request)
+    {
+        $this->authorizeAccess($request);
+
+        return Inertia::render('WaModule/CampaignForm', [
+            'mode' => 'create',
+            'campaign' => null,
+            'templates' => $this->campaignTemplateOptions(),
+            'groups' => $this->campaignGroupOptions(),
+            'business_name' => $this->numberBusinessName(),
+            'business_logo' => $this->numberLogoUrl(),
+        ]);
+    }
+
+    /** Dedicated page: edit/view a campaign + manage its recipients. */
+    public function editCampaign(Request $request, int $campaign)
+    {
+        $this->authorizeAccess($request);
+        $c = PromotionalCampaign::findOrFail($campaign);
+
+        $statusFilter = $request->query('rstatus', 'all');
+        $recipients = $c->recipients()
+            ->when($statusFilter === 'failed', fn ($q) => $q->whereIn('status', self::FAIL_STATUSES))
+            ->when(! in_array($statusFilter, ['all', 'failed'], true), fn ($q) => $q->where('status', $statusFilter))
+            ->orderByDesc('id')
+            ->paginate(20)
+            ->withQueryString()
+            ->through(fn (PromotionalCampaignRecipient $r) => [
+                'id' => $r->id,
+                'msisdn' => $r->msisdn,
+                'name' => $r->name,
+                'locale' => $r->locale,
+                'source' => $r->source,
+                'status' => $r->status,
+                'error' => $r->error_message ?: $r->wa_error_title,
+                'sent_at' => optional($r->sent_at)->diffForHumans(null, true),
+                'created_at' => optional($r->created_at)->diffForHumans(null, true),
+            ]);
+
+        return Inertia::render('WaModule/CampaignForm', [
+            'mode' => 'edit',
+            'campaign' => [
+                'id' => $c->id,
+                'name' => $c->name,
+                'template_name' => $c->template_name,
+                'status' => $c->status,
+                'locked' => $this->campaignLocked($c),
+                'default_locale' => $c->default_locale,
+                'send_rate_per_min' => $c->send_rate_per_min,
+                'template_variables' => (array) $c->template_variables,
+                'has_header_media' => filled($c->header_image_path),
+                'header_image_path' => $c->header_image_path,
+                'header_media_url' => $c->header_image_path ? Storage::disk('public')->url($c->header_image_path) : null,
+                'scheduled_at' => optional($c->scheduled_at)->format('Y-m-d\TH:i'),
+                'recipients_count' => $c->recipients()->count(),
+            ],
+            'templates' => $this->campaignTemplateOptions(),
+            'groups' => $this->campaignGroupOptions(),
+            'recipients' => $recipients,
+            'recipientFilter' => $statusFilter,
+            'business_name' => $this->numberBusinessName(),
+            'business_logo' => $this->numberLogoUrl(),
+        ]);
+    }
+
+    /** WhatsApp points wallet: balance, top-ups and usage. */
+    public function points(Request $request)
+    {
+        $this->authorizeAccess($request);
+        $svc = app(GlobalPointService::class);
+
+        $purchased = (int) PointPurchase::whereIn('status', ['paid', 'completed'])->where('points_purchased', '>', 0)->sum('points_purchased');
+        $used = (int) PointUsage::where('points', '>', 0)->sum('points');
+
+        $purchases = PointPurchase::query()->latest('id')->limit(50)->get()->map(fn (PointPurchase $p) => [
+            'id' => $p->id,
+            'points' => (int) $p->points_purchased,
+            'amount' => $p->amount_paid,
+            'currency' => $p->currency,
+            'gateway' => $p->payment_gateway,
+            'status' => $p->status,
+            'note' => data_get($p->gateway_meta, 'note'),
+            'at' => optional($p->created_at)->toDateTimeString(),
+        ]);
+
+        $usage = PointUsage::query()->latest('id')->limit(50)->get()->map(fn (PointUsage $u) => [
+            'id' => $u->id,
+            'points' => (int) $u->points,
+            'event' => $u->event_type,
+            'campaign' => data_get($u->meta, 'campaign_id') ?? data_get($u->meta, 'campaign'),
+            'to' => data_get($u->meta, 'to') ?? data_get($u->meta, 'msisdn'),
+            'at' => optional($u->created_at)->toDateTimeString(),
+        ]);
+
+        return Inertia::render('WaModule/Points', [
+            'balance' => $svc->getSystemBalance(),
+            'purchased' => $purchased,
+            'used' => $used,
+            'purchases' => $purchases,
+            'usage' => $usage,
             'can_edit' => true,
+        ]);
+    }
+
+    /** Record a manual points top-up (admin credit, no payment gateway). */
+    public function topUpPoints(Request $request): RedirectResponse
+    {
+        $this->authorizeAccess($request);
+        $data = $request->validate([
+            'points' => ['required', 'integer', 'min:1', 'max:1000000'],
+            'amount_paid' => ['nullable', 'numeric', 'min:0'],
+            'currency' => ['nullable', 'string', 'max:8'],
+            'note' => ['nullable', 'string', 'max:191'],
+        ]);
+
+        PointPurchase::create([
+            'user_id' => null,
+            'points_purchased' => $data['points'],
+            'amount_paid' => $data['amount_paid'] ?? 0,
+            'currency' => $data['currency'] ?: 'KWD',
+            'payment_gateway' => 'manual',
+            'transaction_id' => 'manual-'.now()->format('YmdHis').'-'.\Illuminate\Support\Str::upper(\Illuminate\Support\Str::random(5)),
+            'status' => 'completed',
+            'gateway_meta' => ['note' => $data['note'] ?? null],
+        ]);
+
+        return back()->with('flash', ['type' => 'success', 'message' => 'Added '.number_format($data['points']).' points.']);
+    }
+
+    /** Shape a Media record for the picker/library JSON. */
+    private function mediaArray(Media $m): array
+    {
+        $type = (string) $m->type;
+        $kind = str_starts_with($type, 'image/') ? 'image' : (str_starts_with($type, 'video/') ? 'video' : 'document');
+
+        return [
+            'id' => $m->id,
+            'path' => $m->path,
+            'url' => $m->url,
+            'name' => $m->name,
+            'type' => $type,
+            'kind' => $kind,
+            'size' => $m->size,
+            'created_at' => optional($m->created_at)->diffForHumans(null, true),
+        ];
+    }
+
+    /** Media library: central upload + management page. */
+    public function media(Request $request)
+    {
+        $this->authorizeAccess($request);
+
+        $page = Media::query()->latest('id')->paginate(36)->through(fn (Media $m) => $this->mediaArray($m));
+
+        return Inertia::render('WaModule/Media', ['page' => $page, 'can_edit' => true]);
+    }
+
+    /** JSON list for the inline media picker (optionally filtered by kind). */
+    public function mediaList(Request $request)
+    {
+        $this->authorizeAccess($request);
+        $kind = $request->query('kind');
+
+        $items = Media::query()
+            ->when($kind === 'image', fn ($q) => $q->where('type', 'like', 'image/%'))
+            ->when($kind === 'video', fn ($q) => $q->where('type', 'like', 'video/%'))
+            ->when($kind === 'document', fn ($q) => $q->where('type', 'application/pdf'))
+            ->latest('id')->limit(60)->get()
+            ->map(fn (Media $m) => $this->mediaArray($m));
+
+        return response()->json(['items' => $items]);
+    }
+
+    /** Upload a file into the central media library; returns the stored media as JSON. */
+    public function uploadMedia(Request $request)
+    {
+        $this->authorizeAccess($request);
+        // WhatsApp template/campaign media only accepts JPG/PNG images, MP4 video, PDF docs.
+        // WebP/GIF are NOT supported by Meta and fail on delivery (error 131053), so block them here.
+        $request->validate(['file' => ['required', 'file', 'mimes:jpg,jpeg,png,mp4,pdf', 'max:16384']], [
+            'file.mimes' => 'WhatsApp only supports JPG/PNG images, MP4 video, or PDF documents (not WebP/GIF).',
+        ]);
+
+        $file = $request->file('file');
+        $path = $file->store('wa-media', 'public');
+        $media = Media::create([
+            'disk' => 'public',
+            'directory' => 'wa-media',
+            'path' => $path,
+            'name' => $file->getClientOriginalName(),
+            'type' => $file->getMimeType(),
+            'ext' => $file->getClientOriginalExtension(),
+            'size' => $file->getSize(),
+        ]);
+
+        return response()->json($this->mediaArray($media));
+    }
+
+    /** Delete a media item (file + record). */
+    public function destroyMedia(Request $request, int $media): RedirectResponse
+    {
+        $this->authorizeAccess($request);
+        $m = Media::find($media);
+        if ($m) {
+            try {
+                Storage::disk($m->disk ?: 'public')->delete($m->path);
+            } catch (\Throwable $e) {
+            }
+            $m->delete();
+        }
+
+        return back()->with('flash', ['type' => 'success', 'message' => 'Media deleted.']);
+    }
+
+    /** The verified WhatsApp business name (falls back to the number / a generic label). */
+    private function numberBusinessName(): string
+    {
+        $n = WaNumber::query()->latest('id')->first();
+
+        return $n?->verified_name ?: ($n?->display_phone_number ?: 'Business Name');
+    }
+
+    /** The connected number's display phone (local, cheap). */
+    private function numberDisplay(): ?string
+    {
+        return optional(WaNumber::query()->latest('id')->first())->display_phone_number;
+    }
+
+    /** The WhatsApp Business account's own profile photo URL (cached Graph call). */
+    private function numberLogoUrl(): ?string
+    {
+        try {
+            return app(WhatsAppService::class)->getBusinessProfilePictureUrl();
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    /** Compact WhatsApp number health card (local, cheap — reads the provisioned WaNumber). */
+    private function numberHealthCard(): ?array
+    {
+        $n = WaNumber::query()->latest('id')->first();
+        if (! $n) {
+            return null;
+        }
+
+        return [
+            'display_phone_number' => $n->display_phone_number ?: $n->phone_number_id,
+            'verified_name' => $n->verified_name,
+            'quality_rating' => $n->quality_rating,
+            'messaging_limit_tier' => $n->messaging_limit_tier,
+            'status' => $n->status,
+        ];
+    }
+
+    /** Deep-dive JSON for a single campaign (status breakdown + recent failures). */
+    public function campaignDeepDive(Request $request, int $campaign)
+    {
+        $this->authorizeAccess($request);
+        $c = PromotionalCampaign::findOrFail($campaign);
+
+        $base = PromotionalCampaignRecipient::where('promotional_campaign_id', $c->id);
+        $byStatus = (clone $base)->selectRaw('status, COUNT(*) n')->groupBy('status')->pluck('n', 'status');
+        $g = fn ($k) => (int) ($byStatus[$k] ?? 0);
+        $total = (int) array_sum($byStatus->all());
+
+        $issues = $g('failed') + $g('limited') + $g('undeliverable') + $g('experiment_blocked');
+        $deliveredRead = $g('delivered') + $g('read');
+        $pendingSending = $g('pending') + $g('sending');
+
+        $failures = (clone $base)->whereIn('status', self::FAIL_STATUSES)
+            ->orderByDesc('updated_at')->limit(15)->get()
+            ->map(fn (PromotionalCampaignRecipient $r) => [
+                'msisdn' => $r->msisdn,
+                'name' => $r->name,
+                'status' => $r->status,
+                'code' => $r->wa_error_code,
+                'error' => $r->error_message ?: $r->wa_error_title,
+                'at' => optional($r->updated_at)->diffForHumans(null, true),
+            ]);
+
+        return response()->json([
+            'campaign' => ['id' => $c->id, 'name' => $c->name, 'status' => $c->status],
+            'total' => $total,
+            'cards' => [
+                'recipients' => $total,
+                'delivered_read' => $deliveredRead,
+                'delivered_read_pct' => $total ? round($deliveredRead / $total * 100, 1) : 0,
+                'pending_sending' => $pendingSending,
+                'issues' => $issues,
+            ],
+            'breakdown' => [
+                'sent' => $g('sent'),
+                'delivered' => $g('delivered'),
+                'read' => $g('read'),
+                'pending' => $g('pending'),
+                'issues' => $issues,
+            ],
+            'failures' => $failures,
+        ]);
+    }
+
+    /** Export campaign recipients (scope: failed | pending | all) as CSV. */
+    public function exportCampaignRecipients(Request $request, int $campaign)
+    {
+        $this->authorizeAccess($request);
+        $c = PromotionalCampaign::findOrFail($campaign);
+        $scope = $request->query('scope', 'failed');
+
+        $q = $c->recipients()->getQuery();
+        if ($scope === 'failed') {
+            $q->whereIn('status', self::FAIL_STATUSES);
+        } elseif ($scope === 'pending') {
+            $q->where('status', 'pending');
+        }
+
+        $out = "phone,name,status,error,sent_at,delivered_at,read_at\n";
+        foreach ($q->orderBy('id')->cursor() as $r) {
+            $out .= implode(',', [
+                $r->msisdn,
+                '"'.str_replace('"', '""', (string) $r->name).'"',
+                $r->status,
+                '"'.str_replace('"', '""', (string) ($r->wa_error_title ?: $r->error_message)).'"',
+                optional($r->sent_at)->toDateTimeString(),
+                optional($r->delivered_at)->toDateTimeString(),
+                optional($r->read_at)->toDateTimeString(),
+            ])."\n";
+        }
+
+        $slug = \Illuminate\Support\Str::slug($c->name ?: 'campaign');
+
+        return response($out, 200, [
+            'Content-Type' => 'text/csv',
+            'Content-Disposition' => "attachment; filename=\"{$slug}-{$scope}.csv\"",
         ]);
     }
 
@@ -714,7 +1179,7 @@ class WaModuleController extends Controller
             ->selectRaw('AVG(TIMESTAMPDIFF(SECOND, sent_at, read_at)) a')->value('a');
 
         $failures = (clone $base)->whereIn('status', ['failed', 'limited', 'undeliverable', 'experiment_blocked'])
-            ->selectRaw('COALESCE(wa_error_title, error_message, "Unknown") as reason, wa_error_code as code, COUNT(*) as n')
+            ->selectRaw('COALESCE(error_message, wa_error_title, "Unknown") as reason, wa_error_code as code, COUNT(*) as n')
             ->groupBy('reason', 'code')->orderByDesc('n')->limit(20)->get()
             ->map(fn ($r) => ['reason' => $r->reason, 'code' => $r->code, 'count' => $r->n]);
 
@@ -732,7 +1197,7 @@ class WaModuleController extends Controller
                 'sent_at' => optional($r->sent_at)->format('H:i:s'),
                 'delivered_at' => optional($r->delivered_at)->format('H:i:s'),
                 'read_at' => optional($r->read_at)->format('H:i:s'),
-                'error' => $r->wa_error_title ?: $r->error_message,
+                'error' => $r->error_message ?: $r->wa_error_title,
                 'pricing' => $r->wa_pricing_model,
             ]);
 
@@ -775,9 +1240,10 @@ class WaModuleController extends Controller
         $this->authorizeAccess($request);
         $data = $this->validateCampaign($request);
         $status = ! empty($data['scheduled_at']) && \Illuminate\Support\Carbon::parse($data['scheduled_at'])->isFuture() ? 'scheduled' : 'draft';
-        PromotionalCampaign::create($data + ['status' => $status]);
+        $c = PromotionalCampaign::create($data + ['status' => $status]);
 
-        return back()->with('flash', ['type' => 'success', 'message' => $status === 'scheduled' ? 'Campaign scheduled.' : 'Campaign created.']);
+        return redirect()->route('v2.wa-module.campaigns.edit', ['campaign' => $c->id])
+            ->with('flash', ['type' => 'success', 'message' => ($status === 'scheduled' ? 'Campaign scheduled.' : 'Campaign created.').' Add recipients below.']);
     }
 
     public function updateCampaign(Request $request, int $campaign): RedirectResponse
@@ -852,6 +1318,17 @@ class WaModuleController extends Controller
         $ids = $c->recipients()->whereIn('status', ['pending', 'failed'])->pluck('id');
         if ($ids->isEmpty()) {
             return $err('No pending or failed recipients to queue.');
+        }
+
+        // Points pre-check: bulk sends are metered against the global points wallet.
+        // Fail fast with a clear message instead of letting every recipient error out.
+        $cost = (int) (MessageTemplate::where('name', $c->template_name)->value('points_cost') ?? 1);
+        if ($cost > 0) {
+            $balance = app(GlobalPointService::class)->getSystemBalance();
+            $needed = $ids->count() * $cost;
+            if ($balance < $needed) {
+                return $err("Not enough WhatsApp points: this needs {$needed} (".$ids->count()." × {$cost}) but only {$balance} are available. Top up in WhatsApp → Points.");
+            }
         }
 
         $c->update(['status' => 'sending', 'sent_at' => $c->sent_at ?? now()]);
@@ -955,7 +1432,8 @@ class WaModuleController extends Controller
             'send_rate_per_min' => ['nullable', 'integer', 'min:60', 'max:6000'],
             'template_variables' => ['array'],
             'template_variables.*' => ['nullable', 'string', 'max:1024'],
-            'header_media' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp,mp4,pdf', 'max:16384'],
+            'header_image_path' => ['nullable', 'string', 'max:2048'], // chosen from the media library
+            'header_media' => ['nullable', 'file', 'mimes:jpg,jpeg,png,mp4,pdf', 'max:16384'], // legacy direct upload (no WebP — Meta rejects it)
         ]);
 
         $out = [
@@ -969,7 +1447,9 @@ class WaModuleController extends Controller
         $tpl = ! empty($v['template_name']) ? MessageTemplate::where('name', $v['template_name'])->first() : null;
         if ($tpl) {
             $out['template_details'] = ['name' => $tpl->name, 'language' => $tpl->language, 'components' => $tpl->components ?? []];
-            $out['default_locale'] = $v['default_locale'] ?? ($tpl->language ?: 'en');
+            // Language is always the selected template's own language — never a free
+            // user choice, so a campaign can't be sent with a mismatched language.
+            $out['default_locale'] = $tpl->language ?: 'en';
             // keep only the variables this template actually has, index-keyed
             $indexes = $this->templateBodyVarIndexes($tpl->components ?? []);
             $vars = [];
@@ -983,10 +1463,13 @@ class WaModuleController extends Controller
             $out['template_variables'] = [];
         }
 
-        // Header media: store an uploaded sample to the public disk (the send job
-        // resolves it via Storage::disk('public')->url($header_image_path)).
-        if ($request->hasFile('header_media')) {
-            $out['header_image_path'] = $request->file('header_media')->store('wa-campaign-media', 'public');
+        // Header media: prefer a path chosen from the media library; fall back to a
+        // legacy direct upload. The send job resolves it via Storage::disk('public')
+        // ->url($header_image_path).
+        if ($request->filled('header_image_path')) {
+            $out['header_image_path'] = $request->input('header_image_path');
+        } elseif ($request->hasFile('header_media')) {
+            $out['header_image_path'] = $request->file('header_media')->store('wa-media', 'public');
         } elseif ($existing) {
             $out['header_image_path'] = $existing->header_image_path; // keep existing on edit
         }

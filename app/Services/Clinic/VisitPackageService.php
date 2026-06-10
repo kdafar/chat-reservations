@@ -56,6 +56,7 @@ class VisitPackageService
             $freshVisit = Visit::query()->lockForUpdate()->findOrFail($visitId);
 
             $branchId = (int) ($freshVisit->branch_id ?? 0);
+            $partnerId = (int) ($freshVisit->branch?->partner_id ?? 0); // catalog is clinic-owned
 
             // Load packages + items
             $packages = ClinicPackage::query()
@@ -76,7 +77,13 @@ class VisitPackageService
                     continue;
                 }
 
-                // Branch guard (if you want strict branch-only packages)
+                // Clinic guard: a clinic-owned package can't be applied to a visit
+                // at a different clinic (global packages, partner_id null, are allowed).
+                if ($pkg->partner_id && $partnerId > 0 && (int) $pkg->partner_id !== $partnerId) {
+                    continue;
+                }
+
+                // Branch guard (optional within-clinic branch-specific packages)
                 if ($pkg->branch_id && $branchId > 0 && (int) $pkg->branch_id !== $branchId) {
                     continue;
                 }
@@ -243,6 +250,7 @@ class VisitPackageService
             /** @var Visit $freshVisit */
             $freshVisit = Visit::query()->lockForUpdate()->findOrFail($visitId);
             $branchId = (int) ($freshVisit->branch_id ?? 0);
+            $partnerId = (int) ($freshVisit->branch?->partner_id ?? 0); // catalog is clinic-owned
 
             $packages = ClinicPackage::query()
                 ->whereIn('id', $normalized->pluck('clinic_package_id')->all())
@@ -260,6 +268,10 @@ class VisitPackageService
                     continue;
                 }
 
+                // Clinic guard: don't apply another clinic's package to this visit.
+                if ($pkg->partner_id && $partnerId > 0 && (int) $pkg->partner_id !== $partnerId) {
+                    continue;
+                }
                 if ($pkg->branch_id && $branchId > 0 && (int) $pkg->branch_id !== $branchId) {
                     continue;
                 }
@@ -297,6 +309,41 @@ class VisitPackageService
                 }
             }
         });
+    }
+
+    /**
+     * Consumable requirements (BOM-exploded) contributed by a SINGLE
+     * visit_packages row, at its current qty. Used when a package is removed
+     * from a visit so we can subtract exactly what that package added to the
+     * visit's pending stock request.
+     *
+     * Unlike requirementsForPackages() this does NOT filter by is_active — a
+     * package may have been deactivated after being applied, but its already-
+     * requested consumables still need to be reconciled on removal.
+     *
+     * @return array<int, array{clinic_item_id:int, qty_base:float}>
+     */
+    public function requirementsForVisitPackage(VisitPackage $vp): array
+    {
+        $pkgId = (int) $vp->clinic_package_id;
+        $pkgQty = (float) ($vp->qty ?? 0);
+
+        if ($pkgId <= 0 || $pkgQty <= 0) {
+            return [];
+        }
+
+        $pkg = ClinicPackage::query()->with(['items'])->find($pkgId);
+        if (! $pkg) {
+            return [];
+        }
+
+        $packages = collect([$pkgId => $pkg]);
+        $normalized = collect([[
+            'clinic_package_id' => $pkgId,
+            'qty' => $pkgQty,
+        ]]);
+
+        return $this->buildRequirementsFromPackages($packages, $normalized)->values()->all();
     }
 
     public function requirementsForPackages(int $branchId, array $lines): array

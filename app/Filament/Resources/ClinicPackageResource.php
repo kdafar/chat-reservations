@@ -49,6 +49,13 @@ class ClinicPackageResource extends Resource
             Forms\Components\Section::make(__('clinic_inventory.clinic_package.sections.package'))
                 ->columns(2)
                 ->schema([
+                    Forms\Components\Select::make('partner_id')
+                        ->label('Clinic')
+                        ->options(fn () => \App\Models\Partner::query()->orderBy('id')->get()
+                            ->mapWithKeys(fn ($p) => [$p->id => (is_array($p->name) ? ($p->name['en'] ?? reset($p->name)) : ($p->name ?? ('#'.$p->id)))])
+                            ->all())
+                        ->searchable()->preload()->required()
+                        ->helperText('Clinic that owns this package — shared across its branches.'),
                     Forms\Components\Select::make('branch_id')
                         ->label(__('clinic_inventory.clinic_package.fields.branch'))
                         ->nullable()

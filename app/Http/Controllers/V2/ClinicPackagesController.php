@@ -101,6 +101,7 @@ class ClinicPackagesController extends Controller
                 'total' => ClinicPackage::query()->count(),
                 'active' => ClinicPackage::query()->where('is_active', true)->count(),
             ],
+            'can_manage' => (bool) $request->user()?->can('create_clinic_packages'),
         ]);
     }
 
@@ -111,6 +112,7 @@ class ClinicPackagesController extends Controller
 
         DB::transaction(function () use ($data) {
             $package = ClinicPackage::create([
+                'partner_id' => $this->defaultPartnerId($data['branch_id'] ?? null), // clinic-owned
                 'branch_id' => $data['branch_id'] ?? null,
                 'name' => ['en' => $data['name_en'], 'ar' => $data['name_ar']],
                 'default_price' => $data['default_price'],

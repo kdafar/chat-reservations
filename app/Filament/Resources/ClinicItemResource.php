@@ -50,6 +50,13 @@ class ClinicItemResource extends Resource
             Forms\Components\Section::make(__('clinic_inventory.clinic_item.sections.item_details'))
                 ->columns(3)
                 ->schema([
+                    Forms\Components\Select::make('partner_id')
+                        ->label('Clinic')
+                        ->options(fn () => \App\Models\Partner::query()->orderBy('id')->get()
+                            ->mapWithKeys(fn ($p) => [$p->id => (is_array($p->name) ? ($p->name['en'] ?? reset($p->name)) : ($p->name ?? ('#'.$p->id)))])
+                            ->all())
+                        ->searchable()->preload()->required()
+                        ->helperText('Clinic that owns this item — shared across its branches.'),
                     Forms\Components\Select::make('branch_id')
                         ->label(__('clinic_inventory.clinic_item.fields.branch'))
                         ->options(fn () => Branch::query()

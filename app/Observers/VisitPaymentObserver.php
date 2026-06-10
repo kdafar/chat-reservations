@@ -78,7 +78,7 @@ class VisitPaymentObserver
             ->actions([
                 Action::make('open_queue')
                     ->label(__('notifications.consultation_paid.action_open'))
-                    ->url(url('/admin/waiting-patients'), shouldOpenInNewTab: false)
+                    ->url(url('/admin/v2/waiting-patients'), shouldOpenInNewTab: false)
                     ->markAsRead(),
             ])
             ->getDatabaseMessage();

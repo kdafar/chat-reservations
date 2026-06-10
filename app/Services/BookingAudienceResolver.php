@@ -10,22 +10,30 @@ use Illuminate\Support\Facades\DB;
 class BookingAudienceResolver
 {
     /**
+     * Roles whose holders can actually open and manage the bookings page.
+     * Mirrors VisitAuthorization::canManageBooking() (admin / reception).
+     * Booking notifications deep-link to /admin/v2/bookings, which aborts
+     * for anyone outside this set, so we must not notify them.
+     */
+    protected const BOOKING_ROLES = ['super_admin', 'admin', 'clinic_admin', 'clinic_reception'];
+
+    /**
      * Return the set of users that should receive a notification for a
-     * newly created booking. Mirrors the visibility logic in
-     * App\Models\Concerns\BelongsToBranchScope so each user only gets
-     * notified for bookings they would actually see in the UI.
+     * newly created booking. Restricted to users who can actually open the
+     * bookings page (see self::BOOKING_ROLES) AND are scoped to the booking
+     * — so e.g. a doctor or nurse who happens to be branch staff does NOT
+     * get a notification whose link they'd only get a 403 from.
      *
-     * Returns:
-     *  - all admin / super_admin users
+     * Returns the intersection of (booking-capable role) with:
+     *  - all admin / super_admin users (global, every branch)
      *  - branch staff (branch_user pivot) of the booking's branch
      *  - partner managers (partner_user pivot) of the booking's branch's partner
-     *  - the linked user of the booking's doctor (if any)
      */
     public function for(Booking $booking): Collection
     {
         $userIds = collect();
 
-        // 1. Admin / super_admin (only roles that actually exist)
+        // 1. Global admins (admin / super_admin see every branch's bookings).
         $adminRoles = \Spatie\Permission\Models\Role::whereIn('name', ['admin', 'super_admin'])
             ->pluck('name')
             ->all();
@@ -68,6 +76,18 @@ class BookingAudienceResolver
             return collect();
         }
 
-        return User::whereIn('id', $ids)->get();
+        // Final gate: only users who actually hold a booking-capable role.
+        // This drops doctors / nurses / other branch staff who would land on
+        // a 403 when opening the booking link. Filter to roles that exist so
+        // Spatie's role() scope can't throw on a missing role name.
+        $bookingRoles = \Spatie\Permission\Models\Role::whereIn('name', self::BOOKING_ROLES)
+            ->pluck('name')
+            ->all();
+
+        if (empty($bookingRoles)) {
+            return collect();
+        }
+
+        return User::whereIn('id', $ids)->role($bookingRoles)->get();
     }
 }

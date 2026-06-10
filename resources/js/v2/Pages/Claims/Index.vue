@@ -36,6 +36,23 @@ const t = computed(() => isRtl.value ? {
     method: { cheque: 'شيك', transfer: 'تحويل', cash: 'نقد' },
     fromVisitTitle: 'إنشاء مسودة مطالبة من زيارة', create: 'إنشاء', cancel: 'إلغاء', confirm: 'تأكيد',
     stats: { total: 'الكل', open: 'مفتوحة' },
+    picker: {
+        searchPh: 'ابحث باسم المريض أو رمز الحجز…',
+        loading: 'جارٍ التحميل…',
+        none: 'لا توجد زيارات قابلة للمطالبة',
+        hint: 'اختر زيارة لمعاينة التغطية قبل إنشاء المسودة.',
+        change: 'تغيير الزيارة',
+        visit: 'زيارة', noPolicy: 'لا توجد بوليصة سارية',
+    },
+    preview: {
+        title: 'معاينة التغطية', policy: 'البوليصة',
+        kind: 'البند', gross: 'الإجمالي', insurer: 'تغطية التأمين', coverage: 'نسبة التغطية', copay: 'حصة المريض',
+        totals: 'الإجماليات', insurerTotal: 'إجمالي التأمين', patientTotal: 'إجمالي المريض',
+        alreadyPaid: 'المدفوع مسبقاً', patientPays: 'يدفع المريض في الاستقبال',
+        exists: 'توجد مسودة مطالبة لهذه الزيارة بالفعل.',
+        draft: 'إنشاء مسودة المطالبة', noKinds: 'لا توجد بنود قابلة للتغطية',
+    },
+    kindLbl: { consultation: 'الكشف', services: 'الخدمات / الباقات', medicines: 'الأدوية / المستهلكات', other: 'أخرى' },
 } : {
     title: 'Insurance Claims', eyebrow: 'Insurance',
     desc: 'Claims drafted from completed visits — track, decide and record payments.',
@@ -49,6 +66,23 @@ const t = computed(() => isRtl.value ? {
     method: { cheque: 'Cheque', transfer: 'Bank transfer', cash: 'Cash' },
     fromVisitTitle: 'Draft a claim from a visit', create: 'Create', cancel: 'Cancel', confirm: 'Confirm',
     stats: { total: 'Total', open: 'Open' },
+    picker: {
+        searchPh: 'Search by patient name or booking code…',
+        loading: 'Loading…',
+        none: 'No claimable visits found',
+        hint: 'Pick a visit to preview coverage before drafting.',
+        change: 'Change visit',
+        visit: 'Visit', noPolicy: 'No active policy',
+    },
+    preview: {
+        title: 'Coverage preview', policy: 'Policy',
+        kind: 'Item', gross: 'Gross', insurer: 'Insurer covers', coverage: 'Coverage', copay: 'Patient copay',
+        totals: 'Totals', insurerTotal: 'Insurer total', patientTotal: 'Patient total',
+        alreadyPaid: 'Already paid', patientPays: 'Patient pays at reception',
+        exists: 'A draft claim already exists for this visit.',
+        draft: 'Draft claim', noKinds: 'No coverable items on this visit',
+    },
+    kindLbl: { consultation: 'Consultation', services: 'Services / packages', medicines: 'Medicines / consumables', other: 'Other' },
 })
 
 const statusItems = computed(() => [
@@ -127,14 +161,55 @@ const actions = computed(() => {
 })
 const actBtnClass = (type) => type === 'reject' || type === 'void' || type === 'writeoff' ? 'btn btn-destructive btn-sm' : (type === 'approve' ? 'btn btn-primary btn-sm' : 'btn btn-outline btn-sm')
 
-// Draft from visit
-const visitModal = reactive({ open: false, visit_id: '', busy: false, err: '' })
+// Draft from visit — searchable picker + coverage preview.
+const visitModal = reactive({
+    open: false, busy: false, err: '',
+    q: '', searching: false, results: [],
+    selected: null,                          // chosen claimable-visit row
+    preview: null, previewLoading: false,    // coverage preview payload
+})
+let visitSearchTimer = null
+
+function openVisitModal() {
+    Object.assign(visitModal, {
+        open: true, busy: false, err: '', q: '', searching: false, results: [],
+        selected: null, preview: null, previewLoading: false,
+    })
+    searchVisits()
+}
+function closeVisitModal() { visitModal.open = false }
+
+async function searchVisits() {
+    visitModal.searching = true
+    try {
+        const res = await fetch(route('v2.api.insurance.claimable-visits', { q: visitModal.q || undefined }), { headers: { Accept: 'application/json' } })
+        const data = await res.json()
+        visitModal.results = data.data || []
+    } catch { visitModal.results = [] }
+    visitModal.searching = false
+}
+function onVisitSearch() { clearTimeout(visitSearchTimer); visitSearchTimer = setTimeout(searchVisits, 250) }
+
+async function selectVisit(row) {
+    visitModal.selected = row; visitModal.err = ''
+    visitModal.preview = null; visitModal.previewLoading = true
+    try {
+        const res = await fetch(route('v2.api.insurance.visits.preview', { visit: row.id }), { headers: { Accept: 'application/json' } })
+        visitModal.preview = await res.json()
+    } catch { visitModal.preview = null }
+    visitModal.previewLoading = false
+}
+function clearSelectedVisit() { visitModal.selected = null; visitModal.preview = null; visitModal.err = '' }
+
+const kindLabel = (k) => t.value.kindLbl[k] ?? (k ? (k.charAt(0).toUpperCase() + k.slice(1)) : '—')
+
 function submitFromVisit() {
+    if (!visitModal.selected) return
     visitModal.busy = true; visitModal.err = ''
-    router.post(route('v2.insurance.claims.from-visit'), { visit_id: visitModal.visit_id }, {
+    router.post(route('v2.insurance.claims.from-visit'), { visit_id: visitModal.selected.id }, {
         preserveScroll: true,
-        onSuccess: () => { visitModal.open = false; visitModal.busy = false; visitModal.visit_id = '' },
-        onError: (e) => { visitModal.err = e.visit_id || 'Failed'; visitModal.busy = false },
+        onSuccess: () => { visitModal.open = false; visitModal.busy = false },
+        onError: (e) => { visitModal.err = e.visit_id || (isRtl.value ? 'فشل الإنشاء' : 'Failed to draft claim'); visitModal.busy = false },
     })
 }
 </script>
@@ -148,7 +223,7 @@ function submitFromVisit() {
                     <h1 style="margin:4px 0 0; font-size:22px; font-weight:700; color:var(--fg);">{{ t.title }}</h1>
                     <p style="margin:6px 0 0; font-size:13px; color:var(--fg-subtle); max-width:640px;">{{ t.desc }}</p>
                 </div>
-                <button v-if="can.create" class="btn btn-primary" @click="visitModal.open = true"><Icon name="plus" :size="14" /><span>{{ t.fromVisit }}</span></button>
+                <button v-if="can.create" class="btn btn-primary" @click="openVisitModal"><Icon name="plus" :size="14" /><span>{{ t.fromVisit }}</span></button>
             </div>
 
             <div style="display:flex; gap:8px; margin-bottom:16px;">
@@ -353,24 +428,117 @@ function submitFromVisit() {
             </div>
         </div>
 
-        <!-- Draft from visit -->
-        <div v-if="visitModal.open" class="modal-backdrop" @click.self="visitModal.open = false">
-            <div class="modal-panel" role="dialog" aria-modal="true" style="max-width:420px;">
+        <!-- Draft from visit — searchable picker + coverage preview -->
+        <div v-if="visitModal.open" class="modal-backdrop" @click.self="closeVisitModal">
+            <div class="modal-panel" role="dialog" aria-modal="true" style="max-width:620px; width:100%;">
                 <div style="display:flex; justify-content:space-between; align-items:center; padding:14px 16px; border-bottom:1px solid var(--line);">
                     <h3 style="margin:0; font-size:15px; font-weight:600;">{{ t.fromVisitTitle }}</h3>
-                    <button class="btn btn-ghost btn-sm btn-icon" @click="visitModal.open = false"><Icon name="x" :size="14" /></button>
+                    <button class="btn btn-ghost btn-sm btn-icon" @click="closeVisitModal"><Icon name="x" :size="14" /></button>
                 </div>
-                <form @submit.prevent="submitFromVisit" style="padding:16px; display:flex; flex-direction:column; gap:12px;">
-                    <div>
-                        <label class="label">{{ t.fld.visit_id }} <span class="req">*</span></label>
-                        <input v-model="visitModal.visit_id" type="number" class="input" required />
-                        <div v-if="visitModal.err" class="err">{{ visitModal.err }}</div>
-                    </div>
-                    <div style="display:flex; justify-content:flex-end; gap:8px; padding-top:8px; border-top:1px solid var(--line);">
-                        <button type="button" class="btn btn-ghost" @click="visitModal.open = false">{{ t.cancel }}</button>
-                        <button type="submit" class="btn btn-primary" :disabled="visitModal.busy">{{ visitModal.busy ? '…' : t.create }}</button>
-                    </div>
-                </form>
+
+                <div style="padding:16px; display:flex; flex-direction:column; gap:12px; max-height:72vh; overflow-y:auto;">
+                    <!-- STEP 1: pick a claimable visit -->
+                    <template v-if="!visitModal.selected">
+                        <p style="margin:0; font-size:12px; color:var(--fg-subtle);">{{ t.picker.hint }}</p>
+                        <div style="position:relative;">
+                            <Icon name="search" :size="14" style="position:absolute; inset-inline-start:10px; top:50%; transform:translateY(-50%); color:var(--fg-faint);" />
+                            <input v-model="visitModal.q" @input="onVisitSearch" type="search" :placeholder="t.picker.searchPh" class="input" style="padding-inline-start:32px;" />
+                        </div>
+
+                        <div v-if="visitModal.searching" style="padding:24px; text-align:center; color:var(--fg-faint); font-size:13px;">{{ t.picker.loading }}</div>
+                        <div v-else-if="!visitModal.results.length" style="padding:24px; text-align:center; color:var(--fg-faint); font-size:13px;">
+                            <Icon name="file-text" :size="28" style="margin-bottom:6px; opacity:0.4;" />
+                            <div>{{ t.picker.none }}</div>
+                        </div>
+                        <div v-else style="display:flex; flex-direction:column; gap:6px;">
+                            <button v-for="row in visitModal.results" :key="row.id" type="button" @click="selectVisit(row)"
+                                    style="text-align:start; padding:10px 12px; border:1px solid var(--line); border-radius:8px; background:var(--bg-elevated, transparent); cursor:pointer; display:flex; flex-direction:column; gap:2px;">
+                                <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                                    <span style="font-weight:600; font-size:13px;">{{ row.patient_name ?? '—' }}</span>
+                                    <span class="mono" style="font-size:11px; color:var(--fg-faint);">{{ row.booking_code || (t.picker.visit + ' #' + row.id) }}</span>
+                                </div>
+                                <div style="display:flex; justify-content:space-between; gap:8px; font-size:11px; color:var(--fg-subtle);">
+                                    <span>{{ row.branch ?? '—' }}<span v-if="row.date"> · {{ row.date }}</span></span>
+                                    <span v-if="row.primary_policy">{{ row.primary_policy.insurer }}<span v-if="row.primary_policy.plan"> · {{ row.primary_policy.plan }}</span></span>
+                                    <span v-else style="color:var(--warning, #d97706);">{{ t.picker.noPolicy }}</span>
+                                </div>
+                            </button>
+                        </div>
+                    </template>
+
+                    <!-- STEP 2: coverage preview for the selected visit -->
+                    <template v-else>
+                        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                            <div>
+                                <div style="font-weight:600; font-size:13px;">{{ visitModal.selected.patient_name ?? '—' }}</div>
+                                <div class="mono" style="font-size:11px; color:var(--fg-faint);">{{ visitModal.selected.booking_code || (t.picker.visit + ' #' + visitModal.selected.id) }}<span v-if="visitModal.selected.date"> · {{ visitModal.selected.date }}</span></div>
+                            </div>
+                            <button type="button" class="btn btn-ghost btn-sm" @click="clearSelectedVisit">{{ t.picker.change }}</button>
+                        </div>
+
+                        <div v-if="visitModal.previewLoading" style="padding:24px; text-align:center; color:var(--fg-faint); font-size:13px;">{{ t.picker.loading }}</div>
+
+                        <template v-else-if="visitModal.preview">
+                            <!-- Policy header -->
+                            <div v-if="visitModal.preview.primary_policy" style="font-size:12px; color:var(--fg-subtle); padding:8px 10px; border:1px solid var(--line); border-radius:8px;">
+                                <span style="color:var(--fg-faint);">{{ t.preview.policy }}:</span>
+                                <span style="font-weight:600; color:var(--fg);">{{ visitModal.preview.primary_policy.insurer }}</span>
+                                <span v-if="visitModal.preview.primary_policy.plan"> · {{ visitModal.preview.primary_policy.plan }}</span>
+                                <span v-if="visitModal.preview.primary_policy.policy_number" class="mono" style="color:var(--fg-faint);"> · {{ visitModal.preview.primary_policy.policy_number }}</span>
+                            </div>
+                            <div v-else class="err">{{ t.picker.noPolicy }}</div>
+
+                            <div v-if="visitModal.preview.claim_exists" class="err">{{ t.preview.exists }}</div>
+
+                            <!-- Per-kind table -->
+                            <div style="font-size:11px; font-weight:600; text-transform:uppercase; color:var(--fg-faint);">{{ t.preview.title }}</div>
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>{{ t.preview.kind }}</th>
+                                        <th style="text-align:end;">{{ t.preview.gross }}</th>
+                                        <th style="text-align:end;">{{ t.preview.insurer }}</th>
+                                        <th style="text-align:end;">{{ t.preview.coverage }}</th>
+                                        <th style="text-align:end;">{{ t.preview.copay }}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-if="!visitModal.preview.rows.length"><td colspan="5" style="color:var(--fg-faint); text-align:center;">{{ t.preview.noKinds }}</td></tr>
+                                    <tr v-for="r in visitModal.preview.rows" :key="r.kind">
+                                        <td style="font-size:12px;">{{ kindLabel(r.kind) }}</td>
+                                        <td class="mono" style="text-align:end; font-size:12px;">{{ fmt(r.gross) }}</td>
+                                        <td class="mono" style="text-align:end; font-size:12px; color:var(--ok);">{{ fmt(r.insurer_covers) }}</td>
+                                        <td class="mono" style="text-align:end; font-size:12px;">{{ r.coverage_pct }}%</td>
+                                        <td class="mono" style="text-align:end; font-size:12px;">{{ fmt(r.patient_copay) }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+
+                            <!-- Totals -->
+                            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:13px; padding:10px; border:1px solid var(--line); border-radius:8px; background:var(--bg-subtle, transparent);">
+                                <div><span style="color:var(--fg-faint);">{{ t.preview.gross }}:</span> <span class="mono">{{ fmt(visitModal.preview.totals.gross) }}</span></div>
+                                <div><span style="color:var(--fg-faint);">{{ t.preview.insurerTotal }}:</span> <span class="mono" style="color:var(--ok);">{{ fmt(visitModal.preview.totals.insurer_total) }}</span></div>
+                                <div><span style="color:var(--fg-faint);">{{ t.preview.patientTotal }}:</span> <span class="mono">{{ fmt(visitModal.preview.totals.patient_total) }}</span></div>
+                                <div><span style="color:var(--fg-faint);">{{ t.preview.alreadyPaid }}:</span> <span class="mono">{{ fmt(visitModal.preview.already_paid) }}</span></div>
+                                <div style="grid-column:1 / -1; padding-top:6px; border-top:1px solid var(--line); display:flex; justify-content:space-between; align-items:center;">
+                                    <span style="font-weight:600;">{{ t.preview.patientPays }}</span>
+                                    <span class="mono" style="font-weight:700; font-size:15px;">{{ fmt(Math.max(0, Number(visitModal.preview.totals.patient_total) - Number(visitModal.preview.already_paid))) }}</span>
+                                </div>
+                            </div>
+
+                            <div v-if="visitModal.err" class="err">{{ visitModal.err }}</div>
+                        </template>
+                    </template>
+                </div>
+
+                <div style="display:flex; justify-content:flex-end; gap:8px; padding:12px 16px; border-top:1px solid var(--line);">
+                    <button type="button" class="btn btn-ghost" @click="closeVisitModal">{{ t.cancel }}</button>
+                    <button type="button" class="btn btn-primary"
+                            :disabled="!visitModal.selected || visitModal.busy || visitModal.previewLoading || !(visitModal.preview && visitModal.preview.has_policy)"
+                            @click="submitFromVisit">
+                        {{ visitModal.busy ? '…' : t.preview.draft }}
+                    </button>
+                </div>
             </div>
         </div>
 

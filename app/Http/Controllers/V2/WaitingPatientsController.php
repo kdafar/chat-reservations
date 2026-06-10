@@ -34,17 +34,47 @@ class WaitingPatientsController extends Controller
             $statuses[] = 'awaiting_payment';
         }
 
-        $visits = $this->queueQuery($statuses)
+        $visitRows = $this->queueQuery($statuses)
             ->orderByRaw("FIELD(status, 'awaiting_payment', 'awaiting_doctor', 'in_progress', 'awaiting_stock')")
             ->orderBy('queued_at')
-            ->get()
-            ->map(fn (Visit $v) => $this->transform($v));
+            ->get();
 
         // Pending check-ins — only super_admin / admin / clinic_reception
         // see these. Doctors never do (their queue starts at awaiting_doctor).
-        $pendingCheckins = $this->canSeePendingCheckins()
-            ? $this->pendingCheckinQuery()->get()->map(fn (Booking $b) => $this->transformBooking($b))
+        $bookingRows = $this->canSeePendingCheckins()
+            ? $this->pendingCheckinQuery()->get()
             : collect();
+
+        // Precompute consultation-paid totals in bulk (was an N+1: one sum
+        // query per card, which auto-refresh hammered every 12s).
+        $paidByVisit = $this->consultationPaidByVisit($visitRows->pluck('id')->all());
+        $paidByBooking = $this->consultationPaidByBooking($bookingRows->pluck('id')->all());
+
+        // All-kind paid totals (consultation + items + services + other) so the
+        // card can show the full amount paid and the outstanding balance — also
+        // bulk-grouped to stay N+1-free under the 12s auto-refresh.
+        $allPaidByVisit = $this->allPaidByVisit($visitRows->pluck('id')->all());
+        $allPaidByBooking = $this->allPaidByBooking($bookingRows->pluck('id')->all());
+
+        // Active primary policy per patient on screen, resolved in ONE query
+        // across every visible patient id (visits + pending check-ins).
+        $patientIds = $visitRows->pluck('patient_id')
+            ->concat($bookingRows->pluck('patient_id'))
+            ->filter()->unique()->values()->all();
+        $policyByPatient = $this->primaryPolicyByPatient($patientIds);
+
+        $visits = $visitRows->map(fn (Visit $v) => $this->transform(
+            $v,
+            (float) ($paidByVisit[$v->id] ?? 0),
+            (float) ($allPaidByVisit[$v->id] ?? 0),
+            $policyByPatient[$v->patient_id] ?? null,
+        ));
+        $pendingCheckins = $bookingRows->map(fn (Booking $b) => $this->transformBooking(
+            $b,
+            (float) ($paidByBooking[$b->id] ?? 0),
+            (float) ($allPaidByBooking[$b->id] ?? 0),
+            $policyByPatient[$b->patient_id] ?? null,
+        ));
 
         $combined = $pendingCheckins->concat($visits)->values();
 
@@ -89,6 +119,14 @@ class WaitingPatientsController extends Controller
             'is_reception' => $this->isReceptionUser() && ! $this->isAdminUser(),
             'is_doctor' => $this->isDoctorUser(),
             'doctor_id' => $this->doctorIdForCurrentUser(),
+            // Doctor list for reception/admin to reassign a visit's doctor from
+            // the queue. Branch-scoped via the Doctor model's global scope.
+            'doctor_options' => $showsBilling
+                ? \App\Models\Doctor::query()->where('is_active', true)->orderBy('name')
+                    ->get(['id', 'name', 'branch_id'])
+                    ->map(fn ($d) => ['id' => $d->id, 'name' => $d->name, 'branch_id' => $d->branch_id])
+                    ->all()
+                : [],
             // Clock-in/out nudge — Waiting Patients is where clinical/front-desk
             // staff land, so this reaches the people who actually clock in.
             'attendance' => $this->currentUserAttendance(),
@@ -147,7 +185,7 @@ class WaitingPatientsController extends Controller
             ->orderBy('res_time');
     }
 
-    protected function transformBooking(Booking $b): array
+    protected function transformBooking(Booking $b, float $paid = 0.0, float $paidTotal = 0.0, ?array $policy = null): array
     {
         $age = null;
         if ($b->patient && $b->patient->dob) {
@@ -155,11 +193,6 @@ class WaitingPatientsController extends Controller
         }
 
         $fee = (float) ($b->doctor->consultation_fee ?? 0);
-        $paid = $fee > 0 ? (float) VisitPayment::query()
-            ->whereIn('visit_id', Visit::query()->where('booking_id', $b->id)->pluck('id'))
-            ->where('kind', VisitPayment::KIND_CONSULTATION)
-            ->where('status', 'paid')
-            ->sum('amount') : 0.0;
 
         return [
             // Booking rows are mixed into the visits array but use a
@@ -180,7 +213,14 @@ class WaitingPatientsController extends Controller
                 'amount' => $fee,
                 'paid' => $fee > 0 && $paid >= $fee,
                 'paid_amount' => $paid,
+                // All-kind paid sum across the booking's visits (0 until checked
+                // in) and the outstanding consultation balance for the card.
+                'paid_total' => round($paidTotal, 3),
+                'balance' => round(max(0, $fee - $paidTotal), 3),
             ],
+            // No visit yet → no line discounts; surfaced for payload parity.
+            'discount_total' => 0.0,
+            'policy' => $policy,
             'patient' => $b->patient ? [
                 'id' => $b->patient->id,
                 'name' => $b->patient->name,
@@ -200,7 +240,7 @@ class WaitingPatientsController extends Controller
         ];
     }
 
-    protected function transform(Visit $v): array
+    protected function transform(Visit $v, float $paidConsultation = 0.0, float $paidTotal = 0.0, ?array $policy = null): array
     {
         $age = null;
         if ($v->patient && $v->patient->dob) {
@@ -208,11 +248,15 @@ class WaitingPatientsController extends Controller
         }
 
         $consultationFee = (float) ($v->doctor->consultation_fee ?? 0);
-        $paidTotal = (float) VisitPayment::query()
-            ->where('visit_id', $v->id)
-            ->where('kind', VisitPayment::KIND_CONSULTATION)
-            ->where('status', 'paid')
-            ->sum('amount');
+
+        // Outstanding balance from the visit's own snapshot columns minus the
+        // bulk all-kind paid total — avoids calling VisitCostingService per row.
+        $discountTotal = (float) ($v->discount_total ?? 0);
+        $billed = (float) ($v->fees_total ?? 0)
+            + (float) ($v->packages_price_total ?? 0)
+            + (float) ($v->items_price_total ?? 0)
+            - $discountTotal;
+        $balance = max(0, $billed - $paidTotal);
 
         return [
             'id' => $v->id,
@@ -224,9 +268,14 @@ class WaitingPatientsController extends Controller
             'notes' => $v->notes,
             'fee' => [
                 'amount' => $consultationFee,
-                'paid' => $paidTotal >= $consultationFee && $consultationFee > 0,
-                'paid_amount' => $paidTotal,
+                'paid' => $paidConsultation >= $consultationFee && $consultationFee > 0,
+                'paid_amount' => $paidConsultation,
+                // All-kind paid sum + outstanding balance across the whole bill.
+                'paid_total' => round($paidTotal, 3),
+                'balance' => round($balance, 3),
             ],
+            'discount_total' => round($discountTotal, 3),
+            'policy' => $policy,
             'patient' => $v->patient ? [
                 'id' => $v->patient->id,
                 'name' => $v->patient->name,
@@ -247,6 +296,125 @@ class WaitingPatientsController extends Controller
                 'name' => $v->room->name,
             ] : null,
         ];
+    }
+
+    /**
+     * Sum of paid consultation payments per visit id, in one grouped query.
+     * Returns [visit_id => paid_amount]. Avoids an N+1 across queue cards.
+     */
+    protected function consultationPaidByVisit(array $visitIds): \Illuminate\Support\Collection
+    {
+        if (empty($visitIds)) {
+            return collect();
+        }
+
+        return VisitPayment::query()
+            ->whereIn('visit_id', $visitIds)
+            ->where('kind', VisitPayment::KIND_CONSULTATION)
+            ->where('status', 'paid')
+            ->groupBy('visit_id')
+            ->selectRaw('visit_id, SUM(amount) as paid')
+            ->pluck('paid', 'visit_id');
+    }
+
+    /**
+     * Sum of paid consultation payments per booking id (across the booking's
+     * visits), in one grouped query. Returns [booking_id => paid_amount].
+     */
+    protected function consultationPaidByBooking(array $bookingIds): \Illuminate\Support\Collection
+    {
+        if (empty($bookingIds)) {
+            return collect();
+        }
+
+        return VisitPayment::query()
+            ->join('visits', 'visits.id', '=', 'visit_payments.visit_id')
+            ->whereIn('visits.booking_id', $bookingIds)
+            ->where('visit_payments.kind', VisitPayment::KIND_CONSULTATION)
+            ->where('visit_payments.status', 'paid')
+            ->groupBy('visits.booking_id')
+            ->selectRaw('visits.booking_id as booking_id, SUM(visit_payments.amount) as paid')
+            ->pluck('paid', 'booking_id');
+    }
+
+    /**
+     * Sum of ALL paid payments (every kind) per visit id, in one grouped query.
+     * Returns [visit_id => paid_amount]. Drives the card's total-paid + balance.
+     */
+    protected function allPaidByVisit(array $visitIds): \Illuminate\Support\Collection
+    {
+        if (empty($visitIds)) {
+            return collect();
+        }
+
+        return VisitPayment::query()
+            ->whereIn('visit_id', $visitIds)
+            ->where('status', 'paid')
+            ->groupBy('visit_id')
+            ->selectRaw('visit_id, SUM(amount) as paid')
+            ->pluck('paid', 'visit_id');
+    }
+
+    /**
+     * Sum of ALL paid payments (every kind) per booking id, across the booking's
+     * visits, in one grouped query. Returns [booking_id => paid_amount].
+     */
+    protected function allPaidByBooking(array $bookingIds): \Illuminate\Support\Collection
+    {
+        if (empty($bookingIds)) {
+            return collect();
+        }
+
+        return VisitPayment::query()
+            ->join('visits', 'visits.id', '=', 'visit_payments.visit_id')
+            ->whereIn('visits.booking_id', $bookingIds)
+            ->where('visit_payments.status', 'paid')
+            ->groupBy('visits.booking_id')
+            ->selectRaw('visits.booking_id as booking_id, SUM(visit_payments.amount) as paid')
+            ->pluck('paid', 'booking_id');
+    }
+
+    /**
+     * Active primary insurance policy per patient id, resolved in ONE query for
+     * all patients on screen (no per-row InsuranceService call). Returns
+     * [patient_id => ['insurer' => string|null, 'plan' => string|null, 'number' => string|null]].
+     *
+     * Picks the highest-priority active policy per patient: primary first, then
+     * latest effective_from. Insurer/plan names are locale-aware (name_ar / name).
+     */
+    protected function primaryPolicyByPatient(array $patientIds): array
+    {
+        if (empty($patientIds)) {
+            return [];
+        }
+
+        $ar = app()->getLocale() === 'ar';
+
+        $policies = \App\Models\Insurance\PatientInsurancePolicy::query()
+            ->with(['insurer:id,name,name_ar', 'plan:id,name,name_ar'])
+            ->whereIn('patient_id', $patientIds)
+            ->active()
+            ->orderByDesc('is_primary')
+            ->orderByDesc('effective_from')
+            ->orderBy('id')
+            ->get();
+
+        $out = [];
+        foreach ($policies as $p) {
+            // First row per patient wins (ordering above = primary → newest).
+            if (isset($out[$p->patient_id])) {
+                continue;
+            }
+            $insurer = $p->insurer;
+            $plan = $p->plan;
+            $out[$p->patient_id] = [
+                'insurer' => $insurer ? (($ar ? $insurer->name_ar : null) ?: $insurer->name) : null,
+                'plan' => $plan ? (($ar ? $plan->name_ar : null) ?: $plan->name) : null,
+                'number' => $p->policy_number,
+            ];
+        }
+
+        return $out;
     }
 
     protected function awaitingPaymentScope(): Builder

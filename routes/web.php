@@ -160,6 +160,13 @@ Route::prefix('bookings/payment')->name('bookings.payment.')->group(function () 
     Route::get('/failed', [PaymentCallbackController::class, 'failed'])->name('failed');
 });
 
+// Visit-balance payment links (MyFatoorah). Separate finalizer records a
+// VisitPayment against the visit named in the link's CustomerReference.
+Route::prefix('visits/payment')->name('visits.payment.')->group(function () {
+    Route::get('/finalize', [PaymentCallbackController::class, 'finalizeVisit'])->name('finalize');
+    Route::get('/failed', [PaymentCallbackController::class, 'failed'])->name('failed');
+});
+
 Route::get('/bookings/{booking}/receipt', [BookingReceiptController::class, 'show'])
     ->name('bookings.receipt.show')
     ->middleware('auth');
@@ -344,11 +351,15 @@ Route::middleware([
     Route::post('/api/visits/{visit}/payments',                [\App\Http\Controllers\V2\VisitConsoleController::class, 'addPayment'])->name('api.visits.payments.add');
     Route::post('/api/visits/{visit}/payments/{payment}/void', [\App\Http\Controllers\V2\VisitConsoleController::class, 'voidPayment'])->name('api.visits.payments.void');
     Route::get('/api/visits/{visit}/insurance/estimate',       [\App\Http\Controllers\V2\VisitConsoleController::class, 'estimateInsurance'])->name('api.visits.insurance.estimate');
+    Route::get('/api/visits/{visit}/insurance/options',        [\App\Http\Controllers\V2\VisitConsoleController::class, 'insuranceOptions'])->name('api.visits.insurance.options');
+    Route::post('/api/visits/{visit}/insurance/attach',        [\App\Http\Controllers\V2\VisitConsoleController::class, 'attachInsurance'])->name('api.visits.insurance.attach');
     Route::post('/api/visits/{visit}/insurance/apply',         [\App\Http\Controllers\V2\VisitConsoleController::class, 'applyInsurance'])->name('api.visits.insurance.apply');
     Route::post('/api/visits/{visit}/request-stock', [\App\Http\Controllers\V2\VisitConsoleController::class, 'requestStock'])->name('api.visits.request-stock');
     Route::post('/api/visits/{visit}/source-from-hub', [\App\Http\Controllers\V2\VisitConsoleController::class, 'sourceFromHub'])->name('api.visits.source-from-hub');
     Route::post('/api/visits/{visit}/fulfill-stock', [\App\Http\Controllers\V2\VisitConsoleController::class, 'fulfillStock'])->name('api.visits.fulfill-stock');
     Route::post('/api/visits/{visit}/discharge', [\App\Http\Controllers\V2\VisitConsoleController::class, 'discharge'])->name('api.visits.discharge');
+    Route::post('/api/visits/{visit}/payment-link', [\App\Http\Controllers\V2\VisitConsoleController::class, 'createPaymentLink'])->name('api.visits.payment-link');
+    Route::post('/api/visits/{visit}/payment-link/whatsapp', [\App\Http\Controllers\V2\VisitConsoleController::class, 'sendPaymentLinkWhatsApp'])->name('api.visits.payment-link.whatsapp');
     Route::post('/api/visits/{visit}/insurance/create-claim', [\App\Http\Controllers\V2\VisitConsoleController::class, 'createInsuranceClaim'])->name('api.visits.insurance.create-claim');
     Route::post('/api/visits/{visit}/insurance/skip', [\App\Http\Controllers\V2\VisitConsoleController::class, 'skipInsuranceClaim'])->name('api.visits.insurance.skip');
     // Clinical fast-fill helpers: quick-phrase library, drug formulary, lab catalog.
@@ -398,6 +409,9 @@ Route::middleware([
     Route::get('/api/checkin/bookings/{booking}/rooms', [\App\Http\Controllers\V2\CheckinController::class, 'rooms'])->name('api.checkin.rooms');
     Route::post('/api/checkin/bookings/{booking}/collect-fee', [\App\Http\Controllers\V2\CheckinController::class, 'collectFee'])->name('api.checkin.collect-fee');
     Route::post('/api/checkin/bookings/{booking}/check-in', [\App\Http\Controllers\V2\CheckinController::class, 'checkin'])->name('api.checkin.check-in');
+    // Phase 3 — patient identity review at check-in (phone matched a different name).
+    Route::post('/api/checkin/bookings/{booking}/confirm-identity', [\App\Http\Controllers\V2\CheckinController::class, 'confirmIdentity'])->name('api.checkin.confirm-identity');
+    Route::post('/api/checkin/bookings/{booking}/split-patient', [\App\Http\Controllers\V2\CheckinController::class, 'splitPatient'])->name('api.checkin.split-patient');
 
     // JSON endpoints for the v2 notifications subsystem.
     Route::get('/api/notifications/poll',   [\App\Http\Controllers\V2\NotificationsController::class, 'poll'])->name('api.notifications.poll');
@@ -528,6 +542,8 @@ Route::middleware([
     // Insurance — Claims (v2 replacement for InsuranceClaimResource). State machine via InsuranceService.
     Route::get('/insurance/claims',                       [\App\Http\Controllers\V2\ClaimsController::class, 'index'])->name('insurance.claims.index');
     Route::get('/api/insurance/claims/{claim}',           [\App\Http\Controllers\V2\ClaimsController::class, 'show'])->name('api.insurance.claims.show');
+    Route::get('/api/insurance/claimable-visits',         [\App\Http\Controllers\V2\ClaimsController::class, 'claimableVisits'])->name('api.insurance.claimable-visits');
+    Route::get('/api/insurance/visits/{visit}/preview',   [\App\Http\Controllers\V2\ClaimsController::class, 'previewVisit'])->name('api.insurance.visits.preview');
     Route::post('/insurance/claims/from-visit',           [\App\Http\Controllers\V2\ClaimsController::class, 'createFromVisit'])->name('insurance.claims.from-visit');
     Route::post('/insurance/claims/{claim}/submit',       [\App\Http\Controllers\V2\ClaimsController::class, 'submit'])->name('insurance.claims.submit');
     Route::post('/insurance/claims/{claim}/review',       [\App\Http\Controllers\V2\ClaimsController::class, 'review'])->name('insurance.claims.review');
@@ -692,8 +708,13 @@ Route::middleware([
     // routes above. Names: v2.wa-module.*
     Route::get('/wa-module',                       [\App\Http\Controllers\V2\WaModuleController::class, 'dashboard'])->name('wa-module.dashboard');
     Route::get('/wa-module/templates',             [\App\Http\Controllers\V2\WaModuleController::class, 'templates'])->name('wa-module.templates');
+    Route::get('/wa-module/templates/create',      [\App\Http\Controllers\V2\WaModuleController::class, 'createTemplate'])->name('wa-module.templates.create');
+    Route::get('/wa-module/templates/carousel/create', [\App\Http\Controllers\V2\WaModuleController::class, 'createCarousel'])->name('wa-module.templates.carousel.create');
+    Route::get('/wa-module/templates/{template}/edit', [\App\Http\Controllers\V2\WaModuleController::class, 'editTemplate'])->name('wa-module.templates.edit');
     Route::get('/wa-module/contacts',              [\App\Http\Controllers\V2\WaModuleController::class, 'contacts'])->name('wa-module.contacts');
     Route::get('/wa-module/campaigns',             [\App\Http\Controllers\V2\WaModuleController::class, 'campaigns'])->name('wa-module.campaigns');
+    Route::get('/wa-module/campaigns/create',      [\App\Http\Controllers\V2\WaModuleController::class, 'createCampaign'])->name('wa-module.campaigns.create');
+    Route::get('/wa-module/campaigns/{campaign}/edit', [\App\Http\Controllers\V2\WaModuleController::class, 'editCampaign'])->name('wa-module.campaigns.edit');
     Route::get('/wa-module/inbox',                 [\App\Http\Controllers\V2\WaModuleController::class, 'inbox'])->name('wa-module.inbox');
     Route::get('/wa-module/conversations',         [\App\Http\Controllers\V2\WaModuleController::class, 'conversations'])->name('wa-module.conversations');
     Route::get('/wa-module/conversations/{conversation}', [\App\Http\Controllers\V2\WaModuleController::class, 'conversation'])->name('wa-module.conversation');
@@ -736,6 +757,8 @@ Route::middleware([
     Route::post('/wa-module/campaigns/{campaign}/import',     [\App\Http\Controllers\V2\WaModuleController::class, 'importRecipients'])->name('wa-module.campaigns.import');
     Route::post('/wa-module/campaigns/{campaign}/from-group',  [\App\Http\Controllers\V2\WaModuleController::class, 'importFromGroup'])->name('wa-module.campaigns.from-group');
     Route::get('/wa-module/campaigns/{campaign}/analytics',    [\App\Http\Controllers\V2\WaModuleController::class, 'campaignAnalytics'])->name('wa-module.campaigns.analytics');
+    Route::get('/wa-module/campaigns/{campaign}/deep-dive',     [\App\Http\Controllers\V2\WaModuleController::class, 'campaignDeepDive'])->name('wa-module.campaigns.deep-dive');
+    Route::get('/wa-module/campaigns/{campaign}/export',        [\App\Http\Controllers\V2\WaModuleController::class, 'exportCampaignRecipients'])->name('wa-module.campaigns.export');
     // Engagement + smart groups
     Route::post('/wa-module/engagement/refresh', [\App\Http\Controllers\V2\WaModuleController::class, 'refreshEngagement'])->name('wa-module.engagement.refresh');
     Route::post('/wa-module/groups/smart',       [\App\Http\Controllers\V2\WaModuleController::class, 'buildSmartGroup'])->name('wa-module.groups.smart');
@@ -743,6 +766,14 @@ Route::middleware([
     Route::get('/wa-module/audience',            [\App\Http\Controllers\V2\WaModuleController::class, 'audience'])->name('wa-module.audience');
     Route::post('/wa-module/audience/to-group',  [\App\Http\Controllers\V2\WaModuleController::class, 'audienceToGroup'])->name('wa-module.audience.to-group');
     Route::get('/wa-module/contacts/export',     [\App\Http\Controllers\V2\WaModuleController::class, 'exportContacts'])->name('wa-module.contacts.export');
+
+    Route::get('/wa-module/points',              [\App\Http\Controllers\V2\WaModuleController::class, 'points'])->name('wa-module.points');
+    Route::post('/wa-module/points/topup',       [\App\Http\Controllers\V2\WaModuleController::class, 'topUpPoints'])->name('wa-module.points.topup');
+
+    Route::get('/wa-module/media',               [\App\Http\Controllers\V2\WaModuleController::class, 'media'])->name('wa-module.media');
+    Route::get('/wa-module/media/list',          [\App\Http\Controllers\V2\WaModuleController::class, 'mediaList'])->name('wa-module.media.list');
+    Route::post('/wa-module/media',              [\App\Http\Controllers\V2\WaModuleController::class, 'uploadMedia'])->name('wa-module.media.upload');
+    Route::delete('/wa-module/media/{media}',    [\App\Http\Controllers\V2\WaModuleController::class, 'destroyMedia'])->name('wa-module.media.destroy');
     Route::post('/wa-module/contacts/import',    [\App\Http\Controllers\V2\WaModuleController::class, 'importContacts'])->name('wa-module.contacts.import');
     // Settings
     Route::get('/wa-module/settings',  [\App\Http\Controllers\V2\WaModuleController::class, 'settings'])->name('wa-module.settings');

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\V2;
 
 use App\Http\Controllers\Controller;
+use App\Support\ResolvesAccessibleClinics;
 use App\Models\Accounting\Account;
 use App\Models\Branch;
 use App\Services\Accounting\AccountingReportService;
@@ -19,6 +20,8 @@ use Inertia\Response;
  */
 class AccountingReportsController extends Controller
 {
+    use ResolvesAccessibleClinics;
+
     public function __construct(protected AccountingReportService $svc) {}
 
     protected function ensureCan(Request $request, string $permission): void
@@ -65,7 +68,7 @@ class AccountingReportsController extends Controller
             'filters' => array_merge($this->fmtRange($from, $to), ['account_id' => $accountId, 'branch_id' => $branchId]),
             'accounts' => Account::query()->where('is_active', true)->orderBy('code')->get(['id', 'code', 'name'])
                 ->map(fn ($a) => ['id' => $a->id, 'label' => "{$a->code} — {$a->name}"])->all(),
-            'branches' => Branch::query()->orderBy('id')->get(['id', 'name'])
+            'branches' => Branch::query()->when($this->accessibleBranchIds() !== null, fn ($q) => $q->whereIn('id', $this->accessibleBranchIds() ?: [0]))->orderBy('id')->get(['id', 'name'])
                 ->map(fn ($b) => ['id' => $b->id, 'name' => $b->localized_name])->all(),
             'report' => Inertia::defer(fn () => $this->svc->generalLedger($accountId, $from, $to, $branchId)),
         ]);

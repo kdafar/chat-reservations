@@ -125,6 +125,7 @@ class BranchesController extends Controller
             'city_id' => ['nullable', 'integer', 'exists:cities,id'],
             'max_booking_days' => ['required', 'integer', 'min:1', 'max:365'],
             'is_available' => ['boolean'],
+            'is_hub' => ['boolean'],
         ]);
     }
 
@@ -141,6 +142,7 @@ class BranchesController extends Controller
         $branch->city_id = $data['city_id'] ?? null;
         $branch->max_booking_days = $data['max_booking_days'];
         $branch->is_available = (bool) ($data['is_available'] ?? false);
+        $branch->is_hub = (bool) ($data['is_hub'] ?? false);
 
         // Respect an explicit slug; otherwise let the model's creating() hook
         // derive one on first save.
@@ -167,6 +169,7 @@ class BranchesController extends Controller
             'city_name' => $b->city ? (string) $b->city->getTranslation('name', $locale) : null,
             'max_booking_days' => $b->max_booking_days,
             'is_available' => (bool) $b->is_available,
+            'is_hub' => (bool) $b->is_hub,
         ];
     }
 }

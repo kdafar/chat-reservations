@@ -22,6 +22,7 @@ class Branch extends Model
         'rating_avg', 'rating_count',
         'delivery_fee', 'min_order_amount', 'max_booking_days',
         'is_available', 'open_for_delivery', 'open_for_pickup',
+        'is_hub',
     ];
 
     protected $appends = [
@@ -39,6 +40,7 @@ class Branch extends Model
         'delivery_fee' => 'decimal:3',
         'min_order_amount' => 'decimal:3',
         'is_available' => 'boolean',
+        'is_hub' => 'boolean',
         'open_for_delivery' => 'boolean',
         'open_for_pickup' => 'boolean',
         'max_booking_days' => 'integer',

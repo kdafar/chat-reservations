@@ -52,6 +52,11 @@ function openVisit(id) {
     visitSheetId.value = id
     visitSheetOpen.value = true
 }
+// Refresh the profile after a VisitSheet mutation (payment, item, discharge…)
+// so the timeline / totals / payments reflect the change without a full reload.
+function onVisitChanged() {
+    router.reload({ only: ['visits', 'totals', 'payments'], preserveScroll: true })
+}
 
 const t = computed(() => isRtl.value
     ? {
@@ -1018,6 +1023,7 @@ const visitsByMonth = computed(() => {
         <VisitSheet
             v-model:open="visitSheetOpen"
             :visit-id="visitSheetId"
+            @changed="onVisitChanged"
         />
 
         <PatientFormModal v-model:open="patientEditOpen" :partners="partners" :patient="patient" />

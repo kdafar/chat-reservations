@@ -15,6 +15,7 @@ const props = defineProps({
     page: { type: Object, required: true },
     counts: { type: Object, required: true },
     partners: { type: Array, default: () => [] },
+    can_create: { type: Boolean, default: false },
 })
 
 const pageProps = usePage()
@@ -181,8 +182,8 @@ function statusTone(s) {
                     <p style="margin: 0; font-size: 13.5px; color: var(--fg-muted);">{{ t.desc }}</p>
                 </div>
                 <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-                    <ImportButton type="patients" />
-                    <button type="button" class="btn btn-primary" @click="createOpen = true">
+                    <ImportButton v-if="can_create" type="patients" />
+                    <button v-if="can_create" type="button" class="btn btn-primary" @click="createOpen = true">
                         <Icon name="user-plus" :size="14" />
                         {{ t.new }}
                     </button>

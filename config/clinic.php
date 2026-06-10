@@ -59,10 +59,13 @@ return [
     'booking_otp_template' => env('CLINIC_BOOKING_OTP_TEMPLATE', 'clinic_booking_otp_v1'),
     'booking_otp_template_lang' => env('CLINIC_BOOKING_OTP_TEMPLATE_LANG', 'en'),
 
-    // Follow-up plans.
+    // Follow-up plans. When a doctor sets a follow-up date we auto-book the first
+    // free slot that day (Phase 7). Status is 'pending' so the slot is actually
+    // held — the availability grid only treats confirmed/pending as blocking, so
+    // a 'draft' booking would NOT reserve the slot and could be double-booked.
     'follow_up_enabled' => true,
-    'follow_up_auto_create_booking_default' => false,
-    'follow_up_booking_status' => 'draft',
+    'follow_up_auto_create_booking_default' => true,
+    'follow_up_booking_status' => 'pending',
     'follow_up_only_on_completed' => false,
 
     // Check-in window relative to res_start.

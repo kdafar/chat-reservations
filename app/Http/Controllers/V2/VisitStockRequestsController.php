@@ -67,7 +67,7 @@ class VisitStockRequestsController extends Controller
         $status = $request->input('status', VisitStockRequest::STATUS_PENDING);
 
         $query = VisitStockRequest::query()
-            ->with(['visit:id,booking_code', 'branch', 'requestedBy:id,name', 'lines.clinicItem']);
+            ->with(['visit:id,booking_code,patient_id', 'visit.patient:id,name', 'branch', 'requestedBy:id,name', 'lines.clinicItem']);
 
         if (in_array($status, [VisitStockRequest::STATUS_PENDING, VisitStockRequest::STATUS_FULFILLED, VisitStockRequest::STATUS_CANCELLED], true)) {
             $query->where('status', $status);
@@ -160,10 +160,12 @@ class VisitStockRequestsController extends Controller
             'id' => $r->id,
             'visit_id' => $r->visit_id,
             'visit_code' => $r->visit?->booking_code ?? ('#'.$r->visit_id),
+            'patient_name' => $r->visit?->patient?->name,
             'branch' => $r->branch?->localized_name ?? ('#'.$r->branch_id),
             'requested_by' => $r->requestedBy?->name,
             'created_at' => optional($r->created_at)->format('Y-m-d h:i A'),
             'status' => $r->status,
+            'notes' => $r->notes,
             'lines' => $lines,
             'any_short' => collect($lines)->contains('short', true),
         ];

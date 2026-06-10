@@ -164,8 +164,11 @@ async function loadVisit(isInitial = false) {
     loading.value = true
     errorMsg.value = ''
     try {
+        // no-store: this fetch runs again after every mutation (add package /
+        // item, payment, discount…). A cached body would show stale data — e.g.
+        // a freshly-added package rendering with 0 contents until reopen.
         const resp = await fetch(`/admin/v2/api/visits/${props.visitId}`, {
-            credentials: 'same-origin', headers: { Accept: 'application/json' },
+            credentials: 'same-origin', cache: 'no-store', headers: { Accept: 'application/json' },
         })
         const data = await resp.json().catch(() => ({}))
         if (!resp.ok || !data.ok) {
@@ -218,9 +221,33 @@ function pickDefaultTab(v) {
 function onKey(e) {
     if (e.key === 'Escape' && open.value) open.value = false
 }
+
+// Refresh-on-refocus: the owner complained the modal showed stale data after
+// switching tabs/windows (e.g. a payment recorded elsewhere). When the tab
+// becomes visible or the window regains focus AND the sheet is open, re-pull
+// the visit through the existing no-store loadVisit(). Debounced + guarded so
+// focus+visibilitychange firing together don't double-fetch, and we never
+// refetch while already loading or while the sheet is closed.
+let refocusTimer = null
+function refreshOnRefocus() {
+    if (!open.value || !props.visitId) return
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+    clearTimeout(refocusTimer)
+    refocusTimer = setTimeout(() => {
+        if (open.value && props.visitId && !loading.value) loadVisit()
+    }, 200)
+}
+
 if (typeof window !== 'undefined') {
     window.addEventListener('keydown', onKey)
-    onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
+    window.addEventListener('focus', refreshOnRefocus)
+    document.addEventListener('visibilitychange', refreshOnRefocus)
+    onBeforeUnmount(() => {
+        window.removeEventListener('keydown', onKey)
+        window.removeEventListener('focus', refreshOnRefocus)
+        document.removeEventListener('visibilitychange', refreshOnRefocus)
+        clearTimeout(refocusTimer)
+    })
 }
 
 // ─── Inline-save handler (one field at a time) ─────────────────────────────
@@ -363,9 +390,28 @@ const primaryAction = computed(() => {
 const canEditClinical = computed(() => !!perms.value.can_edit_clinical)
 const canRecordPayment = computed(() => !!perms.value.can_record_payment)
 const canManageItems = computed(() => !!perms.value.can_manage_items)
+// Reception can manage packages (billing bundles) too, not just the doctor.
+const canManagePackages = computed(() => !!perms.value.can_manage_packages)
 const canRequestStock = computed(() => !!perms.value.can_request_stock)
 const canFulfillStock = computed(() => !!perms.value.can_fulfill_stock)
 const canDischarge = computed(() => !!perms.value.can_discharge)
+
+// When reception is on the billing step (awaiting_payment) but "Complete visit"
+// is hidden, say WHY — a balance is still due, or insurance needs a decision.
+// Without this the missing button just looks broken.
+const dischargeBlockReason = computed(() => {
+    const v = visit.value
+    if (!v || canDischarge.value) return null
+    if (!(perms.value.is_reception || perms.value.is_admin)) return null
+    if (v.status !== 'awaiting_payment') return null
+    if (insuranceRequiresDecision.value) return null // its own banner already explains this
+    if (totals.value.balance > 0.005) {
+        return (isRtl.value ? 'يتبقى رصيد ' : 'Balance due ')
+            + fmtMoney(totals.value.balance) + ' KWD — '
+            + (isRtl.value ? 'حصّل كامل المبلغ لإنهاء الزيارة.' : 'collect the full balance to complete the visit.')
+    }
+    return null
+})
 
 // ─── Insurance decision (discharge gate) ───────────────────────────────────
 const insurance = computed(() => visit.value?.insurance ?? null)
@@ -423,6 +469,73 @@ async function submitSkipClaim() {
     } finally { skipSubmitting.value = false }
 }
 
+// ─── Coverage breakdown (what the visual claim builder shows) ───────────────
+const coverage = ref(null)
+async function loadCoverage() {
+    if (!visit.value) { coverage.value = null; return }
+    try {
+        const resp = await fetch(`/admin/v2/api/visits/${visit.value.id}/insurance/estimate`, {
+            credentials: 'same-origin', cache: 'no-store', headers: { Accept: 'application/json' },
+        })
+        const data = await resp.json().catch(() => ({}))
+        coverage.value = (resp.ok && data.ok) ? data : null
+    } catch { coverage.value = null }
+}
+const coverageGross = computed(() => Number(coverage.value?.totals?.gross || 0))
+const insurerCovers = computed(() => Number(coverage.value?.totals?.insurer_total || 0))
+const patientCopay = computed(() => Number(coverage.value?.totals?.patient_total || 0))
+const coveragePct = computed(() => coverageGross.value > 0 ? Math.round((insurerCovers.value / coverageGross.value) * 100) : 0)
+// Fetch the coverage breakdown whenever a decision is pending.
+watch(insuranceRequiresDecision, (v) => { if (v) loadCoverage(); else coverage.value = null })
+
+// ─── Reception capture: attach a policy from the visit modal ────────────────
+const attachOpen = ref(false)
+const attachLoading = ref(false)
+const insurerOptions = ref([])
+const attachForm = ref({ civil_id: '', insurer_id: '', plan_id: '', policy_number: '', member_id: '' })
+const planOptionsForInsurer = computed(() =>
+    insurerOptions.value.find((i) => String(i.id) === String(attachForm.value.insurer_id))?.plans || [])
+
+async function openAttachInsurance() {
+    attachForm.value = { civil_id: '', insurer_id: '', plan_id: '', policy_number: '', member_id: '' }
+    insurerOptions.value = []
+    attachOpen.value = true
+    try {
+        const resp = await fetch(`/admin/v2/api/visits/${visit.value.id}/insurance/options`, {
+            credentials: 'same-origin', cache: 'no-store', headers: { Accept: 'application/json' },
+        })
+        const data = await resp.json().catch(() => ({}))
+        if (resp.ok && data.ok) {
+            insurerOptions.value = data.insurers || []
+            if (data.civil_id) attachForm.value.civil_id = data.civil_id
+        }
+    } catch { /* ignore */ }
+}
+// Reset plan when insurer changes (plans are insurer-scoped).
+watch(() => attachForm.value.insurer_id, () => { attachForm.value.plan_id = '' })
+
+async function submitAttachInsurance() {
+    if (attachLoading.value) return
+    if (!attachForm.value.insurer_id || !attachForm.value.plan_id || !attachForm.value.policy_number.trim()) return
+    attachLoading.value = true
+    try {
+        const resp = await fetch(`/admin/v2/api/visits/${visit.value.id}/insurance/attach`, {
+            method: 'POST', credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf(), Accept: 'application/json' },
+            body: JSON.stringify(attachForm.value),
+        })
+        const data = await resp.json().catch(() => ({}))
+        if (!resp.ok || !data.ok) {
+            pushToast({ kind: 'warning', icon: 'alert-triangle', title: isRtl.value ? 'تعذّر إضافة التأمين' : 'Could not add insurance', desc: data.error })
+            return
+        }
+        pushToast({ kind: 'success', icon: 'check', title: isRtl.value ? 'تمت إضافة التأمين' : 'Insurance added' })
+        attachOpen.value = false
+        await loadVisit()
+        emit('changed')
+    } finally { attachLoading.value = false }
+}
+
 // ─── Request-stock sub-modal ───────────────────────────────────────────────
 // Lines is now an array — the doctor can request multiple items at once, and
 // the smart "Request missing stock" button pre-populates it with all items
@@ -436,6 +549,21 @@ const reqStockLoading = ref(false)
 let reqStockDebounce
 
 const stockShortages = computed(() => visit.value?.stock_shortages ?? [])
+// Consumables the visit is awaiting from its packages/services (pending request).
+const pendingStock = computed(() => visit.value?.pending_stock ?? [])
+// Everything short = directly-added short items + short package/service consumables,
+// merged by clinic_item_id (used to pre-fill the Request-stock modal).
+const allShortages = computed(() => {
+    const byId = {}
+    for (const s of stockShortages.value) byId[s.clinic_item_id] = { clinic_item_id: s.clinic_item_id, name: s.name, qty_base: Number(s.qty_short) || 0 }
+    for (const p of pendingStock.value) {
+        if (Number(p.qty_short) <= 0) continue
+        const cur = byId[p.clinic_item_id]
+        if (cur) cur.qty_base = Math.max(cur.qty_base, Number(p.qty_short) || 0)
+        else byId[p.clinic_item_id] = { clinic_item_id: p.clinic_item_id, name: p.name, qty_base: Number(p.qty_short) || 0 }
+    }
+    return Object.values(byId)
+})
 
 async function refreshStockCatalog() {
     if (!visit.value) return
@@ -464,10 +592,10 @@ async function openRequestMissingStock() {
     reqStockOpen.value = true
     reqStockSearch.value = ''
     reqStockNotes.value = ''
-    reqStockLines.value = stockShortages.value.map((s) => ({
+    reqStockLines.value = allShortages.value.map((s) => ({
         clinic_item_id: s.clinic_item_id,
         name: s.name,
-        qty_base: s.qty_short,
+        qty_base: s.qty_base,
     }))
     await refreshStockCatalog()
 }
@@ -557,10 +685,12 @@ async function discharge() {
 
 // ─── Catalogue picker (Services + single Items) ────────────────────────────
 const addItemOpen = ref(false)
+const addedCount = ref(0) // multi-add: how many added this modal session
 const pickerMode = ref('service') // 'service' | 'item'
 const addItemSearch = ref('')
 const addItemCatalog = ref([])     // single items
 const addPackageCatalog = ref([])  // services / packages
+const pickerOffers = ref(false)    // opened via the "Offers" launcher (deal framing)
 const addItemSelected = ref(null)
 const addPkgSelected = ref(null)
 const addItemQty = ref(1)
@@ -598,6 +728,8 @@ watch(pickerMode, () => {
 
 async function openAddItem(mode = 'service') {
     addItemOpen.value = true
+    addedCount.value = 0
+    pickerOffers.value = false
     pickerMode.value = mode
     addItemSearch.value = ''
     addItemSelected.value = null
@@ -608,12 +740,43 @@ async function openAddItem(mode = 'service') {
     addPkgNotes.value = ''
     await refreshCatalog()
 }
+
+// Multi-add: after each successful add, reset the picker and keep the modal
+// open so several items/services can be added without reopening it.
+function resetPickerForNext() {
+    addedCount.value++
+    addItemSelected.value = null
+    addPkgSelected.value = null
+    addItemQty.value = 1
+    addItemPrice.value = ''
+    addPkgQty.value = 1
+    addPkgNotes.value = ''
+    addItemSearch.value = ''
+    refreshCatalog()
+}
 function pickCatalogItem(item) {
     addItemSelected.value = item
     addItemPrice.value = Number(item.price ?? 0).toFixed(3)
 }
 function pickCatalogPackage(pkg) {
     addPkgSelected.value = pkg
+}
+
+// Reception's "Offers" launcher: open the package picker framed as advertised
+// deals (deal pricing + OFFER badges shown on each row).
+async function openOffers() {
+    await openAddItem('service')
+    pickerOffers.value = true
+}
+
+// One-click apply an advertised offer/package (qty 1). The add endpoint
+// auto-applies any active promotion discount on the package.
+async function quickAddPackage(pkg) {
+    if (addItemLoading.value) return
+    addPkgSelected.value = pkg
+    addPkgQty.value = 1
+    addPkgNotes.value = ''
+    await submitAddItem()
 }
 
 async function submitAddItem() {
@@ -642,7 +805,7 @@ async function submitAddItem() {
                 ? (isRtl.value ? 'تم طلب المخزون' : 'Stock request opened')
                 : (isRtl.value ? 'تم صرف الخدمة' : 'Service applied')
             pushToast({ kind: 'success', icon: 'check', title: mode, desc: addPkgSelected.value.name })
-            addItemOpen.value = false
+            resetPickerForNext()
             await loadVisit()
             emit('changed')
         } finally { addItemLoading.value = false }
@@ -669,7 +832,7 @@ async function submitAddItem() {
             return
         }
         pushToast({ kind: 'success', icon: 'check', title: (isRtl.value ? 'أُضيفت: ' : 'Added ') + addItemSelected.value.name })
-        addItemOpen.value = false
+        resetPickerForNext()
         await loadVisit()
         emit('changed')
     } finally { addItemLoading.value = false }
@@ -711,6 +874,39 @@ async function savePackageDiscount(pkgId, raw) {
         method: 'POST', credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf(), Accept: 'application/json' },
         body: JSON.stringify({ discount_amount: Math.max(0, value) }),
+    })
+    const data = await resp.json().catch(() => ({}))
+    if (!resp.ok || !data.ok) { pushToast({ kind: 'warning', icon: 'alert-triangle', title: t.value.saveFailed, desc: data.error }); throw new Error(data.error || 'Save failed') }
+    await loadVisit(); emit('changed')
+}
+
+// Create a hub → branch transfer for the visit's short consumables.
+const hasShortPending = computed(() => pendingStock.value.some((p) => Number(p.qty_short) > 0))
+async function sourceFromHub() {
+    if (!visit.value) return
+    const resp = await fetch(`/admin/v2/api/visits/${visit.value.id}/source-from-hub`, {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf(), Accept: 'application/json' },
+        body: '{}',
+    })
+    const data = await resp.json().catch(() => ({}))
+    if (!resp.ok || !data.ok) {
+        pushToast({ kind: 'warning', icon: 'alert-triangle', title: isRtl.value ? 'تعذر الطلب من المركز' : 'Could not source from hub', desc: data.error })
+        return
+    }
+    pushToast({ kind: 'success', icon: 'check', title: isRtl.value ? 'تم إنشاء تحويل من المركز' : 'Hub transfer created', desc: isRtl.value ? '' : (data.lines + ' item(s)') })
+    await loadVisit(); emit('changed')
+}
+
+// Adjust a package's quantity (min 1) instead of deleting the whole line when a
+// package was added more than once. Uses the same packages/{id} update endpoint.
+async function savePackageQty(pkgId, raw) {
+    const qty = Math.max(1, Math.floor(Number(raw) || 1))
+    if (!visit.value || !pkgId) return
+    const resp = await fetch(`/admin/v2/api/visits/${visit.value.id}/packages/${pkgId}`, {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf(), Accept: 'application/json' },
+        body: JSON.stringify({ qty }),
     })
     const data = await resp.json().catch(() => ({}))
     if (!resp.ok || !data.ok) { pushToast({ kind: 'warning', icon: 'alert-triangle', title: t.value.saveFailed, desc: data.error }); throw new Error(data.error || 'Save failed') }
@@ -827,19 +1023,33 @@ const paymentKinds = [
     { id: 'services', icon: 'gift' },
     { id: 'other', icon: 'more-horizontal' },
 ]
-const paymentMethods = [
-    { id: 'cash', icon: 'banknote' },
-    { id: 'card', icon: 'credit-card' },
-    { id: 'knet', icon: 'credit-card' },
-    { id: 'transfer', icon: 'arrow-right-left' },
-    { id: 'insurance', icon: 'shield' },
-]
+// Icon per method key (purely cosmetic; unknown keys get a generic wallet).
+const methodIcon = (key) => ({
+    cash: 'banknote', card: 'credit-card', knet: 'credit-card', visa: 'credit-card',
+    transfer: 'arrow-right-left', insurance: 'shield', link: 'link', myfatoorah: 'link',
+}[key] || 'wallet')
+
+// Manual methods are admin-configured per clinic (visit.payment_methods). Online
+// methods (type 'online') are handled by the payment-link / QR action, not this
+// picker. Fall back to cash if a clinic has nothing configured.
+const paymentMethods = computed(() => {
+    const list = (visit.value?.payment_methods || []).filter((m) => m.type !== 'online')
+    if (!list.length) return [{ id: 'cash', label: isRtl.value ? 'نقداً' : 'Cash', icon: 'banknote', requires_reference: false }]
+    return list.map((m) => ({ id: m.key, label: m.label, icon: methodIcon(m.key), requires_reference: !!m.requires_reference }))
+})
+const selectedMethod = computed(() => paymentMethods.value.find((m) => m.id === payMethod.value) || null)
+const referenceRequired = computed(() => !!selectedMethod.value?.requires_reference)
+const onlinePaymentAvailable = computed(() => !!visit.value?.online_payment_available)
 
 function openPaymentModal() {
     payAmount.value = totals.value.balance > 0 ? totals.value.balance.toFixed(3) : ''
     payKind.value = 'consultation'
-    payMethod.value = 'cash'
+    payMethod.value = paymentMethods.value[0]?.id || 'cash'
     payRef.value = ''
+    // reset any previously-generated link
+    linkUrl.value = ''
+    linkQr.value = ''
+    linkAmount.value = 0
     payOpen.value = true
 }
 const paymentBalancePreview = computed(() => Math.max(0, totals.value.balance - (Number(payAmount.value) || 0)))
@@ -848,6 +1058,8 @@ async function submitPayment() {
     if (!visit.value || payLoading.value) return
     const amt = Number(payAmount.value)
     if (!amt || amt <= 0) return
+    // Client mirror of the server rule — don't submit a referenced method blank.
+    if (referenceRequired.value && !payRef.value.trim()) return
     payLoading.value = true
     try {
         const resp = await fetch(`/admin/v2/api/visits/${visit.value.id}/payments`, {
@@ -862,7 +1074,7 @@ async function submitPayment() {
                 amount: amt,
                 kind: payKind.value,
                 method: payMethod.value,
-                reference_no: payMethod.value !== 'cash' ? (payRef.value || null) : null,
+                reference_no: payRef.value ? payRef.value.trim() : null,
             }),
         })
         const data = await resp.json().catch(() => ({}))
@@ -875,6 +1087,60 @@ async function submitPayment() {
         await loadVisit()
         emit('changed')
     } finally { payLoading.value = false }
+}
+
+// ─── Online payment link (MyFatoorah) + QR + WhatsApp ──────────────────────
+const linkLoading = ref(false)
+const linkUrl = ref('')
+const linkQr = ref('')
+const linkAmount = ref(0)
+const waSending = ref(false)
+
+async function generatePaymentLink() {
+    if (!visit.value || linkLoading.value) return
+    linkLoading.value = true
+    try {
+        const amt = Number(payAmount.value)
+        const resp = await fetch(`/admin/v2/api/visits/${visit.value.id}/payment-link`, {
+            method: 'POST', credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf(), Accept: 'application/json' },
+            body: JSON.stringify({ amount: amt > 0 ? amt : null, kind: payKind.value }),
+        })
+        const data = await resp.json().catch(() => ({}))
+        if (!resp.ok || !data.ok) {
+            pushToast({ kind: 'warning', icon: 'alert-triangle', title: isRtl.value ? 'تعذّر إنشاء رابط الدفع' : 'Could not create payment link', desc: data.error })
+            return
+        }
+        linkUrl.value = data.url
+        linkQr.value = data.qr_svg
+        linkAmount.value = data.amount
+    } finally { linkLoading.value = false }
+}
+
+async function sendLinkWhatsApp() {
+    if (!visit.value || waSending.value) return
+    waSending.value = true
+    try {
+        const amt = Number(linkAmount.value) || (Number(payAmount.value) > 0 ? Number(payAmount.value) : null)
+        const resp = await fetch(`/admin/v2/api/visits/${visit.value.id}/payment-link/whatsapp`, {
+            method: 'POST', credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf(), Accept: 'application/json' },
+            // No URL from the client — the server mints the link for this visit.
+            body: JSON.stringify({ amount: amt, kind: payKind.value }),
+        })
+        const data = await resp.json().catch(() => ({}))
+        if (!resp.ok || !data.ok) {
+            pushToast({ kind: data.soft ? 'info' : 'warning', icon: 'alert-triangle', title: isRtl.value ? 'لم يُرسل عبر واتساب' : 'WhatsApp not sent', desc: data.error })
+            return
+        }
+        pushToast({ kind: 'success', icon: 'check', title: isRtl.value ? 'أُرسل الرابط عبر واتساب' : 'Payment link sent on WhatsApp' })
+    } finally { waSending.value = false }
+}
+
+function copyPaymentLink() {
+    if (!linkUrl.value) return
+    navigator.clipboard?.writeText(linkUrl.value)
+    pushToast({ kind: 'success', icon: 'check', title: isRtl.value ? 'تم نسخ الرابط' : 'Link copied' })
 }
 </script>
 
@@ -989,6 +1255,12 @@ async function submitPayment() {
                             </button>
                         </div>
 
+                        <!-- Why "Complete visit" is unavailable (balance still due) -->
+                        <div v-if="dischargeBlockReason" class="vs-checkin-banner" style="margin-top: 8px;">
+                            <Icon name="alert-circle" :size="14" :style="{ color: 'var(--warning)', flexShrink: 0 }" />
+                            <span>{{ dischargeBlockReason }}</span>
+                        </div>
+
                         <!-- Check-in banner: nothing mutable until reception checks the patient in -->
                         <div v-if="visit && !perms.is_checked_in" class="vs-checkin-banner">
                             <Icon name="alert-triangle" :size="14" :style="{ color: 'var(--warning)', flexShrink: 0 }" />
@@ -1012,8 +1284,8 @@ async function submitPayment() {
                         </div>
 
                         <!-- Insurance banner: decision required before discharge -->
-                        <div v-if="insuranceRequiresDecision" class="vs-insurance-banner">
-                            <div style="display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0;">
+                        <div v-if="insuranceRequiresDecision" class="vs-insurance-banner" style="flex-direction: column; align-items: stretch; gap: 12px;">
+                            <div style="display: flex; align-items: center; gap: 10px; min-width: 0;">
                                 <Icon name="shield" :size="18" :style="{ color: 'var(--primary)', flexShrink: 0 }" />
                                 <div style="min-width: 0;">
                                     <div style="font-weight: 600; font-size: 13px; color: var(--fg);">
@@ -1025,15 +1297,34 @@ async function submitPayment() {
                                             <span v-if="insurancePolicies[0].plan_name"> · {{ insurancePolicies[0].plan_name }}</span>
                                             <span v-if="insurancePolicies[0].policy_number" class="tnum"> · {{ insurancePolicies[0].policy_number }}</span>
                                         </template>
-                                        <span style="display: block; margin-top: 2px;">
-                                            {{ isRtl
-                                                ? 'يجب إنشاء مطالبة أو تخطيها قبل إنهاء الزيارة.'
-                                                : 'Create a claim or skip before discharge.' }}
-                                        </span>
                                     </div>
                                 </div>
                             </div>
-                            <div v-if="canDischarge !== undefined && perms.is_reception || perms.is_admin" style="display: inline-flex; gap: 8px; flex-shrink: 0;">
+
+                            <!-- Coverage breakdown: what insurance covers vs what the patient pays now -->
+                            <div v-if="coverage" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                                <div class="vs-cov-cell">
+                                    <span class="vs-cov-label">{{ isRtl ? 'إجمالي الفاتورة' : 'Total charged' }}</span>
+                                    <span class="tnum vs-cov-val">{{ fmtMoney(coverageGross) }}</span>
+                                </div>
+                                <div class="vs-cov-cell">
+                                    <span class="vs-cov-label">{{ isRtl ? 'يغطيه التأمين' : 'Insurance covers' }} <span class="tnum" style="color: var(--success);">({{ coveragePct }}%)</span></span>
+                                    <span class="tnum vs-cov-val" style="color: var(--success);">{{ fmtMoney(insurerCovers) }}</span>
+                                </div>
+                                <div class="vs-cov-cell">
+                                    <span class="vs-cov-label">{{ isRtl ? 'حصة المريض' : 'Patient pays' }}</span>
+                                    <span class="tnum vs-cov-val" style="color: var(--warning);">{{ fmtMoney(patientCopay) }}</span>
+                                </div>
+                                <div class="vs-cov-cell">
+                                    <span class="vs-cov-label">{{ isRtl ? 'المدفوع' : 'Already paid' }}</span>
+                                    <span class="tnum vs-cov-val">{{ fmtMoney(totals.paid) }}</span>
+                                </div>
+                            </div>
+                            <div style="font-size: 11.5px; color: var(--fg-muted);">
+                                {{ isRtl ? 'أنشئ المطالبة أو تخطّها قبل إنهاء الزيارة. الحصة المتبقية يحصّلها الاستقبال من المريض.' : 'Create the claim or skip before discharge. The patient pays their share at reception.' }}
+                            </div>
+
+                            <div v-if="perms.is_reception || perms.is_admin" style="display: flex; gap: 8px; justify-content: flex-end;">
                                 <button type="button" class="btn btn-outline btn-sm" :disabled="skipSubmitting" @click="skipDialogOpen = true">
                                     <Icon name="x" :size="13" />
                                     {{ isRtl ? 'تخطي' : 'Skip' }}
@@ -1043,6 +1334,22 @@ async function submitPayment() {
                                     {{ isRtl ? 'إنشاء مطالبة' : 'Create claim' }}
                                 </button>
                             </div>
+                        </div>
+
+                        <!-- No insurance on file: let reception capture a policy on the spot -->
+                        <div
+                            v-else-if="canRecordPayment && !insuranceClaim && !insuranceSkipped && insurancePolicies.length === 0 && visit.patient"
+                            class="vs-insurance-banner"
+                            style="background: var(--bg-sunken);"
+                        >
+                            <div style="display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0;">
+                                <Icon name="shield-off" :size="16" :style="{ color: 'var(--fg-subtle)', flexShrink: 0 }" />
+                                <span style="font-size: 12.5px; color: var(--fg-muted);">{{ isRtl ? 'لا يوجد تأمين مسجل لهذا المريض' : 'No insurance on file for this patient' }}</span>
+                            </div>
+                            <button type="button" class="btn btn-outline btn-sm" style="flex-shrink: 0;" @click="openAttachInsurance">
+                                <Icon name="shield-plus" :size="13" />
+                                {{ isRtl ? 'إضافة تأمين' : 'Add insurance' }}
+                            </button>
                         </div>
 
                         <!-- Insurance decided already: small confirmation strip -->
@@ -1218,8 +1525,12 @@ async function submitPayment() {
                                         <strong style="color: var(--fg); margin-inline-start: 4px;">{{ fmtMoney((visit.totals?.items_price ?? 0) + (visit.totals?.packages_price ?? 0)) }}</strong>
                                         <span style="font-size: 10.5px; color: var(--fg-subtle); margin-inline-start: 2px;">KWD</span>
                                     </div>
-                                    <div v-if="canManageItems || canRequestStock" style="display: inline-flex; gap: 8px; flex-wrap: wrap;">
-                                        <button v-if="canManageItems" type="button" class="btn btn-primary btn-sm" @click="openAddItem('service')">
+                                    <div v-if="canManageItems || canManagePackages || canRequestStock" style="display: inline-flex; gap: 8px; flex-wrap: wrap;">
+                                        <button v-if="canManagePackages" type="button" class="btn btn-primary btn-sm" @click="openOffers">
+                                            <Icon name="badge-percent" :size="13" />
+                                            {{ isRtl ? 'العروض' : 'Offers' }}
+                                        </button>
+                                        <button v-if="canManagePackages" type="button" class="btn btn-outline btn-sm" @click="openAddItem('service')">
                                             <Icon name="layers" :size="13" />
                                             {{ isRtl ? 'إضافة باقة' : 'Add package' }}
                                         </button>
@@ -1228,14 +1539,14 @@ async function submitPayment() {
                                             {{ isRtl ? 'إضافة خدمة / بند' : 'Add service / item' }}
                                         </button>
                                         <button
-                                            v-if="canRequestStock && stockShortages.length > 0"
+                                            v-if="canRequestStock && allShortages.length > 0"
                                             type="button"
                                             class="btn btn-sm vs-smart-restock"
                                             @click="openRequestMissingStock"
                                         >
                                             <Icon name="zap" :size="13" />
                                             {{ isRtl ? 'طلب الأصناف الناقصة' : 'Request missing stock' }}
-                                            <span class="tnum" style="background: rgba(255,255,255,0.18); border-radius: 999px; padding: 1px 6px; font-size: 11px; margin-inline-start: 4px;">{{ stockShortages.length }}</span>
+                                            <span class="tnum" style="background: rgba(255,255,255,0.18); border-radius: 999px; padding: 1px 6px; font-size: 11px; margin-inline-start: 4px;">{{ allShortages.length }}</span>
                                         </button>
                                         <button v-if="canRequestStock" type="button" class="btn btn-outline btn-sm" @click="openRequestStock">
                                             <Icon name="package" :size="13" />
@@ -1251,21 +1562,31 @@ async function submitPayment() {
                                         <div
                                             v-for="vp in visit.packages"
                                             :key="vp.id"
-                                            style="display: grid; grid-template-columns: 1fr 44px 76px 78px 78px 40px; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--line); align-items: center;"
+                                            style="display: grid; grid-template-columns: 1fr 92px 76px 78px 78px 40px; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--line); align-items: center;"
                                         >
-                                            <div style="display: flex; align-items: center; gap: 8px; min-width: 0;">
-                                                <span style="width: 26px; height: 26px; border-radius: 8px; background: var(--primary-soft); color: var(--primary); display: inline-flex; align-items: center; justify-content: center;">
+                                            <div style="display: flex; align-items: flex-start; gap: 8px; min-width: 0;">
+                                                <span style="width: 26px; height: 26px; border-radius: 8px; background: var(--primary-soft); color: var(--primary); display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;">
                                                     <Icon name="layers" :size="13" />
                                                 </span>
-                                                <div style="font-size: 13px; font-weight: 500; min-width: 0; display: flex; align-items: center; gap: 6px;">
-                                                    <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ vp.name }}</span>
-                                                    <span v-if="vp.discount_source === 'promo'" class="badge badge-gold" style="font-size: 9px; flex-shrink: 0;">{{ isRtl ? 'عرض' : 'Promo' }}</span>
+                                                <div style="min-width: 0;">
+                                                    <div style="font-size: 13px; font-weight: 500; display: flex; align-items: center; gap: 6px;">
+                                                        <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ vp.name }}</span>
+                                                        <span v-if="vp.discount_source === 'promo'" class="badge badge-gold" style="font-size: 9px; flex-shrink: 0;">{{ isRtl ? 'عرض' : 'Promo' }}</span>
+                                                    </div>
+                                                    <div v-if="vp.contents && vp.contents.length" style="font-size: 11px; color: var(--fg-subtle); margin-top: 2px; line-height: 1.4;">
+                                                        {{ isRtl ? 'يشمل: ' : 'Includes: ' }}{{ vp.contents.map((c) => c.name + (Number(c.qty) > 1 ? ' ×' + Number(c.qty) : '')).join(' · ') }}
+                                                    </div>
                                                 </div>
                                             </div>
-                                            <div class="tnum" style="font-size: 13px; text-align: end;">{{ vp.qty }}</div>
+                                            <div v-if="canManagePackages" class="vs-qty-stepper">
+                                                <button type="button" class="vs-qty-btn" :disabled="Number(vp.qty) <= 1" :aria-label="isRtl ? 'تقليل' : 'Decrease'" @click="savePackageQty(vp.id, Number(vp.qty) - 1)">−</button>
+                                                <input type="number" step="1" min="1" :value="Number(vp.qty || 1)" class="vs-qty-input tnum" @change="(e) => savePackageQty(vp.id, e.target.value)" @keydown.enter="(e) => e.target.blur()" />
+                                                <button type="button" class="vs-qty-btn" :aria-label="isRtl ? 'زيادة' : 'Increase'" @click="savePackageQty(vp.id, Number(vp.qty) + 1)">+</button>
+                                            </div>
+                                            <div v-else class="tnum" style="font-size: 13px; text-align: end;">{{ vp.qty }}</div>
                                             <div class="tnum" style="font-size: 13px; text-align: end;">{{ fmtMoney(vp.unit_price) }}</div>
                                             <input
-                                                v-if="canManageItems"
+                                                v-if="canManagePackages"
                                                 type="number"
                                                 step="0.001"
                                                 min="0"
@@ -1279,7 +1600,7 @@ async function submitPayment() {
                                             <span v-else class="tnum" style="font-size: 13px; text-align: end;">{{ fmtMoney(vp.discount_amount) }}</span>
                                             <div class="tnum" style="font-size: 13px; font-weight: 500; text-align: end;">{{ fmtMoney(vp.net_total ?? vp.line_total) }} <span style="font-size: 10px; color: var(--fg-subtle);">KWD</span></div>
                                             <button
-                                                v-if="canManageItems"
+                                                v-if="canManagePackages"
                                                 type="button"
                                                 class="btn btn-ghost btn-sm btn-icon"
                                                 style="color: var(--destructive);"
@@ -1288,6 +1609,37 @@ async function submitPayment() {
                                                 <Icon name="trash-2" :size="13" />
                                             </button>
                                             <div v-else></div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Consumables the visit is awaiting from its packages/services -->
+                                <div v-if="pendingStock.length > 0" style="margin-bottom: 14px;">
+                                    <div class="eyebrow" style="margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+                                        <Icon name="hourglass" :size="12" :style="{ color: 'var(--warning, #b45309)' }" />
+                                        {{ isRtl ? 'بانتظار المخزون' : 'Awaiting stock' }}
+                                        <button
+                                            v-if="canRequestStock && hasShortPending"
+                                            type="button"
+                                            class="btn btn-outline btn-sm"
+                                            style="margin-inline-start: auto;"
+                                            @click="sourceFromHub"
+                                        >
+                                            <Icon name="arrow-left-right" :size="12" /> {{ isRtl ? 'طلب من المركز' : 'Source from hub' }}
+                                        </button>
+                                    </div>
+                                    <div class="card" style="overflow: hidden;">
+                                        <div
+                                            v-for="ps in pendingStock"
+                                            :key="ps.clinic_item_id"
+                                            style="display: grid; grid-template-columns: 1fr 70px 110px; gap: 8px; padding: 9px 14px; border-top: 1px solid var(--line); align-items: center;"
+                                        >
+                                            <div style="font-size: 13px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ ps.name }}</div>
+                                            <div class="tnum" style="font-size: 13px; text-align: end;">×{{ ps.qty }}</div>
+                                            <div class="tnum" style="font-size: 11.5px; text-align: end;">
+                                                <span v-if="Number(ps.qty_short) > 0" style="color: var(--destructive);">{{ isRtl ? 'ينقص ' : 'short ' }}{{ ps.qty_short }}</span>
+                                                <span v-else style="color: var(--success, #047857);">{{ isRtl ? 'متوفر' : 'in stock' }}</span>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -1597,13 +1949,15 @@ async function submitPayment() {
                                     @click="payMethod = m.id"
                                 >
                                     <Icon :name="m.icon" :size="13" />
-                                    {{ t.payments.methods[m.id] }}
+                                    {{ m.label }}
                                 </button>
                             </div>
                         </div>
 
-                        <div v-if="payMethod !== 'cash'">
-                            <div class="eyebrow" style="margin-bottom: 6px;">{{ t.payments.ref }}</div>
+                        <div v-if="referenceRequired">
+                            <div class="eyebrow" style="margin-bottom: 6px;">
+                                {{ t.payments.ref }} <span style="color: var(--destructive);">*</span>
+                            </div>
                             <input
                                 v-model="payRef"
                                 type="text"
@@ -1611,6 +1965,41 @@ async function submitPayment() {
                                 class="input tnum"
                                 :placeholder="t.payments.refPh"
                             />
+                            <div v-if="!payRef.trim()" style="font-size: 11px; color: var(--fg-subtle); margin-top: 4px;">
+                                {{ isRtl ? 'رقم العملية / المرجع مطلوب لهذه الطريقة.' : 'A transaction / reference number is required for this method.' }}
+                            </div>
+                        </div>
+
+                        <!-- Online payment: MyFatoorah link + QR + WhatsApp -->
+                        <div v-if="onlinePaymentAvailable" style="border-top: 1px dashed var(--line); padding-top: 12px;">
+                            <div class="eyebrow" style="margin-bottom: 6px;">{{ isRtl ? 'دفع إلكتروني' : 'Online payment' }}</div>
+                            <button
+                                v-if="!linkUrl"
+                                type="button"
+                                class="btn btn-outline"
+                                style="width: 100%;"
+                                :disabled="linkLoading"
+                                @click="generatePaymentLink"
+                            >
+                                <Icon :name="linkLoading ? 'loader' : 'link'" :size="13" />
+                                {{ isRtl ? 'إنشاء رابط دفع / QR' : 'Generate payment link / QR' }}
+                            </button>
+
+                            <div v-else style="display: flex; flex-direction: column; align-items: center; gap: 10px;">
+                                <img :src="linkQr" alt="Payment QR" style="width: 180px; height: 180px; background: #fff; border-radius: 8px; padding: 6px; border: 1px solid var(--line);" />
+                                <div style="font-size: 12px; color: var(--fg-muted); text-align: center;">
+                                    {{ isRtl ? 'اطلب من المريض مسح الرمز للدفع' : 'Ask the patient to scan to pay' }}
+                                    <span v-if="linkAmount" class="tnum"> · {{ fmtMoney(linkAmount) }} KWD</span>
+                                </div>
+                                <div style="display: flex; gap: 8px; width: 100%;">
+                                    <button type="button" class="btn btn-outline" style="flex: 1;" @click="copyPaymentLink">
+                                        <Icon name="copy" :size="13" />{{ isRtl ? 'نسخ الرابط' : 'Copy link' }}
+                                    </button>
+                                    <button type="button" class="btn btn-outline" style="flex: 1;" :disabled="waSending" @click="sendLinkWhatsApp">
+                                        <Icon :name="waSending ? 'loader' : 'message-circle'" :size="13" />{{ isRtl ? 'إرسال واتساب' : 'Send WhatsApp' }}
+                                    </button>
+                                </div>
+                            </div>
                         </div>
 
                         <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: var(--bg-sunken); border: 1px solid var(--line); border-radius: 10px;">
@@ -1635,7 +2024,7 @@ async function submitPayment() {
                         <button
                             type="button"
                             class="btn btn-primary"
-                            :disabled="payLoading || !Number(payAmount) || Number(payAmount) <= 0"
+                            :disabled="payLoading || !Number(payAmount) || Number(payAmount) <= 0 || (referenceRequired && !payRef.trim())"
                             @click="submitPayment"
                         >
                             <Icon v-if="payLoading" name="loader" :size="13" />
@@ -1655,11 +2044,11 @@ async function submitPayment() {
                 <div class="cd-panel" style="width: min(820px, 100%);">
                     <div style="padding: 14px 18px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 10px;">
                         <span style="width: 36px; height: 36px; border-radius: 10px; background: var(--primary-soft); color: var(--primary); display: inline-flex; align-items: center; justify-content: center;">
-                            <Icon :name="pickerMode === 'service' ? 'layers' : 'plus'" :size="18" />
+                            <Icon :name="pickerMode === 'service' ? (pickerOffers ? 'badge-percent' : 'layers') : 'plus'" :size="18" />
                         </span>
                         <div style="flex: 1;">
                             <div style="font-weight: 500; font-size: 15px;">
-                                {{ pickerMode === 'service' ? (isRtl ? 'إضافة خدمة' : 'Add service') : (isRtl ? 'إضافة بند' : 'Add item') }}
+                                {{ pickerMode === 'service' ? (pickerOffers ? (isRtl ? 'العروض والباقات' : 'Offers & packages') : (isRtl ? 'إضافة خدمة' : 'Add service')) : (isRtl ? 'إضافة بند' : 'Add item') }}
                             </div>
                             <div style="font-size: 11.5px; color: var(--fg-subtle);">
                                 <template v-if="visit?.patient">{{ visit.patient.name }}</template>
@@ -1674,11 +2063,11 @@ async function submitPayment() {
                     <!-- Mode toggle -->
                     <div style="padding: 10px 18px; border-bottom: 1px solid var(--line); background: var(--bg-sunken);">
                         <div class="seg" style="width: 100%;">
-                            <button type="button" :class="pickerMode === 'service' ? 'is-active' : ''" style="flex: 1;" @click="pickerMode = 'service'">
+                            <button v-if="canManagePackages" type="button" :class="pickerMode === 'service' ? 'is-active' : ''" style="flex: 1;" @click="pickerMode = 'service'">
                                 <Icon name="layers" :size="13" />
                                 {{ isRtl ? 'الباقات' : 'Packages' }}
                             </button>
-                            <button type="button" :class="pickerMode === 'item' ? 'is-active' : ''" style="flex: 1;" @click="pickerMode = 'item'">
+                            <button v-if="canManageItems" type="button" :class="pickerMode === 'item' ? 'is-active' : ''" style="flex: 1;" @click="pickerMode = 'item'">
                                 <Icon name="package" :size="13" />
                                 {{ isRtl ? 'الخدمات والبنود' : 'Services & items' }}
                             </button>
@@ -1706,16 +2095,22 @@ async function submitPayment() {
                                 <div v-if="addPackageCatalog.length === 0" style="padding: 28px 12px; text-align: center; color: var(--fg-subtle); font-size: 12.5px;">
                                     {{ isRtl ? 'لا توجد باقات' : 'No packages available' }}
                                 </div>
-                                <button
+                                <div
                                     v-for="p in addPackageCatalog"
                                     :key="p.id"
-                                    type="button"
+                                    role="button"
                                     :class="['vs-catalog-row', addPkgSelected?.id === p.id ? 'is-selected' : '']"
-                                    style="align-items: flex-start;"
+                                    style="align-items: flex-start; cursor: pointer;"
                                     @click="pickCatalogPackage(p)"
                                 >
                                     <div style="min-width: 0; text-align: start; flex: 1;">
-                                        <div style="font-weight: 500; font-size: 13.5px;">{{ p.name }}</div>
+                                        <div style="font-weight: 500; font-size: 13.5px;">
+                                            {{ p.name }}
+                                            <span v-if="p.promo" class="badge badge-gold" style="font-size: 9.5px; margin-inline-start: 6px; vertical-align: 1px;">
+                                                {{ isRtl ? 'عرض' : 'OFFER' }}<span v-if="p.promo.discount"> −{{ fmtMoney(p.promo.discount) }}</span>
+                                            </span>
+                                        </div>
+                                        <div v-if="p.promo && p.promo.name" style="font-size: 11px; color: var(--success); margin-top: 2px;">{{ p.promo.name }}</div>
                                         <div v-if="p.items && p.items.length" style="font-size: 11.5px; color: var(--fg-subtle); margin-top: 4px; line-height: 1.5;">
                                             <Icon name="package" :size="11" :style="{ verticalAlign: '-1px', marginInlineEnd: '4px' }" />
                                             <span class="tnum" v-for="(pi, idx) in p.items" :key="pi.clinic_item_id">
@@ -1723,11 +2118,17 @@ async function submitPayment() {
                                             </span>
                                         </div>
                                     </div>
-                                    <span class="tnum" style="font-size: 14px; font-weight: 500; flex-shrink: 0;">
-                                        {{ fmtMoney(p.price) }}
-                                        <span style="font-size: 10.5px; color: var(--fg-subtle); margin-inline-start: 2px;">KWD</span>
-                                    </span>
-                                </button>
+                                    <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0;">
+                                        <span class="tnum" style="font-size: 14px; font-weight: 500;">
+                                            <span v-if="p.promo" style="text-decoration: line-through; color: var(--fg-faint); font-weight: 400; font-size: 12px; margin-inline-end: 4px;">{{ fmtMoney(p.price) }}</span>
+                                            <span :style="p.promo ? 'color: var(--success);' : ''">{{ fmtMoney(p.promo ? p.net_price : p.price) }}</span>
+                                            <span style="font-size: 10.5px; color: var(--fg-subtle); margin-inline-start: 2px;">KWD</span>
+                                        </span>
+                                        <button type="button" class="btn btn-primary btn-sm" style="font-size: 11px; padding: 3px 12px;" :disabled="addItemLoading" @click.stop="quickAddPackage(p)">
+                                            <Icon name="plus" :size="11" />{{ isRtl ? 'إضافة' : 'Add' }}
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
 
                             <div v-if="addPkgSelected" style="display: grid; grid-template-columns: 100px 1fr; gap: 10px; align-items: end;">
@@ -1784,9 +2185,12 @@ async function submitPayment() {
                     </div>
 
                     <div style="display: flex; align-items: center; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--line);">
-                        <span style="flex: 1;"></span>
+                        <span v-if="addedCount > 0" style="flex: 1; font-size: 12.5px; color: var(--success, #047857); font-weight: 500;">
+                            <Icon name="check" :size="12" /> {{ addedCount }} {{ isRtl ? 'مضاف' : 'added' }}
+                        </span>
+                        <span v-else style="flex: 1;"></span>
                         <button type="button" class="btn btn-outline" :disabled="addItemLoading" @click="addItemOpen = false">
-                            {{ isRtl ? 'إلغاء' : 'Cancel' }}
+                            {{ addedCount > 0 ? (isRtl ? 'تم' : 'Done') : (isRtl ? 'إلغاء' : 'Cancel') }}
                         </button>
                         <button
                             type="button"
@@ -1797,7 +2201,7 @@ async function submitPayment() {
                             @click="submitAddItem"
                         >
                             <Icon v-if="addItemLoading" name="loader" :size="13" />
-                            <Icon v-else name="check" :size="13" />
+                            <Icon v-else name="plus" :size="13" />
                             {{ isRtl ? 'إضافة' : 'Add' }}
                         </button>
                     </div>
@@ -1840,7 +2244,7 @@ async function submitPayment() {
                                     style="display: grid; grid-template-columns: 1fr 130px 36px; gap: 8px; align-items: center; padding: 8px 12px; background: var(--bg-elev); border: 1px solid var(--line); border-radius: 8px;"
                                 >
                                     <div style="font-size: 13px; font-weight: 500; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ line.name }}</div>
-                                    <input v-model.number="line.qty_base" type="number" step="0.0001" min="0.0001" class="input tnum" style="height: 32px; padding: 0 8px; text-align: end;" />
+                                    <input v-model.number="line.qty_base" type="number" step="any" min="0.0001" class="input tnum" style="height: 32px; padding: 0 8px; text-align: end;" />
                                     <button type="button" class="btn btn-ghost btn-sm btn-icon" style="color: var(--destructive);" @click="removeLine(idx)">
                                         <Icon name="trash-2" :size="13" />
                                     </button>
@@ -1994,6 +2398,64 @@ async function submitPayment() {
         </Transition>
     </Teleport>
 
+    <!-- Reception capture: attach an insurance policy (civil id + insurer/plan/policy) -->
+    <Teleport to="body">
+        <Transition name="fade">
+            <div v-if="attachOpen" class="cd-overlay overlay-enter" @click.self="!attachLoading && (attachOpen = false)">
+                <div class="cd-panel" style="width: min(480px, 100%);">
+                    <div style="padding: 14px 18px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 10px;">
+                        <Icon name="shield-plus" :size="16" :style="{ color: 'var(--primary)' }" />
+                        <strong style="font-size: 14px;">{{ isRtl ? 'إضافة تأمين المريض' : 'Add patient insurance' }}</strong>
+                    </div>
+                    <div style="padding: 16px 18px; display: flex; flex-direction: column; gap: 12px;">
+                        <div>
+                            <div class="eyebrow" style="margin-bottom: 6px;">{{ isRtl ? 'الرقم المدني' : 'Civil ID' }}</div>
+                            <input v-model="attachForm.civil_id" type="text" maxlength="32" class="input tnum" :placeholder="isRtl ? 'رقم البطاقة المدنية' : 'Civil ID card number'" />
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                            <div>
+                                <div class="eyebrow" style="margin-bottom: 6px;">{{ isRtl ? 'شركة التأمين' : 'Insurer' }} <span style="color: var(--destructive);">*</span></div>
+                                <select v-model="attachForm.insurer_id" class="input">
+                                    <option value="">{{ isRtl ? 'اختر…' : 'Select…' }}</option>
+                                    <option v-for="ins in insurerOptions" :key="ins.id" :value="ins.id">{{ ins.name }}</option>
+                                </select>
+                            </div>
+                            <div>
+                                <div class="eyebrow" style="margin-bottom: 6px;">{{ isRtl ? 'الخطة' : 'Plan' }} <span style="color: var(--destructive);">*</span></div>
+                                <select v-model="attachForm.plan_id" class="input" :disabled="!attachForm.insurer_id">
+                                    <option value="">{{ isRtl ? 'اختر…' : 'Select…' }}</option>
+                                    <option v-for="p in planOptionsForInsurer" :key="p.id" :value="p.id">{{ p.name }}</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                            <div>
+                                <div class="eyebrow" style="margin-bottom: 6px;">{{ isRtl ? 'رقم البوليصة' : 'Policy number' }} <span style="color: var(--destructive);">*</span></div>
+                                <input v-model="attachForm.policy_number" type="text" maxlength="100" class="input tnum" />
+                            </div>
+                            <div>
+                                <div class="eyebrow" style="margin-bottom: 6px;">{{ isRtl ? 'رقم العضوية' : 'Member ID' }}</div>
+                                <input v-model="attachForm.member_id" type="text" maxlength="100" class="input tnum" />
+                            </div>
+                        </div>
+                    </div>
+                    <div style="padding: 12px 18px; border-top: 1px solid var(--line); display: flex; justify-content: flex-end; gap: 8px;">
+                        <button type="button" class="btn btn-outline" :disabled="attachLoading" @click="attachOpen = false">{{ isRtl ? 'إلغاء' : 'Cancel' }}</button>
+                        <button
+                            type="button"
+                            class="btn btn-primary"
+                            :disabled="attachLoading || !attachForm.insurer_id || !attachForm.plan_id || !attachForm.policy_number.trim()"
+                            @click="submitAttachInsurance"
+                        >
+                            <Icon :name="attachLoading ? 'loader' : 'check'" :size="13" />
+                            {{ isRtl ? 'حفظ التأمين' : 'Save insurance' }}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </Transition>
+    </Teleport>
+
     <!-- Reception's final-step confirmation: close the visit + booking -->
     <ConfirmDialog
         v-model:open="confirmDischargeOpen"
@@ -2075,6 +2537,17 @@ async function submitPayment() {
     border-bottom: 1px solid var(--primary, var(--line));
     flex-wrap: wrap;
 }
+.vs-cov-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px 10px;
+    background: var(--bg-elev);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+}
+.vs-cov-label { font-size: 10.5px; color: var(--fg-subtle); }
+.vs-cov-val { font-size: 14px; font-weight: 600; }
 .vs-tip-strip {
     display: flex;
     align-items: center;

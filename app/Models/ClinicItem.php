@@ -7,7 +7,11 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ClinicItem extends Model
 {
-    // use \App\Models\Concerns\BelongsToBranchScope;
+    // Clinic isolation: the catalog is owned by the CLINIC (partner) and shared
+    // across that clinic's branches. Non-admins only see their clinic's items
+    // (plus global rows where partner_id is null). Admin/super_admin bypass.
+    // branch_id remains an optional within-clinic branch override.
+    use \App\Models\Concerns\BelongsToPartnerScope;
 
     protected $guarded = [];
 
@@ -16,6 +20,7 @@ class ClinicItem extends Model
         'default_cost' => 'decimal:3',
         'default_price' => 'decimal:3',
         'is_active' => 'boolean',
+        'partner_id' => 'integer',
         'branch_id' => 'integer',
 
         // New fields
@@ -25,9 +30,28 @@ class ClinicItem extends Model
         'is_billable' => 'boolean',
     ];
 
+    /**
+     * Safety net: if a row is saved with a branch but no clinic, derive the
+     * clinic from the branch. Keeps seeders / imports / any code path from
+     * accidentally creating a partner-less ("global, all clinics") catalog row.
+     */
+    protected static function booted(): void
+    {
+        static::saving(function (self $m) {
+            if (empty($m->partner_id) && ! empty($m->branch_id)) {
+                $m->partner_id = Branch::query()->whereKey($m->branch_id)->value('partner_id');
+            }
+        });
+    }
+
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);
+    }
+
+    public function partner(): BelongsTo
+    {
+        return $this->belongsTo(Partner::class);
     }
 
     public function getLocalizedNameAttribute(): string

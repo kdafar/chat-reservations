@@ -13,6 +13,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  */
 class ClinicPromotion extends Model
 {
+    // Branch isolation: non-admins only see promotions for their accessible
+    // branches (plus global rows where branch_id is null). Admin/super_admin bypass.
+    use \App\Models\Concerns\BelongsToBranchScope;
+
     protected $guarded = [];
 
     protected $casts = [

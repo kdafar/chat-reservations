@@ -71,6 +71,23 @@ trait ResolvesAccessibleClinics
     }
 
     /**
+     * The partner (clinic) a newly-created catalog row should belong to.
+     * Prefers the chosen branch's clinic; else the creator's own clinic.
+     * Returns null only for a global admin who picked no branch (= global row).
+     */
+    protected function defaultPartnerId(?int $branchId = null): ?int
+    {
+        if ($branchId) {
+            $pid = DB::table('branches')->where('id', $branchId)->value('partner_id');
+            if ($pid) {
+                return (int) $pid;
+            }
+        }
+        $accessible = $this->accessiblePartnerIds(); // null = global admin
+        return $accessible[0] ?? null;
+    }
+
+    /**
      * Branch {id, name} options scoped to the user (all for a global admin),
      * localized. Use for every branch picker/filter so one clinic's branches
      * never appear in another's forms.

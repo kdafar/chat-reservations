@@ -131,6 +131,7 @@ class LabTestsController extends Controller
             'page' => $page,
             'branches' => $branches,
             'counts' => $counts,
+            'can_edit' => (bool) $request->user()?->can('update_lab_tests'),
         ]);
     }
 

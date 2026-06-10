@@ -24,7 +24,11 @@ class VisitConsoleController extends Controller
     public function show(Request $request, Visit $visit): Response
     {
         abort_unless((bool) $request->user()?->can('view_any_visits'), 403, 'Not authorized to view visits.');
-        $visit->load(['patient', 'doctor', 'branch', 'room', 'visitItems.clinicItem', 'payments', 'visitPackages.package']);
+        // Reflect any promotions created/edited since the last change.
+        if (! $this->visitIsTerminal($visit)) {
+            $this->recomputeTotals($visit);
+        }
+        $visit->load(['patient', 'doctor', 'branch', 'room', 'visitItems.clinicItem', 'payments', 'visitPackages.package.items.clinicItem']);
 
         return Inertia::render('Visit/Console', [
             'visit' => $this->transformVisit($visit),
@@ -40,7 +44,11 @@ class VisitConsoleController extends Controller
     public function showJson(Request $request, Visit $visit): \Illuminate\Http\JsonResponse
     {
         abort_unless((bool) $request->user()?->can('view_any_visits'), 403, 'Not authorized to view visits.');
-        $visit->load(['patient', 'doctor', 'branch', 'room', 'visitItems.clinicItem', 'payments', 'visitPackages.package']);
+        // Reflect any promotions created/edited since the last change.
+        if (! $this->visitIsTerminal($visit)) {
+            $this->recomputeTotals($visit);
+        }
+        $visit->load(['patient', 'doctor', 'branch', 'room', 'visitItems.clinicItem', 'payments', 'visitPackages.package.items.clinicItem']);
 
         return response()->json([
             'ok' => true,
@@ -98,6 +106,7 @@ class VisitConsoleController extends Controller
     {
         abort_unless((bool) $request->user()?->can('view_any_visits'), 403, 'Not authorized to view visits.');
         $q = trim((string) $request->query('q', ''));
+        $partnerId = $visit->branch?->partner_id; // catalog is clinic-owned
 
         $rows = \App\Models\ClinicItem::query()
             ->where('is_active', true)
@@ -107,8 +116,12 @@ class VisitConsoleController extends Controller
                 // Default (add-item flow): billable items only.
                 fn ($w) => $w->where('is_billable', true)
             )
+            // Clinic (partner) ownership + optional within-clinic branch override.
+            ->when($partnerId, fn ($w) => $w->where(function ($w2) use ($partnerId) {
+                $w2->where('partner_id', $partnerId)->orWhereNull('partner_id');
+            }))
             ->when($visit->branch_id, fn ($w) => $w->where(function ($w2) use ($visit) {
-                $w2->where('branch_id', $visit->branch_id)->orWhereNull('branch_id');
+                $w2->whereNull('branch_id')->orWhere('branch_id', $visit->branch_id);
             }))
             ->when(mb_strlen($q) >= 2, fn ($w) => $w->where('name', 'like', '%'.$q.'%'))
             ->orderBy('name')
@@ -135,26 +148,53 @@ class VisitConsoleController extends Controller
         abort_unless((bool) $request->user()?->can('view_any_visits'), 403, 'Not authorized to view visits.');
         $q = trim((string) $request->query('q', ''));
 
+        $partnerId = $visit->branch?->partner_id; // catalog is clinic-owned
+
         $rows = \App\Models\ClinicPackage::query()
             ->where('is_active', true)
+            ->when($partnerId, fn ($w) => $w->where(function ($w2) use ($partnerId) {
+                $w2->where('partner_id', $partnerId)->orWhereNull('partner_id');
+            }))
             ->when($visit->branch_id, fn ($w) => $w->where(function ($w2) use ($visit) {
-                $w2->where('branch_id', $visit->branch_id)->orWhereNull('branch_id');
+                $w2->whereNull('branch_id')->orWhere('branch_id', $visit->branch_id);
             }))
             ->when(mb_strlen($q) >= 2, fn ($w) => $w->where('name', 'like', '%'.$q.'%'))
             ->orderBy('id', 'desc')
             ->limit(60)
             ->with(['items.clinicItem'])
             ->get(['id', 'branch_id', 'name', 'default_price'])
-            ->map(fn ($pkg) => [
+            // Branch isolation: a package's components are resolved through the
+            // (branch-scoped) ClinicItem relation, so a component outside the
+            // user's branch/clinic loads as a null clinicItem. Hide any package
+            // that isn't fully usable here rather than offering an empty/partial
+            // bundle. Admins bypass the item scope, so they still see everything.
+            ->filter(fn ($pkg) => $pkg->items->every(fn ($pi) => $pi->clinicItem !== null))
+            ->values();
+
+        // Advertised-offer pricing: surface any active time-bound promotion on
+        // each package so the picker can show the deal price + an OFFER badge.
+        $promoSvc = app(\App\Services\Clinic\ClinicPromotionService::class);
+        $rows = $rows->map(function ($pkg) use ($promoSvc, $visit) {
+            $price = (float) ($pkg->default_price ?? 0);
+            $perUnit = $promoSvc->discountForPackage($pkg, $price, (int) $visit->branch_id);
+            $promo = $perUnit > 0.0001 ? $promoSvc->bestPackagePromotion($pkg, (int) $visit->branch_id) : null;
+
+            return [
                 'id' => $pkg->id,
                 'name' => $this->resolveName($pkg->name),
-                'price' => (float) ($pkg->default_price ?? 0),
+                'price' => $price,
+                'net_price' => round(max(0, $price - $perUnit), 3),
+                'promo' => $promo ? [
+                    'name' => $this->resolveName($promo->name),
+                    'discount' => round($perUnit, 3),
+                ] : null,
                 'items' => $pkg->items->map(fn ($pi) => [
                     'clinic_item_id' => $pi->clinic_item_id,
                     'name' => $pi->clinicItem ? $this->resolveName($pi->clinicItem->name) : ('#'.$pi->clinic_item_id),
                     'qty_base' => (float) ($pi->qty_base ?? 0),
                 ])->values(),
-            ]);
+            ];
+        });
 
         return response()->json(['packages' => $rows]);
     }
@@ -171,6 +211,16 @@ class VisitConsoleController extends Controller
         }
 
         return (int) (\App\Models\Doctor::query()->where('user_id', $uid)->value('id')) ?: null;
+    }
+
+    /**
+     * Who may add/remove/adjust PACKAGES on a visit: the treating doctor (or
+     * admin) AND reception — packages are billing bundles the front desk also
+     * manages. (Individual clinical items stay doctor/admin via canOperateVisit.)
+     */
+    protected function canManageVisitPackages(Visit $visit): bool
+    {
+        return $this->canOperateVisit($visit) || $this->canCollectPayment($visit);
     }
 
     /**
@@ -362,7 +412,9 @@ class VisitConsoleController extends Controller
      */
     public function addPackage(Request $request, Visit $visit): \Illuminate\Http\JsonResponse
     {
-        if (! $this->canOperateVisit($visit)) {
+        // Packages are billing bundles — reception (and admin) may manage them too,
+        // not only the treating doctor.
+        if (! $this->canManageVisitPackages($visit)) {
             return response()->json(['ok' => false, 'error' => 'You are not authorised to add services to this visit.'], 403);
         }
 
@@ -435,7 +487,7 @@ class VisitConsoleController extends Controller
      */
     public function deletePackage(Request $request, Visit $visit, \App\Models\VisitPackage $package): \Illuminate\Http\JsonResponse
     {
-        if (! $this->canOperateVisit($visit)) {
+        if (! $this->canManageVisitPackages($visit)) {
             return response()->json(['ok' => false, 'error' => 'You are not authorised to remove services from this visit.'], 403);
         }
 
@@ -450,10 +502,27 @@ class VisitConsoleController extends Controller
             return response()->json(['ok' => false, 'error' => 'Package does not belong to this visit.'], 422);
         }
 
+        // Consumables this package contributed to the visit's PENDING stock
+        // request, captured before deletion so we can reverse exactly its share.
+        $removedRequirements = app(\App\Services\Clinic\VisitPackageService::class)
+            ->requirementsForVisitPackage($package);
+
         \Illuminate\Support\Facades\DB::transaction(function () use ($visit, $package) {
             $package->delete();
             $this->recomputeTotals($visit);
         });
+
+        // Reverse the removed package's consumables out of any pending stock
+        // request. If that empties the request it is cancelled ("Package removed
+        // from visit") so it no longer looks actionable on the pharmacy worklist.
+        if ($removedRequirements) {
+            try {
+                app(\App\Services\Clinic\VisitStockRequestService::class)
+                    ->reduceForVisit($visit, $removedRequirements, 'Package removed from visit');
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
 
         return response()->json(['ok' => true]);
     }
@@ -464,7 +533,7 @@ class VisitConsoleController extends Controller
      */
     public function updatePackage(Request $request, Visit $visit, \App\Models\VisitPackage $package): \Illuminate\Http\JsonResponse
     {
-        if (! $this->canOperateVisit($visit) || $this->visitIsTerminal($visit)) {
+        if (! $this->canManageVisitPackages($visit) || $this->visitIsTerminal($visit)) {
             return response()->json(['ok' => false, 'error' => 'This visit can no longer be edited.'], 422);
         }
         if ($package->visit_id !== $visit->id) {
@@ -901,12 +970,22 @@ class VisitConsoleController extends Controller
             ], 422);
         }
 
+        // Methods are admin-configurable per clinic/branch. Validate against the
+        // resolved set (falling back to the manual POS defaults if a clinic has
+        // none configured) instead of a hard-coded enum.
+        $methods = app(\App\Services\Clinic\ClinicPaymentMethodResolver::class)
+            ->forBranch((int) $visit->branch_id, (int) ($visit->branch?->partner_id ?? 0));
+        $allowedKeys = array_values(array_filter(array_column($methods, 'key')));
+        if (empty($allowedKeys)) {
+            $allowedKeys = ['cash', 'card', 'knet', 'transfer', 'insurance'];
+        }
+
         $data = $request->validate([
             'amount' => 'required|numeric|min:0.001',
             // 'insurance' records an insurer-paid portion → posts to the insurance
             // receivable (1110), not bank. The richer per-kind coverage flow is the
             // dedicated insurance claim; this is the simple manual-entry parity.
-            'method' => 'required|in:cash,card,knet,link,transfer,insurance',
+            'method' => ['required', \Illuminate\Validation\Rule::in($allowedKeys)],
             // Canonical kind enum — must match VisitPayment / accounting
             // (ChartOfAccounts::revenueAccountFor) and insurance CoverageCalculator.
             // 'services' = packages, 'medicines' = items/consumables. Using
@@ -914,6 +993,17 @@ class VisitConsoleController extends Controller
             'kind' => 'required|in:consultation,services,medicines,other',
             'reference_no' => 'nullable|string|max:64',
         ]);
+
+        // Card / KNET / transfer / online require a transaction/reference id —
+        // cash doesn't. Enforce server-side per the method's config flag.
+        $chosen = collect($methods)->firstWhere('key', $data['method']);
+        if (($chosen['requires_reference'] ?? false) && trim((string) ($data['reference_no'] ?? '')) === '') {
+            return response()->json([
+                'ok' => false,
+                'error' => 'A transaction / reference number is required for '.($chosen['label'] ?? $data['method']).' payments.',
+                'field' => 'reference_no',
+            ], 422);
+        }
 
         \Illuminate\Support\Facades\DB::transaction(function () use ($visit, $data) {
             VisitPayment::create([
@@ -934,11 +1024,197 @@ class VisitConsoleController extends Controller
     }
 
     /**
+     * Generate a MyFatoorah payment link for this visit's outstanding balance
+     * (or an explicit amount) and return it plus a scannable QR. The actual
+     * VisitPayment is recorded by the callback once MyFatoorah confirms the
+     * charge — never here — so this is safe to call repeatedly.
+     */
+    public function createPaymentLink(Request $request, Visit $visit): \Illuminate\Http\JsonResponse
+    {
+        if (! $this->canCollectPayment($visit)) {
+            return response()->json(['ok' => false, 'error' => 'You are not authorised to collect payments.'], 403);
+        }
+        if (! $this->visitAcceptsPayments($visit)) {
+            return response()->json(['ok' => false, 'error' => 'This visit cannot accept payments right now.'], 422);
+        }
+
+        $data = $request->validate([
+            'amount' => 'nullable|numeric|min:0.001',
+            'kind' => 'nullable|in:consultation,services,medicines,other',
+        ]);
+
+        try {
+            $res = app(\App\Services\Clinic\VisitPaymentLinkService::class)->createForVisit(
+                $visit,
+                isset($data['amount']) ? (float) $data['amount'] : null,
+                $data['kind'] ?? 'other',
+            );
+        } catch (\Throwable $e) {
+            return response()->json(['ok' => false, 'error' => $e->getMessage()], 422);
+        }
+
+        return response()->json(['ok' => true] + $res);
+    }
+
+    /**
+     * Generate a payment link and push it to the patient's WhatsApp number.
+     * Plain session message — works inside the 24h window; outside it Meta
+     * blocks non-template sends and the WA service logs + no-ops (we surface a
+     * soft error so reception can fall back to QR / copy-link).
+     */
+    public function sendPaymentLinkWhatsApp(Request $request, Visit $visit): \Illuminate\Http\JsonResponse
+    {
+        if (! $this->canCollectPayment($visit)) {
+            return response()->json(['ok' => false, 'error' => 'You are not authorised to collect payments.'], 403);
+        }
+        // Same payable-state gate as createPaymentLink — never push a link for a
+        // visit that's closed / not yet checked in.
+        if (! $this->visitAcceptsPayments($visit)) {
+            return response()->json(['ok' => false, 'error' => 'This visit cannot accept payments right now.'], 422);
+        }
+
+        $phone = (string) ($visit->patient?->phone ?? $visit->booking?->msisdn ?? '');
+        if (trim($phone) === '') {
+            return response()->json(['ok' => false, 'error' => 'No phone number on file for this patient.'], 422);
+        }
+
+        $data = $request->validate([
+            'amount' => 'nullable|numeric|min:0.001',
+            'kind' => 'nullable|in:consultation,services,medicines,other',
+        ]);
+
+        try {
+            // Always mint the link server-side for THIS visit — never accept a URL
+            // from the client (which could be arbitrary or a stale/expired link).
+            $res = app(\App\Services\Clinic\VisitPaymentLinkService::class)->createForVisit(
+                $visit,
+                isset($data['amount']) ? (float) $data['amount'] : null,
+                $data['kind'] ?? 'other',
+            );
+            $url = $res['url'];
+            $amount = $res['amount'];
+
+            $name = $visit->patient?->name ?: '';
+            $msg = app()->getLocale() === 'ar'
+                ? trim("مرحباً {$name}، يرجى إتمام الدفع".($amount ? ' بمبلغ '.number_format((float) $amount, 3).' د.ك' : '').' عبر الرابط: '.$url)
+                : trim("Hello {$name}, please complete your payment".($amount ? ' of '.number_format((float) $amount, 3).' KWD' : '').' here: '.$url);
+
+            $sent = app(\App\Wa\Services\WhatsApp\WhatsAppService::class)->sendTextMessage($phone, $msg);
+        } catch (\Throwable $e) {
+            return response()->json(['ok' => false, 'error' => $e->getMessage()], 422);
+        }
+
+        if (! $sent) {
+            return response()->json([
+                'ok' => false,
+                'soft' => true,
+                'error' => 'Could not send on WhatsApp (patient may be outside the 24-hour window). The link is still available to copy or scan.',
+            ], 422);
+        }
+
+        return response()->json(['ok' => true]);
+    }
+
+    /**
      * Insurance coverage estimate for this visit, by kind — what the insurer
      * would pay per consultation/services/medicines. Powers the "Apply
      * insurance" action so reception can record the insurer portions in one go
      * (the heavier full claim lives in the dedicated insurance module).
      */
+    /**
+     * Insurer + plan options for the reception "capture insurance" form, plus
+     * the patient's civil id (if already on file). Lets reception attach a
+     * policy on the spot from the visit modal.
+     */
+    public function insuranceOptions(Request $request, Visit $visit): \Illuminate\Http\JsonResponse
+    {
+        if (! $this->canCollectPayment($visit)) {
+            return response()->json(['ok' => false, 'error' => 'Not authorised.'], 403);
+        }
+
+        $insurers = \App\Models\Insurance\Insurer::query()
+            ->where('is_active', true)
+            ->with(['plans' => fn ($q) => $q->where('is_active', true)->orderBy('name')])
+            ->orderBy('name')
+            ->get(['id', 'name'])
+            ->map(fn ($i) => [
+                'id' => $i->id,
+                'name' => $i->name,
+                'plans' => $i->plans->map(fn ($p) => ['id' => $p->id, 'name' => $p->name])->values(),
+            ])->values();
+
+        return response()->json([
+            'ok' => true,
+            'insurers' => $insurers,
+            'civil_id' => $visit->patient?->civil_id,
+        ]);
+    }
+
+    /**
+     * Reception captures a patient's insurance from the visit modal: civil id +
+     * insurer/plan/policy number → creates a PatientInsurancePolicy (first one
+     * becomes primary) and stores the civil id on the patient. Clears any prior
+     * "skip claim" stamp so the now-insured visit re-prompts for a claim.
+     */
+    public function attachInsurance(Request $request, Visit $visit): \Illuminate\Http\JsonResponse
+    {
+        if (! $this->canCollectPayment($visit)) {
+            return response()->json(['ok' => false, 'error' => 'Not authorised.'], 403);
+        }
+        if (! $visit->patient_id) {
+            return response()->json(['ok' => false, 'error' => 'This visit has no patient on file.'], 422);
+        }
+
+        $data = $request->validate([
+            'civil_id' => 'nullable|string|max:32',
+            // Only ACTIVE insurer/plan rows may be attached — the picker only
+            // shows active ones, but validate it server-side too (stale/crafted).
+            'insurer_id' => ['required', 'integer', \Illuminate\Validation\Rule::exists('insurers', 'id')->where('is_active', true)],
+            'plan_id' => ['required', 'integer', \Illuminate\Validation\Rule::exists('insurance_plans', 'id')->where('is_active', true)],
+            'policy_number' => 'required|string|max:100',
+            'member_id' => 'nullable|string|max:100',
+            'card_number' => 'nullable|string|max:100',
+        ]);
+
+        // Plan must belong to the chosen insurer (defends against a stale/crafted form).
+        $planInsurerId = (int) \App\Models\Insurance\InsurancePlan::whereKey($data['plan_id'])->value('insurer_id');
+        if ($planInsurerId !== (int) $data['insurer_id']) {
+            return response()->json(['ok' => false, 'error' => 'Selected plan does not belong to that insurer.'], 422);
+        }
+
+        \Illuminate\Support\Facades\DB::transaction(function () use ($visit, $data) {
+            $patient = $visit->patient;
+            if (! empty($data['civil_id'])) {
+                $patient->forceFill(['civil_id' => $data['civil_id']])->save();
+            }
+
+            $hasPrimary = \App\Models\Insurance\PatientInsurancePolicy::query()
+                ->where('patient_id', $patient->id)->where('is_primary', true)->exists();
+
+            \App\Models\Insurance\PatientInsurancePolicy::create([
+                'patient_id' => $patient->id,
+                'insurer_id' => $data['insurer_id'],
+                'plan_id' => $data['plan_id'],
+                'policy_number' => $data['policy_number'],
+                'member_id' => $data['member_id'] ?? null,
+                'card_number' => $data['card_number'] ?? null,
+                'status' => 'active',
+                'is_primary' => ! $hasPrimary,
+                'priority' => 1,
+            ]);
+
+            // Re-open the insurance decision for this visit if it was skipped.
+            if (! empty($visit->insurance_claim_skipped_at)) {
+                $visit->forceFill([
+                    'insurance_claim_skipped_at' => null,
+                    'insurance_claim_skip_reason' => null,
+                ])->save();
+            }
+        });
+
+        return response()->json(['ok' => true]);
+    }
+
     public function estimateInsurance(Request $request, Visit $visit): \Illuminate\Http\JsonResponse
     {
         if (! $this->canCollectPayment($visit)) {
@@ -1083,8 +1359,68 @@ class VisitConsoleController extends Controller
      * enabled; otherwise keep items_*_total snapshots consistent so the UI
      * still shows accurate numbers.
      */
+    /**
+     * Refresh auto (promotion) line discounts on the visit from the CURRENTLY
+     * active promotions, so a promotion created/edited after items were added is
+     * reflected accurately. Only touches lines whose discount_source is not
+     * 'manual' (manual discounts are never overwritten). A line that no longer
+     * matches any promotion has its promo discount cleared.
+     */
+    protected function reapplyPromotions(Visit $visit): void
+    {
+        if ($this->visitIsTerminal($visit)) {
+            return;
+        }
+        // Promotions don't stack with a non-stacking coupon — mirror addItem.
+        if ($this->visitHasNonStackingCoupon($visit)) {
+            return;
+        }
+
+        try {
+            $promo = app(\App\Services\Clinic\ClinicPromotionService::class);
+            $branchId = (int) ($visit->branch_id ?? 0);
+
+            foreach ($visit->visitItems()->get() as $vi) {
+                if ($vi->discount_source === 'manual') {
+                    continue;
+                }
+                $item = \App\Models\ClinicItem::query()->find($vi->clinic_item_id);
+                if (! $item) {
+                    continue;
+                }
+                $unit = (float) ($vi->unit_price_snapshot ?? 0);
+                $perUnit = $promo->discountForItem($item, $unit, $branchId);
+                $disc = round(min($perUnit * (float) $vi->qty, (float) $vi->line_price_total), 3);
+                if ((float) ($vi->discount_amount ?? 0) !== $disc || ($disc > 0 && $vi->discount_source !== 'promo')) {
+                    $vi->forceFill(['discount_amount' => $disc, 'discount_source' => $disc > 0 ? 'promo' : null])->save();
+                }
+            }
+
+            foreach ($visit->visitPackages()->get() as $vp) {
+                if ($vp->discount_source === 'manual') {
+                    continue;
+                }
+                $pkg = \App\Models\ClinicPackage::query()->find($vp->clinic_package_id);
+                if (! $pkg) {
+                    continue;
+                }
+                $unit = (float) ($vp->unit_price_snapshot ?? 0);
+                $perUnit = $promo->discountForPackage($pkg, $unit, $branchId);
+                $disc = round(min($perUnit * (float) $vp->qty, (float) $vp->line_total), 3);
+                if ((float) ($vp->discount_amount ?? 0) !== $disc || ($disc > 0 && $vp->discount_source !== 'promo')) {
+                    $vp->forceFill(['discount_amount' => $disc, 'discount_source' => $disc > 0 ? 'promo' : null])->save();
+                }
+            }
+        } catch (\Throwable $e) {
+            report($e); // never block the costing path
+        }
+    }
+
     protected function recomputeTotals(Visit $visit): void
     {
+        // Keep promotion line-discounts current before re-totalling.
+        $this->reapplyPromotions($visit);
+
         try {
             if (config('clinic.visit_financials_enabled', false)) {
                 app(\App\Services\Clinic\VisitCostingService::class)->compute($visit, (int) (auth()->id() ?? 0));
@@ -1599,17 +1935,24 @@ class VisitConsoleController extends Controller
             ], 422);
         }
 
-        // Live balance recompute (don't trust snapshot columns).
-        $feesSum     = (float) \App\Models\VisitCharge::query()->where('visit_id', $visit->id)->sum('line_total');
-        $packagesSum = (float) \App\Models\VisitPackage::query()->where('visit_id', $visit->id)->sum('line_total');
-        $itemsSum    = (float) \App\Models\VisitItem::query()->where('visit_id', $visit->id)->sum('line_price_total');
+        // Live balance recompute (don't trust snapshot columns). MUST mirror
+        // transformVisit()'s net SQL exactly — lines net of each per-line
+        // discount, then the visit-level discount, then payments. Using gross
+        // line totals here would reject a discharge the UI shows as allowed
+        // whenever a package/item carries a line discount or promo.
+        $feesSum     = (float) \App\Models\VisitCharge::query()->where('visit_id', $visit->id)
+            ->selectRaw('COALESCE(SUM(CASE WHEN line_total - discount_amount > 0 THEN line_total - discount_amount ELSE 0 END), 0) as t')->value('t');
+        $packagesSum = (float) \App\Models\VisitPackage::query()->where('visit_id', $visit->id)
+            ->selectRaw('COALESCE(SUM(CASE WHEN line_total - discount_amount > 0 THEN line_total - discount_amount ELSE 0 END), 0) as t')->value('t');
+        $itemsSum    = (float) \App\Models\VisitItem::query()->where('visit_id', $visit->id)
+            ->selectRaw('COALESCE(SUM(CASE WHEN line_price_total - discount_amount > 0 THEN line_price_total - discount_amount ELSE 0 END), 0) as t')->value('t');
         $discount    = (float) ($visit->discount_total ?? 0);
         $paid        = (float) \App\Models\VisitPayment::query()
             ->where('visit_id', $visit->id)
             ->where('status', 'paid')
             ->sum('amount');
 
-        $balance = ($feesSum + $packagesSum + $itemsSum - $discount) - $paid;
+        $balance = round(($feesSum + $packagesSum + $itemsSum - $discount) - $paid, 3);
 
         if ($balance > 0.005) {
             return response()->json([
@@ -1665,6 +2008,112 @@ class VisitConsoleController extends Controller
         }
 
         return response()->json(['ok' => true]);
+    }
+
+    /**
+     * Reception/admin reassigns the visit's doctor from the queue. Branch-safe:
+     * the chosen doctor must be at the visit's branch (the Doctor scope already
+     * limits a non-admin's options to their own clinic). Also re-points the
+     * booking so schedules stay consistent. Not allowed on a closed visit.
+     */
+    public function reassignDoctor(Request $request, Visit $visit): \Illuminate\Http\JsonResponse
+    {
+        if (! $this->canCollectPayment($visit)) {
+            return response()->json(['ok' => false, 'error' => 'Only reception or admin can change the doctor.'], 403);
+        }
+        if ($this->visitIsTerminal($visit) || ! empty($visit->completed_at)) {
+            return response()->json(['ok' => false, 'error' => 'This visit is closed.'], 422);
+        }
+
+        $data = $request->validate([
+            'doctor_id' => 'required|integer|exists:doctors,id',
+            'force' => 'sometimes|boolean',
+        ]);
+
+        // Once the patient is past the waiting room (in_progress / awaiting_stock
+        // / awaiting_payment), the assigned doctor is effectively "who treated
+        // them" — rewriting it skews reports and the doctor's schedule. Allow it
+        // only for an admin who explicitly confirms the override.
+        if ($visit->status !== Visit::STATUS_AWAITING_DOCTOR) {
+            if (! $this->isAdminUser() || ! (bool) ($data['force'] ?? false)) {
+                return response()->json([
+                    'ok' => false,
+                    'error' => 'This visit has already started — only an admin can reassign the doctor, and must confirm the override.',
+                    'requires_force' => $this->isAdminUser(),
+                ], 422);
+            }
+        }
+
+        $doctor = \App\Models\Doctor::query()->find((int) $data['doctor_id']);
+        if (! $doctor) {
+            return response()->json(['ok' => false, 'error' => 'Doctor not found or not in your clinic.'], 422);
+        }
+        if ($visit->branch_id && $doctor->branch_id && (int) $doctor->branch_id !== (int) $visit->branch_id) {
+            return response()->json(['ok' => false, 'error' => "Selected doctor is not at this visit's branch."], 422);
+        }
+
+        \Illuminate\Support\Facades\DB::transaction(function () use ($visit, $doctor) {
+            $visit->forceFill(['doctor_id' => $doctor->id, 'updated_by_user_id' => auth()->id()])->save();
+            if ($visit->booking_id) {
+                \App\Models\Booking::query()->where('id', $visit->booking_id)->update(['doctor_id' => $doctor->id]);
+            }
+        });
+
+        return response()->json(['ok' => true, 'doctor' => ['id' => $doctor->id, 'name' => $doctor->name]]);
+    }
+
+    /**
+     * Create a hub → this-branch stock transfer for the visit's short
+     * consumables (the items it's awaiting that the branch can't cover). Once a
+     * dispatcher dispatches the transfer, the branch has stock and the visit's
+     * pending stock request can be fulfilled.
+     */
+    public function sourceFromHub(Request $request, Visit $visit): \Illuminate\Http\JsonResponse
+    {
+        if (! $this->canManageVisitPackages($visit)) {
+            return response()->json(['ok' => false, 'error' => 'Not authorised.'], 403);
+        }
+
+        $partnerId = (int) ($visit->branch?->partner_id ?? 0);
+        $svc = app(\App\Services\Clinic\StockTransferService::class);
+        $hub = $svc->hubBranchId($partnerId ?: null);
+        $branchId = (int) ($visit->branch_id ?? 0);
+
+        if (! $hub) {
+            return response()->json(['ok' => false, 'error' => 'No hub is set for this clinic.'], 422);
+        }
+        if ($hub === $branchId) {
+            return response()->json(['ok' => false, 'error' => 'This visit is at the hub branch.'], 422);
+        }
+
+        $pendingReq = \App\Models\VisitStockRequest::query()
+            ->where('visit_id', $visit->id)
+            ->where('status', \App\Models\VisitStockRequest::STATUS_PENDING)
+            ->with('lines')->first();
+        if (! $pendingReq) {
+            return response()->json(['ok' => false, 'error' => 'Nothing is awaiting stock on this visit.'], 422);
+        }
+
+        $lines = [];
+        foreach ($pendingReq->lines as $ln) {
+            $onHand = (float) \App\Models\ClinicItemStock::query()
+                ->where('branch_id', $branchId)->where('clinic_item_id', $ln->clinic_item_id)->value('qty_on_hand_base');
+            $short = max(0, (float) $ln->qty_base - $onHand);
+            if ($short > 0) {
+                $lines[] = ['clinic_item_id' => (int) $ln->clinic_item_id, 'qty_base' => $short];
+            }
+        }
+        if (! $lines) {
+            return response()->json(['ok' => false, 'error' => 'Nothing is short at this branch.'], 422);
+        }
+
+        try {
+            $transfer = $svc->create($partnerId, $hub, $branchId, $lines, (int) (auth()->id() ?? 0), $visit->id, 'Sourced for visit #'.$visit->id);
+        } catch (\Throwable $e) {
+            return response()->json(['ok' => false, 'error' => $e->getMessage()], 422);
+        }
+
+        return response()->json(['ok' => true, 'transfer_id' => $transfer->id, 'lines' => count($lines)]);
     }
 
     protected function transformVisit(Visit $v): array
@@ -1750,6 +2199,40 @@ class VisitConsoleController extends Controller
             ];
         })->values();
 
+        // ── Pending consumables the visit is awaiting (from packages/services) ──
+        // When a package/service is added and stock is short, its bill-of-materials
+        // consumables go onto a pending stock request (not onto the visit as items).
+        // Surface those lines + their per-branch stock state so the UI can show
+        // "what's awaiting" and the Request-stock modal can pre-fill them.
+        $pendingStock = [];
+        $pendingReq = $v->relationLoaded('pendingStockRequest')
+            ? $v->pendingStockRequest
+            : \App\Models\VisitStockRequest::query()
+                ->where('visit_id', $v->id)
+                ->where('status', \App\Models\VisitStockRequest::STATUS_PENDING)
+                ->with('lines.clinicItem')
+                ->first();
+        if ($pendingReq) {
+            $pendingReq->loadMissing('lines.clinicItem');
+            $reqItemIds = $pendingReq->lines->pluck('clinic_item_id')->filter()->unique()->all();
+            $reqStock = ($branchId > 0 && $reqItemIds)
+                ? \App\Models\ClinicItemStock::query()->where('branch_id', $branchId)
+                    ->whereIn('clinic_item_id', $reqItemIds)->pluck('qty_on_hand_base', 'clinic_item_id')->all()
+                : [];
+            foreach ($pendingReq->lines as $ln) {
+                $cid = (int) $ln->clinic_item_id;
+                $need = (float) ($ln->qty_base ?? 0);
+                $onHand = (float) ($reqStock[$cid] ?? 0);
+                $pendingStock[] = [
+                    'clinic_item_id' => $cid,
+                    'name' => $ln->clinicItem ? $this->resolveName($ln->clinicItem->name) : ('#'.$cid),
+                    'qty' => $need,
+                    'qty_on_hand' => $onHand,
+                    'qty_short' => round(max(0, $need - $onHand), 4),
+                ];
+            }
+        }
+
         $packages = $v->visitPackages->map(fn ($vp) => [
             'id' => $vp->id,
             'package_id' => $vp->clinic_package_id,
@@ -1760,6 +2243,11 @@ class VisitConsoleController extends Controller
             'discount_amount' => (float) ($vp->discount_amount ?? 0),
             'discount_source' => $vp->discount_source,
             'net_total' => max(0, (float) ($vp->line_total ?? 0) - (float) ($vp->discount_amount ?? 0)),
+            // What this bundle includes (read-only) so the line isn't opaque.
+            'contents' => $vp->package?->items->map(fn ($pi) => [
+                'name' => $pi->clinicItem ? $this->resolveName($pi->clinicItem->name) : ('#'.$pi->clinic_item_id),
+                'qty' => (float) ($pi->qty_base ?? 0),
+            ])->values() ?? [],
         ])->values();
 
         $payments = $v->payments->map(fn ($p) => [
@@ -1894,6 +2382,8 @@ class VisitConsoleController extends Controller
             // where qty_on_hand < qty needed). Used by VisitSheet to show
             // a one-click "Request missing stock" smart button.
             'stock_shortages' => array_values($stockShortages),
+            // Consumables the visit is awaiting from its packages/services.
+            'pending_stock' => $pendingStock,
 
             // Insurance decision state — drives the discharge gate.
             'insurance' => $this->insurancePayloadFor($v),
@@ -1904,6 +2394,7 @@ class VisitConsoleController extends Controller
                 'can_operate' => $canOperate,
                 'can_edit_clinical' => $canOperate && $acceptsClinical,
                 'can_manage_items' => $canOperate && $acceptsClinical,
+                'can_manage_packages' => ($canOperate || $canCollect) && $acceptsClinical,
                 'can_record_payment' => $canCollect && $acceptsPayments,
                 'can_start' => $canOperate
                     && in_array($v->status, [Visit::STATUS_AWAITING_DOCTOR, Visit::STATUS_AWAITING_STOCK], true)
@@ -1929,6 +2420,15 @@ class VisitConsoleController extends Controller
                 'is_doctor' => $this->isDoctorUser(),
                 'is_checked_in' => $isCheckedIn,
             ],
+            // Admin-configured payment methods for this branch's clinic, plus
+            // whether an online (MyFatoorah) link can be generated. Drives the
+            // payment modal's method picker + the "payment link / QR" action.
+            'payment_methods' => app(\App\Services\Clinic\ClinicPaymentMethodResolver::class)
+                ->forBranch((int) $v->branch_id, (int) ($v->branch?->partner_id ?? 0)),
+            'online_payment_available' => (bool) \App\Models\GatewayAccount::bestForBranch(
+                (int) $v->branch_id,
+                (int) ($v->branch?->partner_id ?? 0) ?: null,
+            ),
             // Last 5 visits for the same patient (excludes this one) — used
             // by VisitSheet's History tab to give the doctor quick context.
             'recent_visits' => $this->recentVisitsFor($v),

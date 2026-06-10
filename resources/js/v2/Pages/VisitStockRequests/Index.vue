@@ -24,6 +24,7 @@ const t = computed(() => isRtl.value ? {
     visit: 'الزيارة', branch: 'الفرع', by: 'بواسطة', items: 'الأصناف',
     available: 'متوفر', short: 'ناقص!', ok: 'متوفر',
     empty: 'لا توجد طلبات', emptyDesc: 'لا توجد طلبات بهذه الحالة.',
+    packageRemoved: 'أُزيلت الباقة', nothingToDo: 'لا إجراء مطلوب',
     fulfill: 'صرف', cancel: 'إلغاء', open: 'فتح الزيارة',
     fulfillModal: { title: 'صرف الطلب', notes: 'ملاحظات الصرف', resume: 'استئناف حالة الزيارة',
         awaiting: 'بانتظار الطبيب', inProgress: 'قيد التنفيذ', resumeHelp: 'إلى أي حالة تعود الزيارة بعد الصرف؟',
@@ -36,6 +37,7 @@ const t = computed(() => isRtl.value ? {
     visit: 'Visit', branch: 'Branch', by: 'by', items: 'Items',
     available: 'avail', short: 'short!', ok: 'ok',
     empty: 'No requests', emptyDesc: 'No requests with this status.',
+    packageRemoved: 'Package removed', nothingToDo: 'Nothing to do',
     fulfill: 'Fulfil', cancel: 'Cancel', open: 'Open visit',
     fulfillModal: { title: 'Fulfil request', notes: 'Fulfilment notes', resume: 'Resume visit status',
         awaiting: 'Awaiting doctor', inProgress: 'In progress', resumeHelp: 'Which status should the visit return to after issuing stock?',
@@ -83,6 +85,13 @@ const resumeStatusItems = computed(() => [
 ])
 
 const fmt = (n) => Number(n ?? 0).toLocaleString(undefined, { maximumFractionDigits: 4 })
+
+// A request auto-cancelled because its package was removed from the visit:
+// it's already non-actionable (status !== pending hides fulfil/cancel) but we
+// flag it distinctly so the dispenser knows there's nothing to do on it.
+const isPackageRemoved = (row) => row.status === 'cancelled'
+    && typeof row.notes === 'string'
+    && row.notes.includes('Package removed from visit')
 </script>
 
 <template>
@@ -116,8 +125,10 @@ const fmt = (n) => Number(n ?? 0).toLocaleString(undefined, { maximumFractionDig
             <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin-bottom:10px;">
                 <div>
                     <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                        <span v-if="row.patient_name" style="font-size:14px; font-weight:600; color:var(--fg);">{{ row.patient_name }}</span>
                         <Link :href="route('v2.visits.show', { visit: row.visit_id })" class="badge-visit mono">{{ row.visit_code }}</Link>
                         <span :class="['badge-status', 'st-' + row.status]">{{ t.status[row.status] }}</span>
+                        <span v-if="isPackageRemoved(row)" class="badge-removed" :title="t.nothingToDo"><Icon name="archive" :size="11" style="vertical-align:-1px;" /> {{ t.packageRemoved }}</span>
                         <span v-if="row.any_short && row.status === 'pending'" class="badge-short"><Icon name="alert-triangle" :size="11" style="vertical-align:-1px;" /> {{ t.short }}</span>
                     </div>
                     <div style="font-size:12px; color:var(--fg-faint); margin-top:4px;">
@@ -200,6 +211,7 @@ const fmt = (n) => Number(n ?? 0).toLocaleString(undefined, { maximumFractionDig
 .st-fulfilled { color:var(--ok); border-color:var(--ok); }
 .st-cancelled { color:var(--err, #dc2626); border-color:var(--err, #dc2626); }
 .badge-short { font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px; color:var(--err, #dc2626); background:rgba(220,38,38,0.08); }
+.badge-removed { font-size:10.5px; font-weight:600; padding:2px 8px; border-radius:999px; color:var(--fg-faint); background:var(--bg-hover); border:1px solid var(--line); }
 .lines { display:flex; flex-direction:column; gap:4px; border-top:1px solid var(--line); padding-top:10px; }
 .line { display:flex; align-items:center; gap:8px; font-size:13px; padding:3px 0; }
 .line.is-short { color:var(--err, #dc2626); }

@@ -47,6 +47,16 @@ const t = computed(() => isRtl.value
         errorTitle: 'تعذر تسجيل الوصول',
         consultationFee: 'رسوم استشارة', kwd: 'د.ك', loading: 'جار التحميل…',
         close: 'إغلاق',
+        idTitle: 'تأكيد هوية المريض',
+        idBody1: 'هذا الرقم مطابق لمريض موجود',
+        idBody2: 'هل هذا نفس الشخص؟',
+        idConfirm: 'نعم، نفس الشخص',
+        idNewPerson: 'لا، شخص جديد',
+        idNewHint: 'سيتم إنشاء مريض جديد باسم',
+        idResolving: 'جار المعالجة…',
+        idConfirmed: 'تم تأكيد الهوية',
+        idSplit: 'تم إنشاء مريض جديد',
+        idError: 'تعذرت معالجة الهوية',
     }
     : {
         eyebrow: 'Reception', title: 'Check-in patient',
@@ -66,6 +76,16 @@ const t = computed(() => isRtl.value
         errorTitle: 'Check-in failed',
         consultationFee: 'Consultation fee', kwd: 'KWD', loading: 'Loading…',
         close: 'Close',
+        idTitle: 'Confirm patient identity',
+        idBody1: 'This phone matches existing patient',
+        idBody2: 'Is this the same person?',
+        idConfirm: 'Yes, same person',
+        idNewPerson: 'No, it’s a new person',
+        idNewHint: 'A new patient will be created as',
+        idResolving: 'Working…',
+        idConfirmed: 'Identity confirmed',
+        idSplit: 'New patient created',
+        idError: 'Could not resolve identity',
     }
 )
 
@@ -87,6 +107,12 @@ const doctorRoomName = ref(null)
 const doctorRoomBusy = ref(false)
 const checkingIn = ref(false)
 const success = ref(null)
+const resolvingId = ref(false)
+
+// Phase 3 — identity review: the booking's phone matched an existing patient
+// under a different name. Reception must confirm (same person) or split
+// (new person) before the prompt clears.
+const identityReview = computed(() => booking.value?.identity_review ?? null)
 
 function reset() {
     step.value = 1
@@ -273,6 +299,34 @@ async function doCheckin() {
     }
 }
 
+// ─── Identity review (Phase 3) ─────────────────────────────────────────────
+async function resolveIdentity(action) {
+    // action: 'confirm-identity' (same person) | 'split-patient' (new person)
+    if (resolvingId.value || !booking.value) return
+    resolvingId.value = true
+    try {
+        const resp = await fetch(`/admin/v2/api/checkin/bookings/${booking.value.id}/${action}`, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf(), Accept: 'application/json' },
+        })
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}))
+            pushToast({ kind: 'warning', icon: 'alert-triangle', title: t.value.idError, desc: err.error || err.message || 'Failed' })
+            return
+        }
+        const data = await resp.json()
+        booking.value = data.booking
+        pushToast({
+            kind: 'success', icon: 'check',
+            title: action === 'split-patient' ? t.value.idSplit : t.value.idConfirmed,
+            desc: booking.value.patient?.name,
+        })
+    } finally {
+        resolvingId.value = false
+    }
+}
+
 function startOver() {
     // If we were opened pre-loaded for a specific booking, "back" means
     // close the modal — there's no search list to return to.
@@ -361,6 +415,50 @@ function fmtMoney(n) { return (Number(n) || 0).toFixed(3) }
                                 <button type="button" class="btn btn-ghost" @click="open = false">
                                     {{ t.close }}
                                 </button>
+                            </div>
+                        </div>
+
+                        <!-- IDENTITY REVIEW (Phase 3): phone matched an existing
+                             patient under a different name. Block-style prompt
+                             shown above the step content once a booking is loaded. -->
+                        <div
+                            v-else-if="identityReview && step !== 1"
+                            class="ci-id-review"
+                        >
+                            <div style="display: flex; align-items: flex-start; gap: 12px;">
+                                <span class="ci-id-icon"><Icon name="user-search" :size="18" /></span>
+                                <div style="flex: 1; min-width: 0;">
+                                    <div style="font-weight: 600; font-size: 14px;">{{ t.idTitle }}</div>
+                                    <div style="font-size: 13px; color: var(--fg-muted); margin-top: 4px;">
+                                        {{ t.idBody1 }}
+                                        <strong style="color: var(--fg); font-weight: 600;">{{ identityReview.matched_patient_name }}</strong>
+                                        <template v-if="identityReview.phone"> · <span class="tnum">{{ identityReview.phone }}</span></template>
+                                    </div>
+                                    <div style="font-size: 13px; color: var(--fg); margin-top: 8px; font-weight: 500;">{{ t.idBody2 }}</div>
+                                    <div style="font-size: 12px; color: var(--fg-subtle); margin-top: 4px;">
+                                        {{ t.idNewHint }} <strong style="color: var(--fg);">{{ identityReview.proposed_name }}</strong>
+                                    </div>
+                                    <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px;">
+                                        <button
+                                            type="button"
+                                            class="btn btn-primary"
+                                            :disabled="resolvingId"
+                                            @click="resolveIdentity('confirm-identity')"
+                                        >
+                                            <Icon :name="resolvingId ? 'loader' : 'user-check'" :size="14" />
+                                            {{ resolvingId ? t.idResolving : t.idConfirm }}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            class="btn btn-outline"
+                                            :disabled="resolvingId"
+                                            @click="resolveIdentity('split-patient')"
+                                        >
+                                            <Icon name="user-plus" :size="14" />
+                                            {{ t.idNewPerson }}
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
@@ -673,5 +771,18 @@ function fmtMoney(n) { return (Number(n) || 0).toFixed(3) }
 .ci-room.is-doctor-room:not(.is-active) {
     border-color: var(--primary);
     border-style: dashed;
+}
+.ci-id-review {
+    padding: 16px;
+    border: 1px solid var(--warning, var(--line));
+    border-radius: 12px;
+    background: var(--warning-soft, var(--bg-sunken));
+}
+.ci-id-icon {
+    width: 36px; height: 36px; border-radius: 10px;
+    background: var(--warning, var(--primary-soft));
+    color: var(--warning-fg, #fff);
+    display: inline-flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
 }
 </style>

@@ -31,6 +31,9 @@ class InpatientReportsController extends Controller
             'occupancy_trend' => Inertia::defer(fn () => $this->occupancyTrend($tz), 'inpatient'),
             'admissions_by_ward' => Inertia::defer(fn () => $this->admissionsByWard(), 'inpatient'),
             'revenue_per_ward' => Inertia::defer(fn () => $this->revenuePerWard($monthStart), 'inpatient'),
+            'discharge_outcomes' => Inertia::defer(fn () => $this->dischargeOutcomes($monthStart), 'inpatient'),
+            'los_distribution' => Inertia::defer(fn () => $this->losDistribution($monthStart), 'inpatient'),
+            'readmission' => Inertia::defer(fn () => $this->readmission($tz), 'inpatient'),
         ]);
     }
 
@@ -50,13 +53,64 @@ class InpatientReportsController extends Controller
             $alos = $sum / $discharges->count();
         }
 
+        // Previous month, for comparison.
+        $prevStart = (clone $monthStart)->subMonthNoOverflow();
+        $prevEnd = (clone $monthStart)->subSecond();
+        $admissionsMonth = (int) DB::table('admissions')->where('admitted_at', '>=', $monthStart)->count();
+        $admissionsPrev = (int) DB::table('admissions')->whereBetween('admitted_at', [$prevStart, $prevEnd])->count();
+        $bedRevMonth = round((float) DB::table('admission_charges')
+            ->where('source', 'bed_day')->where('charge_date', '>=', $monthStart->toDateString())->sum('amount'), 3);
+        $bedRevPrev = round((float) DB::table('admission_charges')
+            ->where('source', 'bed_day')->whereBetween('charge_date', [$prevStart->toDateString(), $prevEnd->toDateString()])->sum('amount'), 3);
+        $pct = fn ($c, $p) => $p > 0 ? round((($c - $p) / $p) * 100, 1) : null;
+
         return [
             'alos' => round($alos, 1),
             'alos_count' => $discharges->count(),
-            'admissions_month' => (int) DB::table('admissions')->where('admitted_at', '>=', $monthStart)->count(),
-            'bed_revenue_month' => round((float) DB::table('admission_charges')
-                ->where('source', 'bed_day')->where('charge_date', '>=', $monthStart->toDateString())->sum('amount'), 3),
+            'admissions_month' => $admissionsMonth,
+            'admissions_change' => $pct($admissionsMonth, $admissionsPrev),
+            'bed_revenue_month' => $bedRevMonth,
+            'bed_revenue_change' => $pct($bedRevMonth, $bedRevPrev),
             'active_now' => (int) DB::table('admissions')->where('status', 'active')->count(),
+        ];
+    }
+
+    /** Discharge outcomes (discharged / LAMA / transferred / expired) this month. */
+    protected function dischargeOutcomes(Carbon $monthStart): array
+    {
+        return DB::table('admissions')->whereNotNull('discharged_at')->where('discharged_at', '>=', $monthStart)
+            ->groupBy('status')->selectRaw('status, COUNT(*) as c')->get()
+            ->map(fn ($r) => ['status' => (string) ($r->status ?: 'discharged'), 'count' => (int) $r->c])->all();
+    }
+
+    /** Length-of-stay distribution for discharges this month. */
+    protected function losDistribution(Carbon $monthStart): array
+    {
+        $rows = DB::table('admissions')->whereNotNull('discharged_at')->where('discharged_at', '>=', $monthStart)
+            ->get(['admitted_at', 'discharged_at']);
+        $buckets = ['0–3' => 0, '4–7' => 0, '8–14' => 0, '15+' => 0];
+        foreach ($rows as $r) {
+            $d = Carbon::parse($r->admitted_at)->floatDiffInDays(Carbon::parse($r->discharged_at));
+            if ($d <= 3) $buckets['0–3']++;
+            elseif ($d <= 7) $buckets['4–7']++;
+            elseif ($d <= 14) $buckets['8–14']++;
+            else $buckets['15+']++;
+        }
+        return array_map(fn ($label, $count) => ['label' => $label, 'count' => $count], array_keys($buckets), array_values($buckets));
+    }
+
+    /** 30-day readmission rate over the last 90 days of activity. */
+    protected function readmission(string $tz): array
+    {
+        $since = Carbon::now($tz)->subDays(90);
+        $counts = DB::table('admissions')->where('admitted_at', '>=', $since)->whereNotNull('patient_id')
+            ->groupBy('patient_id')->selectRaw('patient_id, COUNT(*) as c')->get();
+        $patients = $counts->count();
+        $readmitted = $counts->where('c', '>', 1)->count();
+        return [
+            'rate' => $patients > 0 ? round(($readmitted / $patients) * 100, 1) : 0,
+            'readmitted' => $readmitted,
+            'patients' => $patients,
         ];
     }
 

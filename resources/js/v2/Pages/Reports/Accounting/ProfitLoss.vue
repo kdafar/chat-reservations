@@ -14,12 +14,12 @@ const locale = computed(() => pageProps.props.locale ?? 'en')
 const isRtl = computed(() => locale.value === 'ar')
 
 const t = computed(() => isRtl.value ? {
-    title: 'قائمة الدخل', eyebrow: 'تقارير المحاسبة', from: 'من', to: 'إلى', print: 'طباعة',
+    title: 'قائمة الدخل', eyebrow: 'تقارير المحاسبة', desc: 'الإيرادات والتكاليف والمصروفات وصافي الربح للفترة.', from: 'من', to: 'إلى', print: 'طباعة',
     revenue: 'الإيرادات', contraRevenue: 'خصومات الإيراد', netRevenue: 'صافي الإيراد',
     cogs: 'تكلفة البضاعة المباعة', grossProfit: 'مجمل الربح', expenses: 'المصروفات', netProfit: 'صافي الربح',
     empty: 'لا يوجد',
 } : {
-    title: 'Profit & Loss', eyebrow: 'Accounting Reports', from: 'From', to: 'To', print: 'Print',
+    title: 'Profit & Loss', eyebrow: 'Accounting Reports', desc: 'Revenue, cost of goods, expenses, and net profit for the period.', from: 'From', to: 'To', print: 'Print',
     revenue: 'Revenue', contraRevenue: 'Revenue contra', netRevenue: 'Net revenue',
     cogs: 'Cost of goods sold', grossProfit: 'Gross profit', expenses: 'Operating expenses', netProfit: 'Net profit',
     empty: 'None',
@@ -36,11 +36,12 @@ const amount = (r) => r.is_parent ? r.rollup : r.own
 <template>
     <Head :title="t.title" />
         <PrintHeader :title="t.title" />
-    <div style="padding:24px; max-width:860px; margin:0 auto;">
-        <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:16px;">
+    <div style="padding:24px 28px; max-width:860px; margin:0 auto;">
+        <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin-bottom:20px; flex-wrap:wrap;">
             <div>
                 <div class="eyebrow">{{ t.eyebrow }}</div>
-                <h1 style="margin:4px 0 0; font-size:22px; font-weight:700; color:var(--fg);">{{ t.title }}</h1>
+                <h1 style="margin:6px 0 4px; font-size:26px; font-weight:500; letter-spacing:-0.02em;">{{ t.title }}</h1>
+                <p style="margin:0; font-size:13.5px; color:var(--fg-muted);">{{ t.desc }}</p>
             </div>
             <button class="btn btn-ghost no-print" onclick="window.print()"><Icon name="printer" :size="14" /><span>{{ t.print }}</span></button>
         </div>
@@ -109,8 +110,8 @@ const amount = (r) => r.is_parent ? r.rollup : r.own
 .pl td:last-child { text-align:end; white-space:nowrap; }
 .pl .code { color:var(--fg-faint); font-size:11px; margin-inline-end:6px; }
 .pl .num { font-variant-numeric:tabular-nums; }
-.pl .neg { color:var(--err, #dc2626); }
-.pl .pos { color:var(--ok); }
+.pl .neg { color:var(--destructive); }
+.pl .pos { color:var(--success); }
 .pl .muted { color:var(--fg-faint); font-style:italic; }
 .pl tr.parent td { font-weight:600; }
 .pl tr.sec td { font-size:11px; text-transform:uppercase; letter-spacing:0.05em; color:var(--fg-faint); font-weight:700; padding-top:16px; border-bottom:1px solid var(--line); }

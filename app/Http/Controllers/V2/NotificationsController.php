@@ -229,6 +229,7 @@ class NotificationsController extends Controller
             '#^/admin/clinic-item-stocks?(?:/\d+(?:/edit)?)?$#'  => '/admin/v2/clinic-stock',
             '#^/admin/visit-stock-requests(?:/\d+(?:/edit)?)?$#' => '/admin/v2/visit-stock-requests',
             '#^/admin/bookings/?$#'                              => '/admin/v2/bookings',
+            '#^/admin/waiting-patients/?$#'                      => '/admin/v2/waiting-patients',
         ];
         foreach ($indexRules as $pattern => $replacement) {
             if (preg_match($pattern, $path)) {

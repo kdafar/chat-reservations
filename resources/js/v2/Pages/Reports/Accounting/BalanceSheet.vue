@@ -14,13 +14,13 @@ const locale = computed(() => pageProps.props.locale ?? 'en')
 const isRtl = computed(() => locale.value === 'ar')
 
 const t = computed(() => isRtl.value ? {
-    title: 'الميزانية العمومية', eyebrow: 'تقارير المحاسبة', asOf: 'كما في', print: 'طباعة',
+    title: 'الميزانية العمومية', eyebrow: 'تقارير المحاسبة', desc: 'الأصول والخصوم وحقوق الملكية كما في تاريخ محدد.', asOf: 'كما في', print: 'طباعة',
     assets: 'الأصول', lessContra: 'ناقص: مجمع الإهلاك', totalAssets: 'إجمالي الأصول',
     liabilities: 'الخصوم', equity: 'حقوق الملكية', retained: 'أرباح محتجزة (الفترة)', totalLiab: 'إجمالي الخصوم',
     totalEquity: 'إجمالي حقوق الملكية', totalLE: 'إجمالي الخصوم وحقوق الملكية',
     balanced: 'متوازنة', unbalanced: 'غير متوازنة', empty: 'لا يوجد',
 } : {
-    title: 'Balance Sheet', eyebrow: 'Accounting Reports', asOf: 'As of', print: 'Print',
+    title: 'Balance Sheet', eyebrow: 'Accounting Reports', desc: 'Assets, liabilities, and equity as of a chosen date.', asOf: 'As of', print: 'Print',
     assets: 'Assets', lessContra: 'Less: accumulated depreciation', totalAssets: 'Total assets',
     liabilities: 'Liabilities', equity: 'Equity', retained: 'Retained earnings (period)', totalLiab: 'Total liabilities',
     totalEquity: 'Total equity', totalLE: 'Total liabilities & equity',
@@ -38,11 +38,12 @@ const amount = (r) => r.is_parent ? r.rollup : r.own
 <template>
     <Head :title="t.title" />
         <PrintHeader :title="t.title" />
-    <div style="padding:24px; max-width:1080px; margin:0 auto;">
-        <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:16px;">
+    <div style="padding:24px 28px; max-width:1080px; margin:0 auto;">
+        <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin-bottom:20px; flex-wrap:wrap;">
             <div>
                 <div class="eyebrow">{{ t.eyebrow }}</div>
-                <h1 style="margin:4px 0 0; font-size:22px; font-weight:700; color:var(--fg);">{{ t.title }}</h1>
+                <h1 style="margin:6px 0 4px; font-size:26px; font-weight:500; letter-spacing:-0.02em;">{{ t.title }}</h1>
+                <p style="margin:0; font-size:13.5px; color:var(--fg-muted);">{{ t.desc }}</p>
             </div>
             <button class="btn btn-ghost no-print" onclick="window.print()"><Icon name="printer" :size="14" /><span>{{ t.print }}</span></button>
         </div>
@@ -125,13 +126,13 @@ const amount = (r) => r.is_parent ? r.rollup : r.own
 .bs td { padding:7px 16px; }
 .bs .num { text-align:end; white-space:nowrap; font-variant-numeric:tabular-nums; }
 .bs .code { color:var(--fg-faint); font-size:11px; margin-inline-end:6px; }
-.bs .neg { color:var(--err, #dc2626); }
+.bs .neg { color:var(--destructive); }
 .bs .muted { color:var(--fg-faint); font-style:italic; }
 .bs tr.parent td { font-weight:600; }
 .bs tr.sec td { font-size:11px; text-transform:uppercase; letter-spacing:0.05em; color:var(--fg-faint); font-weight:700; padding-top:14px; border-bottom:1px solid var(--line); }
 .bs tr.sec.sub td { padding-top:10px; }
 .bs tr.total td { font-weight:700; border-top:2px solid var(--line); }
 .bs tr.total.sub td { font-weight:600; border-top:1px solid var(--line); background:var(--bg-hover); }
-.badge-ok { display:inline-flex; align-items:center; gap:5px; padding:4px 12px; font-size:12px; font-weight:600; border:1px solid var(--ok); color:var(--ok); border-radius:999px; }
-.badge-err { display:inline-flex; align-items:center; gap:5px; padding:4px 12px; font-size:12px; font-weight:600; border:1px solid var(--err, #dc2626); color:var(--err, #dc2626); border-radius:999px; }
+.badge-ok { display:inline-flex; align-items:center; gap:5px; padding:4px 12px; font-size:12px; font-weight:600; border:1px solid var(--success); color:var(--success); border-radius:999px; }
+.badge-err { display:inline-flex; align-items:center; gap:5px; padding:4px 12px; font-size:12px; font-weight:600; border:1px solid var(--destructive); color:var(--destructive); border-radius:999px; }
 </style>

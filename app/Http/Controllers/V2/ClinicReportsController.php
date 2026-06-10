@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\V2;
 
 use App\Http\Controllers\Controller;
+use App\Support\ResolvesAccessibleClinics;
 use App\Models\Branch;
 use App\Models\Doctor;
 use App\Models\DoctorCompensationLedger;
@@ -20,6 +21,8 @@ use Inertia\Response;
  */
 class ClinicReportsController extends Controller
 {
+    use ResolvesAccessibleClinics;
+
     public function index(Request $request): Response
     {
         if (! $request->user() || ! $request->user()->can('view_clinic_reports')) {
@@ -36,27 +39,128 @@ class ClinicReportsController extends Controller
         $from = Carbon::parse($filters['from'], $tz)->startOfDay();
         $to = Carbon::parse($filters['to'], $tz)->endOfDay();
 
+        // Previous window of equal length, immediately before, for comparisons.
+        $spanDays = $from->copy()->startOfDay()->diffInDays($to->copy()->startOfDay()) + 1;
+        $prevTo = $from->copy()->subDay()->endOfDay();
+        $prevFrom = $prevTo->copy()->subDays($spanDays - 1)->startOfDay();
+
         // Heavy aggregation built lazily + memoised, then streamed via deferred
         // props (one follow-up request via the shared 'reports' group) so the
         // page shell + filters render instantly.
-        $payload = function () use ($filters, $from, $to) {
+        $payload = function () use ($filters, $from, $to, $prevFrom, $prevTo) {
             $visits = Visit::query()
                 ->whereBetween('computed_at', [$from, $to])
                 ->when($filters['branch_id'], fn ($q) => $q->where('branch_id', $filters['branch_id']))
                 ->when($filters['doctor_id'], fn ($q) => $q->where('doctor_id', $filters['doctor_id']));
 
-            $overview = (clone $visits)->selectRaw('
-                COUNT(*) as visits_count,
-                SUM(COALESCE(fees_total,0)) as fees_total,
-                SUM(COALESCE(items_cost_total,0)) as items_cost_total,
-                SUM(COALESCE(profit_total,0)) as profit_total
-            ')->first();
+            // Window aggregate, reused for current + previous period.
+            $aggregate = function (Carbon $wFrom, Carbon $wTo) use ($filters) {
+                $row = Visit::query()->whereBetween('computed_at', [$wFrom, $wTo])
+                    ->when($filters['branch_id'], fn ($q) => $q->where('branch_id', $filters['branch_id']))
+                    ->when($filters['doctor_id'], fn ($q) => $q->where('doctor_id', $filters['doctor_id']))
+                    ->selectRaw('
+                        COUNT(*) as visits_count,
+                        SUM(COALESCE(fees_total,0)) as fees_total,
+                        SUM(COALESCE(packages_price_total,0)) as packages_total,
+                        SUM(COALESCE(items_price_total,0)) as items_price_total,
+                        SUM(COALESCE(items_cost_total,0)) as items_cost_total,
+                        SUM(COALESCE(discount_total,0)) as discount_total,
+                        SUM(COALESCE(profit_total,0)) as profit_total
+                    ')->first();
+                $cut = (float) DoctorCompensationLedger::query()
+                    ->whereBetween('created_at', [$wFrom, $wTo])
+                    ->when($filters['branch_id'], fn ($q) => $q->where('branch_id', $filters['branch_id']))
+                    ->when($filters['doctor_id'], fn ($q) => $q->where('doctor_id', $filters['doctor_id']))
+                    ->sum('doctor_cut_amount');
+                $revenue = (float) $row->fees_total + (float) $row->packages_total + (float) $row->items_price_total - (float) $row->discount_total;
+                return [
+                    'visits_count' => (int) $row->visits_count,
+                    'fees_total' => (float) $row->fees_total,
+                    'items_cost_total' => (float) $row->items_cost_total,
+                    'discount_total' => (float) $row->discount_total,
+                    'profit_total' => (float) $row->profit_total,
+                    'doctor_cut' => $cut,
+                    'revenue' => $revenue,
+                ];
+            };
+
+            $cur = $aggregate($from, $to);
+            $prev = $aggregate($prevFrom, $prevTo);
+            $pct = fn ($c, $p) => $p > 0.0001 ? round((($c - $p) / $p) * 100, 1) : null;
+
+            $overview = (object) [
+                'visits_count' => $cur['visits_count'],
+                'fees_total' => $cur['fees_total'],
+                'items_cost_total' => $cur['items_cost_total'],
+                'profit_total' => $cur['profit_total'],
+            ];
+            $doctorCut = $cur['doctor_cut'];
+
+            $comparison = [
+                'prev_label' => $prevFrom->format('d M').' – '.$prevTo->format('d M'),
+                'visits' => $pct($cur['visits_count'], $prev['visits_count']),
+                'revenue' => $pct($cur['revenue'], $prev['revenue']),
+                'fees' => $pct($cur['fees_total'], $prev['fees_total']),
+                'profit' => $pct($cur['profit_total'], $prev['profit_total']),
+                'doctor_cut' => $pct($cur['doctor_cut'], $prev['doctor_cut']),
+                'discount' => $pct($cur['discount_total'], $prev['discount_total']),
+            ];
+
+            $revenue = $cur['revenue'];
+            $extra = [
+                'revenue' => $revenue,
+                'discount_total' => $cur['discount_total'],
+                'avg_visit_value' => $cur['visits_count'] > 0 ? $revenue / $cur['visits_count'] : 0,
+                'discount_pct' => ($revenue + $cur['discount_total']) > 0 ? round(($cur['discount_total'] / ($revenue + $cur['discount_total'])) * 100, 1) : 0,
+            ];
+
+            // Payment mix (how revenue was actually collected).
+            $paymentMix = DB::table('visit_payments')
+                ->join('visits', 'visits.id', '=', 'visit_payments.visit_id')
+                ->whereBetween('visits.computed_at', [$from, $to])
+                ->where('visit_payments.status', 'paid')
+                ->when($filters['branch_id'], fn ($q) => $q->where('visits.branch_id', $filters['branch_id']))
+                ->when($filters['doctor_id'], fn ($q) => $q->where('visits.doctor_id', $filters['doctor_id']))
+                ->groupBy('visit_payments.method')
+                ->selectRaw("COALESCE(visit_payments.method,'unknown') as method, COUNT(*) as c, COALESCE(SUM(visit_payments.amount),0) as amount")
+                ->get()
+                ->map(fn ($r) => ['method' => (string) $r->method, 'count' => (int) $r->c, 'amount' => (float) $r->amount])
+                ->sortByDesc('amount')->values()->all();
+
+            // Outstanding (billed but not yet collected) for visits in the window.
+            $collected = (float) DB::table('visit_payments')
+                ->join('visits', 'visits.id', '=', 'visit_payments.visit_id')
+                ->whereBetween('visits.computed_at', [$from, $to])
+                ->where('visit_payments.status', 'paid')
+                ->when($filters['branch_id'], fn ($q) => $q->where('visits.branch_id', $filters['branch_id']))
+                ->when($filters['doctor_id'], fn ($q) => $q->where('visits.doctor_id', $filters['doctor_id']))
+                ->sum('visit_payments.amount');
+            $unpaidCount = (clone $visits)
+                ->whereRaw("(COALESCE(fees_total,0)+COALESCE(packages_price_total,0)+COALESCE(items_price_total,0)-COALESCE(discount_total,0)) - COALESCE((SELECT SUM(amount) FROM visit_payments WHERE visit_payments.visit_id = visits.id AND visit_payments.status = 'paid'),0) > 0.005")
+                ->count();
+            $outstanding = ['total' => max(0, round($revenue - $collected, 3)), 'collected' => round($collected, 3), 'unpaid_count' => (int) $unpaidCount];
+
+            // New vs returning patients (new = no visit before this window, anywhere).
+            $patientIds = (clone $visits)->whereNotNull('patient_id')->distinct()->pluck('patient_id')->all();
+            $totalPatients = count($patientIds);
+            $returningPatients = $totalPatients > 0
+                ? (int) Visit::query()->whereIn('patient_id', $patientIds)->where('computed_at', '<', $from)->distinct()->count('patient_id')
+                : 0;
+            $patients = [
+                'total' => $totalPatients,
+                'new' => max(0, $totalPatients - $returningPatients),
+                'returning' => $returningPatients,
+            ];
+
+            // Busiest weekday (1=Sun … 7=Sat per MySQL DAYOFWEEK).
+            $wdRaw = (clone $visits)->selectRaw('DAYOFWEEK(computed_at) as wd, COUNT(*) as c')->groupBy('wd')->pluck('c', 'wd')->all();
+            $byWeekday = [];
+            for ($i = 1; $i <= 7; $i++) { $byWeekday[] = (int) ($wdRaw[$i] ?? 0); }
 
             $ledger = DoctorCompensationLedger::query()
                 ->whereBetween('created_at', [$from, $to])
                 ->when($filters['branch_id'], fn ($q) => $q->where('branch_id', $filters['branch_id']))
                 ->when($filters['doctor_id'], fn ($q) => $q->where('doctor_id', $filters['doctor_id']));
-            $doctorCut = (float) (clone $ledger)->sum('doctor_cut_amount');
 
             $trend = (clone $visits)->selectRaw('DATE(computed_at) as date, SUM(COALESCE(profit_total,0)) as profit, SUM(COALESCE(fees_total,0)) as fees')
                 ->groupBy('date')->orderBy('date')->get()
@@ -104,7 +208,16 @@ class ClinicReportsController extends Controller
                     'items_cost_total' => (float) ($overview->items_cost_total ?? 0),
                     'profit_total' => (float) ($overview->profit_total ?? 0),
                     'doctor_cut' => $doctorCut,
+                    'revenue' => $extra['revenue'],
+                    'discount_total' => $extra['discount_total'],
+                    'avg_visit_value' => $extra['avg_visit_value'],
+                    'discount_pct' => $extra['discount_pct'],
                 ],
+                'comparison' => $comparison,
+                'payment_mix' => $paymentMix,
+                'outstanding' => $outstanding,
+                'patients' => $patients,
+                'by_weekday' => $byWeekday,
                 'trend' => $trend,
                 'top_doctors' => $topDoctors,
                 'top_items' => $topItems,
@@ -119,10 +232,15 @@ class ClinicReportsController extends Controller
         return Inertia::render('Reports/ClinicReports', [
             'filters' => $filters,
             'overview' => Inertia::defer(fn () => $get('overview'), 'reports'),
+            'comparison' => Inertia::defer(fn () => $get('comparison'), 'reports'),
+            'payment_mix' => Inertia::defer(fn () => $get('payment_mix'), 'reports'),
+            'outstanding' => Inertia::defer(fn () => $get('outstanding'), 'reports'),
+            'patients' => Inertia::defer(fn () => $get('patients'), 'reports'),
+            'by_weekday' => Inertia::defer(fn () => $get('by_weekday'), 'reports'),
             'trend' => Inertia::defer(fn () => $get('trend'), 'reports'),
             'top_doctors' => Inertia::defer(fn () => $get('top_doctors'), 'reports'),
             'top_items' => Inertia::defer(fn () => $get('top_items'), 'reports'),
-            'branches' => Branch::query()->orderBy('id')->get(['id', 'name'])
+            'branches' => Branch::query()->when($this->accessibleBranchIds() !== null, fn ($q) => $q->whereIn('id', $this->accessibleBranchIds() ?: [0]))->orderBy('id')->get(['id', 'name'])
                 ->map(fn ($b) => ['id' => $b->id, 'name' => $b->localized_name ?? ('#'.$b->id)])->all(),
             'doctors' => Doctor::query()->orderBy('name')->get(['id', 'name'])
                 ->map(fn ($d) => ['id' => $d->id, 'name' => $d->name ?? ('#'.$d->id)])->all(),

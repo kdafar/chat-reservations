@@ -6,6 +6,7 @@ namespace App\Services\Clinic;
 
 use App\Models\Booking;
 use App\Models\Visit;
+use App\Models\VisitPayment;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -136,6 +137,27 @@ final class DailyClosingReportService
             })
             ->all();
 
+        // --- CASH-UP: PAYMENTS COLLECTED ON THE DAY (by method) ---
+        $payBase = VisitPayment::query()
+            ->where('status', 'paid')
+            ->whereDate('paid_at', $date)
+            ->when(! empty($branchIds), fn ($q) => $q->whereHas('visit', fn ($v) => $v->whereIn('branch_id', $branchIds)));
+        $collectedTotal = (float) (clone $payBase)->sum('amount');
+        $paymentsByMethod = (clone $payBase)
+            ->selectRaw("COALESCE(method,'unknown') as method, COUNT(*) as c, COALESCE(SUM(amount),0) as amount")
+            ->groupBy('method')->get()
+            ->map(fn ($r) => ['method' => (string) $r->method, 'count' => (int) $r->c, 'amount' => (float) $r->amount])
+            ->sortByDesc('amount')->values()->all();
+
+        // --- OUTSTANDING: today's completed visits billed vs paid ---
+        $completedIds = (clone $completedVisits)->pluck('visits.id');
+        $paidForCompleted = $completedIds->isEmpty() ? 0.0 : (float) VisitPayment::query()
+            ->whereIn('visit_id', $completedIds)->where('status', 'paid')->sum('amount');
+        $outstandingTotal = max(0.0, round($totalRevenue - $paidForCompleted, 3));
+        $unpaidCount = (clone $completedVisits)
+            ->whereRaw("(COALESCE(fees_total,0)+COALESCE(packages_price_total,0)+COALESCE(items_price_total,0)-COALESCE(discount_total,0)) - COALESCE((SELECT SUM(amount) FROM visit_payments WHERE visit_payments.visit_id = visits.id AND visit_payments.status = 'paid'),0) > 0.005")
+            ->count();
+
         // --- NEW: CHART DATA STRUCTURES (V2 IMPROVEMENT) ---
 
         // 1. Hourly Distribution (Peak Hours)
@@ -180,6 +202,15 @@ final class DailyClosingReportService
                 'financials' => $financials,
             ],
             'doctors' => $doctors,
+            'payments' => [
+                'collected_total' => $collectedTotal,
+                'by_method' => $paymentsByMethod,
+            ],
+            'outstanding' => [
+                'total' => $outstandingTotal,
+                'collected' => round($paidForCompleted, 3),
+                'unpaid_count' => (int) $unpaidCount,
+            ],
             // ADDED: High-performance chart payloads
             'charts' => [
                 'hourly_bookings' => [

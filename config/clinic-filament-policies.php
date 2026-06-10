@@ -47,6 +47,8 @@ return [
         \App\Models\ClinicPackage::class => 'clinic_packages',
         \App\Models\ClinicalPhrase::class => 'clinical_phrases',
         \App\Models\Medication::class => 'medications',
+        \App\Models\StockTransfer::class => 'stock_transfers',
+        \App\Models\ClinicPaymentMethod::class => 'clinic_payment_methods',
 
         // Accounting layer
         \App\Models\Accounting\Account::class => 'accounting_accounts',

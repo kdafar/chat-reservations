@@ -11,6 +11,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class ClinicCoupon extends Model
 {
+    // Branch isolation: non-admins only see coupons for their accessible
+    // branches (plus global rows where branch_id is null). Admin/super_admin bypass.
+    use \App\Models\Concerns\BelongsToBranchScope;
+
     protected $guarded = [];
 
     protected $casts = [

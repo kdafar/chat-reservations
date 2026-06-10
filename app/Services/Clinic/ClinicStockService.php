@@ -28,6 +28,7 @@ class ClinicStockService
         int $performedBy = 0,
         ?string $notes = null,
         ?object $related = null,
+        string $type = 'restock',
     ): ClinicItemStock {
         if (! $this->enabled()) {
             // Do nothing if disabled; but still allow calling safely.
@@ -36,7 +37,7 @@ class ClinicStockService
 
         $deltaBase = $this->toBaseQty($item, $qtyStockUnits, $qtyBase);
 
-        return DB::transaction(function () use ($branchId, $item, $deltaBase, $performedBy, $notes, $related) {
+        return DB::transaction(function () use ($branchId, $item, $deltaBase, $performedBy, $notes, $related, $type) {
             $stock = $this->lockStockRow($branchId, $item->id);
 
             $before = (float) $stock->qty_on_hand_base;
@@ -50,7 +51,7 @@ class ClinicStockService
             $mv->clinic_item_id = $item->id;
             $mv->clinic_item_stock_id = $stock->id;
             $mv->performed_by = $performedBy ?: null;
-            $mv->type = 'restock';
+            $mv->type = $type ?: 'restock';
             $mv->qty_change_base = $deltaBase;
             $mv->before_qty_base = $before;
             $mv->after_qty_base = $after;
@@ -73,6 +74,7 @@ class ClinicStockService
         int $performedBy = 0,
         ?string $notes = null,
         ?object $related = null,
+        string $type = 'consume',
     ): ClinicItemStock {
         if (! $this->enabled()) {
             return $this->getOrCreateStockRow($branchId, $item->id);
@@ -82,7 +84,7 @@ class ClinicStockService
             return $this->getOrCreateStockRow($branchId, $item->id);
         }
 
-        return DB::transaction(function () use ($branchId, $item, $qtyBaseToConsume, $performedBy, $notes, $related) {
+        return DB::transaction(function () use ($branchId, $item, $qtyBaseToConsume, $performedBy, $notes, $related, $type) {
             $stock = $this->lockStockRow($branchId, $item->id);
 
             $before = (float) $stock->qty_on_hand_base;
@@ -102,7 +104,7 @@ class ClinicStockService
             $mv->clinic_item_id = $item->id;
             $mv->clinic_item_stock_id = $stock->id;
             $mv->performed_by = $performedBy ?: null;
-            $mv->type = 'consume';
+            $mv->type = $type ?: 'consume';
             $mv->qty_change_base = 0 - $qtyBaseToConsume;
             $mv->before_qty_base = $before;
             $mv->after_qty_base = $after;
