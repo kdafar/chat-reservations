@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { usePage } from '@inertiajs/vue3'
 import Icon from './Icon.vue'
+import SearchableSelect from './SearchableSelect.vue'
 import EditableField from './EditableField.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
 import QuickPhrases from './QuickPhrases.vue'
@@ -1891,7 +1892,7 @@ function copyPaymentLink() {
     <Teleport to="body">
         <Transition name="fade">
             <div v-if="payOpen" class="cd-overlay overlay-enter" @click.self="!payLoading && (payOpen = false)">
-                <div class="cd-panel" style="width: min(540px, 100%);">
+                <div class="cd-panel" style="width: min(720px, 100%);">
                     <div style="padding: 14px 18px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 10px;">
                         <span style="width: 36px; height: 36px; border-radius: 10px; background: var(--primary-soft); color: var(--primary); display: inline-flex; align-items: center; justify-content: center;">
                             <Icon name="credit-card" :size="18" />
@@ -2415,17 +2416,11 @@ function copyPaymentLink() {
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
                             <div>
                                 <div class="eyebrow" style="margin-bottom: 6px;">{{ isRtl ? 'شركة التأمين' : 'Insurer' }} <span style="color: var(--destructive);">*</span></div>
-                                <select v-model="attachForm.insurer_id" class="input">
-                                    <option value="">{{ isRtl ? 'اختر…' : 'Select…' }}</option>
-                                    <option v-for="ins in insurerOptions" :key="ins.id" :value="ins.id">{{ ins.name }}</option>
-                                </select>
+                                <SearchableSelect v-model="attachForm.insurer_id" :items="insurerOptions" :nullable="false" :placeholder="isRtl ? 'اختر…' : 'Select…'" />
                             </div>
                             <div>
                                 <div class="eyebrow" style="margin-bottom: 6px;">{{ isRtl ? 'الخطة' : 'Plan' }} <span style="color: var(--destructive);">*</span></div>
-                                <select v-model="attachForm.plan_id" class="input" :disabled="!attachForm.insurer_id">
-                                    <option value="">{{ isRtl ? 'اختر…' : 'Select…' }}</option>
-                                    <option v-for="p in planOptionsForInsurer" :key="p.id" :value="p.id">{{ p.name }}</option>
-                                </select>
+                                <SearchableSelect v-model="attachForm.plan_id" :items="planOptionsForInsurer" :nullable="false" :disabled="!attachForm.insurer_id" :placeholder="attachForm.insurer_id ? (isRtl ? 'اختر…' : 'Select…') : (isRtl ? 'اختر شركة أولاً' : 'Pick insurer first')" />
                             </div>
                         </div>
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">

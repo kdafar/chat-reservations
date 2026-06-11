@@ -1,5 +1,5 @@
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, nextTick } from 'vue'
 import { Head, Link, router, usePage } from '@inertiajs/vue3'
 import AppLayout from '../../Layouts/AppLayout.vue'
 defineOptions({ layout: AppLayout })
@@ -12,6 +12,8 @@ const props = defineProps({
     filters: Object,
     page: Object,
     statuses: Array,
+    insurers: { type: Array, default: () => [] },
+    branches: { type: Array, default: () => [] },
     counts: Object,
     can: Object,
 })
@@ -25,70 +27,105 @@ function exportSelected() { window.location.href = route('v2.insurance.claims.ex
 
 const t = computed(() => isRtl.value ? {
     title: 'مطالبات التأمين', eyebrow: 'التأمين',
-    desc: 'المطالبات المُنشأة من الزيارات المكتملة — التتبّع والقرارات والمدفوعات.',
-    searchPh: 'ابحث برقم المطالبة أو اسم المريض…', fromVisit: 'مطالبة من زيارة', clear: 'مسح', statusAll: 'كل الحالات',
+    desc: 'المطالبات المُنشأة من الزيارات المكتملة — تابع ما يتطلب إجراءً وسجّل القرارات والمدفوعات.',
+    searchPh: 'ابحث برقم المطالبة أو اسم المريض في كل المطالبات…', fromVisit: 'مطالبة جديدة من زيارة', clear: 'مسح', statusAll: 'كل الحالات',
+    allInsurers: 'كل شركات التأمين', allBranches: 'كل الفروع',
+    sort: { recent: 'الأحدث أولاً', outstanding: 'الأعلى رصيداً', aging: 'الأقدم انتظاراً' },
+    dayAbbr: 'ي', ageTitle: 'أيام منذ الإرسال / الإنشاء',
     st: { draft: 'مسودة', submitted: 'مُرسلة', under_review: 'قيد المراجعة', approved: 'معتمدة', partially_approved: 'معتمدة جزئياً', rejected: 'مرفوضة', paid: 'مدفوعة', void: 'ملغاة' },
-    col: { number: 'رقم المطالبة', patient: 'المريض', insurer: 'الشركة', charged: 'المطلوب', payable: 'المستحق', paid: 'المدفوع', balance: 'المتبقي', status: 'الحالة' },
-    empty: 'لا توجد مطالبات', showing: 'عرض', of: 'من',
+    col: { number: 'رقم المطالبة', patient: 'المريض', insurer: 'الشركة', charged: 'المطلوب', payable: 'مستحق التأمين', paid: 'المدفوع', balance: 'المتبقي', status: 'الحالة' },
+    tip: { charged: 'إجمالي المطلوب في الزيارة', payable: 'المبلغ الذي وافق التأمين على دفعه', paid: 'المستلم من التأمين حتى الآن', balance: 'المتبقي على شركة التأمين' },
+    tabs: { needs_action: 'تتطلب إجراء', waiting: 'بانتظار التأمين', paid: 'مدفوعة', rejected: 'مرفوضة', all: 'الكل' },
+    next: {
+        header: 'الخطوة التالية',
+        submit: 'إرسال للتأمين', submitHint: 'المطالبة جاهزة — أرسلها لشركة التأمين.',
+        record_payment: 'تسجيل دفعة', recordHint: 'اعتمدت الشركة المطالبة. سجّل الدفعة عند استلامها.',
+        await: 'بانتظار التأمين', awaitHint: 'أُرسلت — في انتظار قرار شركة التأمين.',
+        settled: 'مكتملة', settledHint: 'لا يوجد إجراء — تمت تسوية المطالبة بالكامل.',
+        rejected: 'مرفوضة', rejectedHint: 'رفضت شركة التأمين هذه المطالبة.',
+        none: '—',
+    },
+    empty: 'لا توجد مطالبات', emptyAction: 'لا يوجد ما يتطلب انتباهك الآن 🎉', viewAll: 'عرض كل المطالبات', showing: 'عرض', of: 'من',
     drawer: { items: 'البنود', payments: 'المدفوعات', log: 'سجل الحالة', balance: 'الرصيد المتبقي', noItems: 'لا توجد بنود', noPayments: 'لا توجد مدفوعات', close: 'إغلاق' },
-    act: { submit: 'إرسال', review: 'قيد المراجعة', approve: 'اعتماد', partial: 'اعتماد جزئي', reject: 'رفض', payment: 'تسجيل دفعة', writeoff: 'إعدام دين', void: 'إلغاء' },
+    act: { submit: 'إرسال للتأمين', review: 'بدء المراجعة', approve: 'اعتماد', partial: 'اعتماد جزئي', reject: 'رفض', payment: 'تسجيل دفعة', writeoff: 'إعدام دين', void: 'إلغاء' },
     fld: { notes: 'ملاحظات', approved_amount: 'المبلغ المعتمد', rejected_amount: 'المبلغ المرفوض', reference_no: 'رقم مرجعي', reason: 'السبب', amount: 'المبلغ', method: 'الطريقة', account: 'مودع في', decision_notes: 'ملاحظات القرار', visit_id: 'رقم الزيارة' },
     method: { cheque: 'شيك', transfer: 'تحويل', cash: 'نقد' },
-    fromVisitTitle: 'إنشاء مسودة مطالبة من زيارة', create: 'إنشاء', cancel: 'إلغاء', confirm: 'تأكيد',
-    stats: { total: 'الكل', open: 'مفتوحة' },
+    fromVisitTitle: 'إنشاء مطالبة من زيارة', create: 'إنشاء', cancel: 'إلغاء', confirm: 'تأكيد',
     picker: {
+        step1: 'الخطوة ١ من ٢ · اختر الزيارة',
+        step2: 'الخطوة ٢ من ٢ · راجع التغطية',
         searchPh: 'ابحث باسم المريض أو رمز الحجز…',
         loading: 'جارٍ التحميل…',
         none: 'لا توجد زيارات قابلة للمطالبة',
-        hint: 'اختر زيارة لمعاينة التغطية قبل إنشاء المسودة.',
+        hint: 'اختر زيارة مكتملة ليُحسب نصيب التأمين ونصيب المريض تلقائياً.',
         change: 'تغيير الزيارة',
-        visit: 'زيارة', noPolicy: 'لا توجد بوليصة سارية',
+        visit: 'زيارة', noPolicy: 'لا توجد بوليصة تأمين سارية لهذا المريض',
     },
     preview: {
-        title: 'معاينة التغطية', policy: 'البوليصة',
-        kind: 'البند', gross: 'الإجمالي', insurer: 'تغطية التأمين', coverage: 'نسبة التغطية', copay: 'حصة المريض',
+        title: 'تفصيل التغطية', policy: 'البوليصة',
+        kind: 'البند', gross: 'الإجمالي', insurer: 'تغطية التأمين', coverage: 'النسبة', copay: 'حصة المريض',
         totals: 'الإجماليات', insurerTotal: 'إجمالي التأمين', patientTotal: 'إجمالي المريض',
         alreadyPaid: 'المدفوع مسبقاً', patientPays: 'يدفع المريض في الاستقبال',
-        exists: 'توجد مسودة مطالبة لهذه الزيارة بالفعل.',
-        draft: 'إنشاء مسودة المطالبة', noKinds: 'لا توجد بنود قابلة للتغطية',
+        exists: 'توجد مطالبة لهذه الزيارة بالفعل.',
+        draft: 'إنشاء المطالبة', noKinds: 'لا توجد بنود قابلة للتغطية',
     },
     kindLbl: { consultation: 'الكشف', services: 'الخدمات / الباقات', medicines: 'الأدوية / المستهلكات', other: 'أخرى' },
 } : {
     title: 'Insurance Claims', eyebrow: 'Insurance',
-    desc: 'Claims drafted from completed visits — track, decide and record payments.',
-    searchPh: 'Search by claim number or patient…', fromVisit: 'Claim from visit', clear: 'Clear', statusAll: 'All statuses',
+    desc: 'Claims drafted from completed visits — see what needs doing, then record decisions and payments.',
+    searchPh: 'Search all claims by # or patient…', fromVisit: 'New claim from a visit', clear: 'Clear', statusAll: 'All statuses',
+    allInsurers: 'All insurers', allBranches: 'All branches',
+    sort: { recent: 'Newest first', outstanding: 'Highest outstanding', aging: 'Oldest waiting' },
+    dayAbbr: 'd', ageTitle: 'Days since sent / created',
     st: { draft: 'Draft', submitted: 'Submitted', under_review: 'Under review', approved: 'Approved', partially_approved: 'Partially approved', rejected: 'Rejected', paid: 'Paid', void: 'Void' },
-    col: { number: 'Claim #', patient: 'Patient', insurer: 'Insurer', charged: 'Charged', payable: 'Payable', paid: 'Paid', balance: 'Balance', status: 'Status' },
-    empty: 'No claims', showing: 'Showing', of: 'of',
+    col: { number: 'Claim #', patient: 'Patient', insurer: 'Insurer', charged: 'Billed', payable: 'Insurer owes', paid: 'Paid', balance: 'Outstanding', status: 'Status' },
+    tip: { charged: 'Total billed on the visit', payable: 'Amount the insurer agreed to pay', paid: 'Received from the insurer so far', balance: 'Still owed by the insurer' },
+    tabs: { needs_action: 'Needs action', waiting: 'Waiting on insurer', paid: 'Paid', rejected: 'Rejected', all: 'All' },
+    next: {
+        header: 'Next step',
+        submit: 'Send to insurer', submitHint: 'This claim is ready — send it to the insurer.',
+        record_payment: 'Record payment', recordHint: 'The insurer approved this claim. Record their payment when it arrives.',
+        await: 'Awaiting insurer', awaitHint: 'Sent — waiting for the insurer\'s decision.',
+        settled: 'Settled', settledHint: 'Nothing more to do — this claim is fully settled.',
+        rejected: 'Rejected', rejectedHint: 'The insurer rejected this claim.',
+        none: '—',
+    },
+    empty: 'No claims', emptyAction: 'Nothing needs your attention right now 🎉', viewAll: 'View all claims', showing: 'Showing', of: 'of',
     drawer: { items: 'Items', payments: 'Payments', log: 'State log', balance: 'Balance due', noItems: 'No items', noPayments: 'No payments', close: 'Close' },
-    act: { submit: 'Submit', review: 'Mark under review', approve: 'Approve', partial: 'Partially approve', reject: 'Reject', payment: 'Record payment', writeoff: 'Write off', void: 'Void' },
+    act: { submit: 'Send to insurer', review: 'Start review', approve: 'Approve', partial: 'Partially approve', reject: 'Reject', payment: 'Record payment', writeoff: 'Write off', void: 'Void' },
     fld: { notes: 'Notes', approved_amount: 'Approved amount', rejected_amount: 'Rejected amount', reference_no: 'Reference no.', reason: 'Reason', amount: 'Amount', method: 'Method', account: 'Deposited to', decision_notes: 'Decision notes', visit_id: 'Visit #' },
     method: { cheque: 'Cheque', transfer: 'Bank transfer', cash: 'Cash' },
-    fromVisitTitle: 'Draft a claim from a visit', create: 'Create', cancel: 'Cancel', confirm: 'Confirm',
-    stats: { total: 'Total', open: 'Open' },
+    fromVisitTitle: 'Create a claim from a visit', create: 'Create', cancel: 'Cancel', confirm: 'Confirm',
     picker: {
+        step1: 'Step 1 of 2 · Choose the visit',
+        step2: 'Step 2 of 2 · Review coverage',
         searchPh: 'Search by patient name or booking code…',
         loading: 'Loading…',
         none: 'No claimable visits found',
-        hint: 'Pick a visit to preview coverage before drafting.',
+        hint: 'Pick a completed visit — the insurer and patient shares are worked out automatically.',
         change: 'Change visit',
-        visit: 'Visit', noPolicy: 'No active policy',
+        visit: 'Visit', noPolicy: 'This patient has no active insurance policy',
     },
     preview: {
-        title: 'Coverage preview', policy: 'Policy',
-        kind: 'Item', gross: 'Gross', insurer: 'Insurer covers', coverage: 'Coverage', copay: 'Patient copay',
+        title: 'Coverage breakdown', policy: 'Policy',
+        kind: 'Item', gross: 'Gross', insurer: 'Insurer covers', coverage: 'Covered', copay: 'Patient copay',
         totals: 'Totals', insurerTotal: 'Insurer total', patientTotal: 'Patient total',
         alreadyPaid: 'Already paid', patientPays: 'Patient pays at reception',
-        exists: 'A draft claim already exists for this visit.',
-        draft: 'Draft claim', noKinds: 'No coverable items on this visit',
+        exists: 'A claim already exists for this visit.',
+        draft: 'Create claim', noKinds: 'No coverable items on this visit',
     },
     kindLbl: { consultation: 'Consultation', services: 'Services / packages', medicines: 'Medicines / consumables', other: 'Other' },
 })
 
-const statusItems = computed(() => [
-    { value: 'all', label: t.value.statusAll },
-    ...props.statuses.map((s) => ({ value: s, label: t.value.st[s] })),
+// Workflow tabs (counts come from the controller). Buckets, not raw statuses.
+const tabs = computed(() => [
+    { value: 'needs_action', label: t.value.tabs.needs_action, count: props.counts.needs_action ?? 0, tone: 'amber' },
+    { value: 'waiting', label: t.value.tabs.waiting, count: props.counts.waiting ?? 0, tone: 'info' },
+    { value: 'paid', label: t.value.tabs.paid, count: props.counts.paid ?? 0, tone: 'ok' },
+    { value: 'rejected', label: t.value.tabs.rejected, count: props.counts.rejected ?? 0, tone: 'muted' },
+    { value: 'all', label: t.value.tabs.all, count: props.counts.total ?? 0, tone: 'muted' },
 ])
+
 const methodItems = computed(() => [
     { value: 'transfer', label: t.value.method.transfer },
     { value: 'cheque', label: t.value.method.cheque },
@@ -96,30 +133,91 @@ const methodItems = computed(() => [
 ])
 const accountItems = computed(() => drawer.accounts.map((a) => ({ value: a.id, label: a.label })))
 
-const f = reactive({ q: props.filters.q || '', status: props.filters.status || 'all' })
+const f = reactive({
+    q: props.filters.q || '',
+    status: props.filters.status || 'needs_action',
+    insurer: props.filters.insurer ?? null,
+    branch: props.filters.branch ?? null,
+    sort: props.filters.sort || 'recent',
+})
+const insurerItems = computed(() => props.insurers)
+const branchItems = computed(() => props.branches)
+const sortItems = computed(() => ['recent', 'outstanding', 'aging'].map((v) => ({ value: v, label: t.value.sort[v] })))
+const hasFilters = computed(() => !!f.q || f.status !== 'needs_action' || !!f.insurer || !!f.branch || f.sort !== 'recent')
+
+// Age indicator — only relevant while a claim is still open (drafts, waiting,
+// awaiting payment). Older open claims escalate from grey → amber → red.
+const isOpenStep = (step) => ['submit', 'await', 'record_payment'].includes(step)
+const ageTone = (d) => d >= 30 ? 'var(--destructive, #dc2626)' : (d >= 14 ? 'var(--warning, #d97706)' : 'var(--fg-faint)')
+
 let qTimer = null
 function apply() {
+    // Send status explicitly — the server default is "needs_action", so an
+    // omitted param is NOT the same as the All tab.
     router.get(route('v2.insurance.claims.index'), {
-        q: f.q || undefined, status: f.status === 'all' ? undefined : f.status,
+        q: f.q || undefined, status: f.status,
+        insurer: f.insurer || undefined, branch: f.branch || undefined,
+        sort: f.sort === 'recent' ? undefined : f.sort,
     }, { preserveState: true, preserveScroll: true, replace: true })
 }
-function onSearch() { clearTimeout(qTimer); qTimer = setTimeout(apply, 250) }
-function clearFilters() { f.q = ''; f.status = 'all'; apply() }
+function setTab(v) { f.status = v; apply() }
+// Searching looks across every claim, so jump to the All tab as you type.
+function onSearch() { clearTimeout(qTimer); qTimer = setTimeout(() => { if (f.q) f.status = 'all'; apply() }, 250) }
+function clearFilters() { f.q = ''; f.status = 'needs_action'; f.insurer = null; f.branch = null; f.sort = 'recent'; apply() }
 
 const fmt = (n) => Number(n ?? 0).toFixed(3)
 const statusBadge = (s) => ({ approved: 'badge badge-success', partially_approved: 'badge badge-warning', paid: 'badge badge-success', rejected: 'badge badge-destructive', submitted: 'badge badge-info', under_review: 'badge badge-info', void: 'badge-muted', draft: 'badge-muted' }[s] || 'badge')
 
+// Next-step presentation, shared by the list column and the drawer banner.
+const toneColor = (tone) => ({ amber: 'var(--warning, #d97706)', info: 'var(--info, #2563eb)', ok: 'var(--ok)', muted: 'var(--fg-faint)' }[tone] || 'var(--fg-faint)')
+const nextMeta = computed(() => ({
+    submit: { label: t.value.next.submit, hint: t.value.next.submitHint, tone: 'amber', action: 'submit' },
+    record_payment: { label: t.value.next.record_payment, hint: t.value.next.recordHint, tone: 'amber', action: 'payment' },
+    await: { label: t.value.next.await, hint: t.value.next.awaitHint, tone: 'info', action: null },
+    settled: { label: t.value.next.settled, hint: t.value.next.settledHint, tone: 'ok', action: null },
+    rejected: { label: t.value.next.rejected, hint: t.value.next.rejectedHint, tone: 'muted', action: null },
+    none: { label: t.value.next.none, hint: '', tone: 'muted', action: null },
+}))
+const metaFor = (step) => nextMeta.value[step] ?? nextMeta.value.none
+function rowAction(row) { const m = metaFor(row.next_step); openDrawer(row.id, m.action) }
+
+// Only surface a row's inline action button if the user can actually complete it
+// (submit needs the submit cap, record_payment needs the pay cap). Otherwise the
+// step is shown as a plain status chip.
+const stepCap = { submit: 'submit', payment: 'pay' }
+function canDoStep(step) {
+    const action = metaFor(step).action
+    if (!action) return false
+    const cap = stepCap[action]
+    return cap ? !!props.can?.[cap] : true
+}
+
 // Detail drawer
 const drawer = reactive({ open: false, loading: false, claim: null, balance: 0, allowed: [], accounts: [], can: {} })
-async function openDrawer(id) {
+async function openDrawer(id, autoAction = null) {
     drawer.open = true; drawer.loading = true; drawer.claim = null
     const res = await fetch(route('v2.api.insurance.claims.show', { claim: id }), { headers: { Accept: 'application/json' } })
     const data = await res.json()
     drawer.claim = data.claim; drawer.balance = data.balance_due; drawer.allowed = data.allowed_next || []
     drawer.accounts = data.accounts || []; drawer.can = data.can || {}
     drawer.loading = false
+    if (autoAction) { await nextTick(); if (actions.value.includes(autoAction)) openAct(autoAction) }
 }
 function refreshDrawer() { if (drawer.claim) openDrawer(drawer.claim.id) }
+
+// Plain "what to do next" banner inside the drawer.
+const drawerNext = computed(() => {
+    const c = drawer.claim
+    if (!c) return null
+    const bal = Number(drawer.balance)
+    let key = 'none'
+    if (c.status === 'draft') key = 'submit'
+    else if (['submitted', 'under_review'].includes(c.status)) key = 'await'
+    else if (['approved', 'partially_approved'].includes(c.status)) key = bal > 0.0005 ? 'record_payment' : 'settled'
+    else if (c.status === 'paid') key = 'settled'
+    else if (c.status === 'rejected') key = 'rejected'
+    return metaFor(key)
+})
 
 // Action modal — adapts to the chosen action.
 const act = reactive({ open: false, type: null, busy: false })
@@ -154,12 +252,16 @@ const actions = computed(() => {
     if (allowed.includes('approved') && c.decide) out.push('approve')
     if (allowed.includes('partially_approved') && c.decide) out.push('partial')
     if (allowed.includes('rejected') && c.decide) out.push('reject')
-    if (['approved', 'partially_approved'].includes(s) && c.pay) out.push('payment')
-    if (['approved', 'partially_approved', 'rejected'].includes(s) && c.writeoff) out.push('writeoff')
+    const hasBalance = Number(drawer.balance) > 0.0005
+    if (['approved', 'partially_approved'].includes(s) && c.pay && hasBalance) out.push('payment')
+    if (['approved', 'partially_approved', 'rejected'].includes(s) && c.writeoff && hasBalance) out.push('writeoff')
     if (s !== 'void' && c.void) out.push('void')
     return out
 })
 const actBtnClass = (type) => type === 'reject' || type === 'void' || type === 'writeoff' ? 'btn btn-destructive btn-sm' : (type === 'approve' ? 'btn btn-primary btn-sm' : 'btn btn-outline btn-sm')
+// The next-step banner already surfaces the primary action — drop it from the
+// secondary row so it isn't shown twice.
+const secondaryActions = computed(() => actions.value.filter((a) => a !== drawerNext.value?.action))
 
 // Draft from visit — searchable picker + coverage preview.
 const visitModal = reactive({
@@ -169,6 +271,7 @@ const visitModal = reactive({
     preview: null, previewLoading: false,    // coverage preview payload
 })
 let visitSearchTimer = null
+const visitSearchInput = ref(null)
 
 function openVisitModal() {
     Object.assign(visitModal, {
@@ -176,6 +279,7 @@ function openVisitModal() {
         selected: null, preview: null, previewLoading: false,
     })
     searchVisits()
+    nextTick(() => visitSearchInput.value?.focus())
 }
 function closeVisitModal() { visitModal.open = false }
 
@@ -203,13 +307,22 @@ function clearSelectedVisit() { visitModal.selected = null; visitModal.preview =
 
 const kindLabel = (k) => t.value.kindLbl[k] ?? (k ? (k.charAt(0).toUpperCase() + k.slice(1)) : '—')
 
+// Why the "Create claim" button is disabled, in plain words (empty = enabled).
+const draftBlock = computed(() => {
+    const p = visitModal.preview
+    if (!visitModal.selected || visitModal.previewLoading || !p) return ''
+    if (!p.has_policy) return t.value.picker.noPolicy
+    if (p.claim_exists) return t.value.preview.exists
+    return ''
+})
+
 function submitFromVisit() {
-    if (!visitModal.selected) return
+    if (!visitModal.selected || draftBlock.value) return
     visitModal.busy = true; visitModal.err = ''
     router.post(route('v2.insurance.claims.from-visit'), { visit_id: visitModal.selected.id }, {
         preserveScroll: true,
         onSuccess: () => { visitModal.open = false; visitModal.busy = false },
-        onError: (e) => { visitModal.err = e.visit_id || (isRtl.value ? 'فشل الإنشاء' : 'Failed to draft claim'); visitModal.busy = false },
+        onError: (e) => { visitModal.err = e.visit_id || (isRtl.value ? 'فشل الإنشاء' : 'Failed to create claim'); visitModal.busy = false },
     })
 }
 </script>
@@ -226,9 +339,15 @@ function submitFromVisit() {
                 <button v-if="can.create" class="btn btn-primary" @click="openVisitModal"><Icon name="plus" :size="14" /><span>{{ t.fromVisit }}</span></button>
             </div>
 
-            <div style="display:flex; gap:8px; margin-bottom:16px;">
-                <div class="stat-chip"><span class="stat-chip-num">{{ counts.total }}</span><span class="stat-chip-lbl">{{ t.stats.total }}</span></div>
-                <div class="stat-chip"><span class="stat-chip-num" style="color:var(--info, #2563eb);">{{ counts.open }}</span><span class="stat-chip-lbl">{{ t.stats.open }}</span></div>
+            <!-- Workflow tabs with live counts -->
+            <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px;">
+                <button v-for="tab in tabs" :key="tab.value" type="button"
+                        @click="setTab(tab.value)"
+                        :class="['btn', 'btn-sm', f.status === tab.value ? 'btn-primary' : 'btn-ghost']"
+                        :style="f.status !== tab.value && tab.value === 'needs_action' && tab.count > 0 ? { color: toneColor('amber'), fontWeight: 600 } : null">
+                    <span>{{ tab.label }}</span>
+                    <span v-if="tab.count" class="badge" :style="f.status === tab.value ? 'background:rgba(255,255,255,.22); color:#fff;' : `background:${toneColor(tab.tone)}1a; color:${toneColor(tab.tone)};`" style="margin-inline-start:6px;">{{ tab.count }}</span>
+                </button>
             </div>
 
             <div class="card" style="padding:12px; margin-bottom:12px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
@@ -236,8 +355,10 @@ function submitFromVisit() {
                     <Icon name="search" :size="14" style="position:absolute; inset-inline-start:10px; top:50%; transform:translateY(-50%); color:var(--fg-faint);" />
                     <input v-model="f.q" @input="onSearch" type="search" :placeholder="t.searchPh" class="input" style="padding-inline-start:32px;" />
                 </div>
-                <SearchableSelect v-model="f.status" :items="statusItems" :nullable="false" :width="200" @update:model-value="apply" />
-                <button v-if="f.q || f.status !== 'all'" class="btn btn-ghost btn-sm" @click="clearFilters">{{ t.clear }}</button>
+                <SearchableSelect v-if="insurerItems.length" v-model="f.insurer" :items="insurerItems" :null-label="t.allInsurers" :width="200" @update:model-value="apply" />
+                <SearchableSelect v-if="branchItems.length > 1" v-model="f.branch" :items="branchItems" :null-label="t.allBranches" :width="180" @update:model-value="apply" />
+                <SearchableSelect v-model="f.sort" :items="sortItems" :nullable="false" :width="180" @update:model-value="apply" />
+                <button v-if="hasFilters" class="btn btn-ghost btn-sm" @click="clearFilters">{{ t.clear }}</button>
             </div>
 
             <div class="card" style="overflow:hidden;">
@@ -248,23 +369,30 @@ function submitFromVisit() {
                             <th>{{ t.col.number }}</th>
                             <th>{{ t.col.patient }}</th>
                             <th>{{ t.col.insurer }}</th>
-                            <th style="text-align:end;">{{ t.col.charged }}</th>
-                            <th style="text-align:end;">{{ t.col.payable }}</th>
-                            <th style="text-align:end;">{{ t.col.paid }}</th>
-                            <th style="text-align:end;">{{ t.col.balance }}</th>
+                            <th style="text-align:end;" :title="t.tip.charged">{{ t.col.charged }}</th>
+                            <th style="text-align:end;" :title="t.tip.payable">{{ t.col.payable }}</th>
+                            <th style="text-align:end;" :title="t.tip.paid">{{ t.col.paid }}</th>
+                            <th style="text-align:end;" :title="t.tip.balance">{{ t.col.balance }}</th>
                             <th>{{ t.col.status }}</th>
+                            <th>{{ t.next.header }}</th>
                         </tr>
                     </thead>
                     <tbody>
                         <tr v-if="page.data.length === 0">
-                            <td colspan="9" style="text-align:center; padding:48px; color:var(--fg-faint);">
+                            <td colspan="10" style="text-align:center; padding:48px; color:var(--fg-faint);">
                                 <Icon name="file-text" :size="32" style="margin-bottom:8px; opacity:0.4;" />
-                                <div style="font-weight:600;">{{ t.empty }}</div>
+                                <div style="font-weight:600;">{{ (f.status === 'needs_action' && !f.q) ? t.emptyAction : t.empty }}</div>
+                                <button v-if="f.status === 'needs_action' && !f.q" class="btn btn-ghost btn-sm" style="margin-top:10px;" @click="setTab('all')">{{ t.viewAll }}</button>
                             </td>
                         </tr>
                         <tr v-for="row in page.data" :key="row.id" @click="openDrawer(row.id)" :class="sel.isSelected(row.id) ? 'is-selected' : ''" style="cursor:pointer;">
                             <td style="text-align:center;" @click.stop><input type="checkbox" :checked="sel.isSelected(row.id)" @change="sel.toggle(row.id)" /></td>
-                            <td class="mono" style="font-weight:600;">{{ row.claim_number }}</td>
+                            <td style="font-weight:600;">
+                                <span class="mono">{{ row.claim_number }}</span>
+                                <span v-if="isOpenStep(row.next_step) && row.age_days != null" :title="t.ageTitle"
+                                      style="display:inline-block; margin-inline-start:6px; font-size:11px; font-weight:600;"
+                                      :style="{ color: ageTone(row.age_days) }">{{ row.age_days }}{{ t.dayAbbr }}</span>
+                            </td>
                             <td>{{ row.patient_policy?.patient?.name ?? '—' }}</td>
                             <td>{{ row.patient_policy?.insurer?.name ?? '—' }}</td>
                             <td class="mono" style="text-align:end;">{{ fmt(row.total_charged) }}</td>
@@ -272,6 +400,17 @@ function submitFromVisit() {
                             <td class="mono" style="text-align:end;">{{ fmt(row.paid_amount) }}</td>
                             <td class="mono" style="text-align:end;" :style="{ color: Number(row.balance_due) > 0 ? 'var(--warning, #d97706)' : 'var(--ok)' }">{{ fmt(row.balance_due) }}</td>
                             <td><span :class="statusBadge(row.status)">{{ t.st[row.status] ?? row.status }}</span></td>
+                            <td @click.stop>
+                                <button v-if="canDoStep(row.next_step)" type="button" class="btn btn-sm"
+                                        @click="rowAction(row)"
+                                        :style="`border:1px solid ${toneColor(metaFor(row.next_step).tone)}; color:${toneColor(metaFor(row.next_step).tone)}; background:${toneColor(metaFor(row.next_step).tone)}14;`">
+                                    {{ metaFor(row.next_step).label }}
+                                </button>
+                                <span v-else style="display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--fg-subtle);">
+                                    <span :style="`width:7px; height:7px; border-radius:50%; background:${toneColor(metaFor(row.next_step).tone)};`"></span>
+                                    {{ metaFor(row.next_step).label }}
+                                </span>
+                            </td>
                         </tr>
                     </tbody>
                 </table>
@@ -285,30 +424,40 @@ function submitFromVisit() {
             </div>
         </div>
 
-        <!-- Detail drawer -->
-        <div v-if="drawer.open" class="modal-backdrop" @click.self="drawer.open = false" style="justify-content:flex-end; padding:0;">
-            <div class="modal-panel" style="max-width:560px; height:100vh; border-radius:0; display:flex; flex-direction:column;">
+        <!-- Detail popup -->
+        <div v-if="drawer.open" class="modal-backdrop" @click.self="drawer.open = false">
+            <div class="modal-panel" style="max-width:600px; width:100%; max-height:88vh; display:flex; flex-direction:column;">
                 <div style="display:flex; justify-content:space-between; align-items:center; padding:14px 16px; border-bottom:1px solid var(--line);">
                     <h3 style="margin:0; font-size:15px; font-weight:600;">{{ drawer.claim?.claim_number ?? '…' }}</h3>
                     <button class="btn btn-ghost btn-sm btn-icon" @click="drawer.open = false"><Icon name="x" :size="14" /></button>
                 </div>
                 <div v-if="drawer.loading" style="padding:40px; text-align:center; color:var(--fg-faint);">…</div>
-                <div v-else-if="drawer.claim" style="padding:16px; overflow-y:auto; flex:1;">
+                <div v-else-if="drawer.claim" style="padding:16px; overflow-y:auto; flex:1; min-height:0;">
                     <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
                         <span :class="statusBadge(drawer.claim.status)">{{ t.st[drawer.claim.status] ?? drawer.claim.status }}</span>
                         <span style="font-size:13px; color:var(--fg-subtle);">{{ drawer.claim.patient_policy?.patient?.name }}</span>
                     </div>
 
-                    <div class="rgrid-2" style="display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:13px; margin-bottom:16px;">
-                        <div><span style="color:var(--fg-faint);">{{ t.col.charged }}:</span> <span class="mono">{{ fmt(drawer.claim.total_charged) }}</span></div>
-                        <div><span style="color:var(--fg-faint);">{{ t.col.payable }}:</span> <span class="mono">{{ fmt(drawer.claim.insurer_payable) }}</span></div>
-                        <div><span style="color:var(--fg-faint);">{{ t.col.paid }}:</span> <span class="mono">{{ fmt(drawer.claim.paid_amount) }}</span></div>
-                        <div><span style="color:var(--fg-faint);">{{ t.drawer.balance }}:</span> <span class="mono" style="font-weight:700;">{{ fmt(drawer.balance) }}</span></div>
+                    <!-- Plain-language next step + primary action -->
+                    <div v-if="drawerNext" style="display:flex; align-items:center; gap:12px; padding:12px; border-radius:10px; margin-bottom:14px;"
+                         :style="`background:${toneColor(drawerNext.tone)}12; border:1px solid ${toneColor(drawerNext.tone)}33;`">
+                        <div style="flex:1; min-width:0;">
+                            <div style="font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.03em;" :style="`color:${toneColor(drawerNext.tone)};`">{{ t.next.header }}</div>
+                            <div style="font-size:13px; color:var(--fg); margin-top:2px;">{{ drawerNext.hint }}</div>
+                        </div>
+                        <button v-if="drawerNext.action && actions.includes(drawerNext.action)" class="btn btn-primary btn-sm" style="flex-shrink:0;" @click="openAct(drawerNext.action)">{{ t.act[drawerNext.action] }}</button>
                     </div>
 
-                    <!-- Actions -->
-                    <div v-if="actions.length" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:18px;">
-                        <button v-for="a in actions" :key="a" :class="actBtnClass(a)" @click="openAct(a)">{{ t.act[a] }}</button>
+                    <div class="rgrid-2" style="display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:13px; margin-bottom:16px;">
+                        <div :title="t.tip.charged"><span style="color:var(--fg-faint);">{{ t.col.charged }}:</span> <span class="mono">{{ fmt(drawer.claim.total_charged) }}</span></div>
+                        <div :title="t.tip.payable"><span style="color:var(--fg-faint);">{{ t.col.payable }}:</span> <span class="mono">{{ fmt(drawer.claim.insurer_payable) }}</span></div>
+                        <div :title="t.tip.paid"><span style="color:var(--fg-faint);">{{ t.col.paid }}:</span> <span class="mono">{{ fmt(drawer.claim.paid_amount) }}</span></div>
+                        <div :title="t.tip.balance"><span style="color:var(--fg-faint);">{{ t.drawer.balance }}:</span> <span class="mono" style="font-weight:700;" :style="{ color: Number(drawer.balance) > 0 ? 'var(--warning, #d97706)' : 'var(--ok)' }">{{ fmt(drawer.balance) }}</span></div>
+                    </div>
+
+                    <!-- All other actions (secondary) — the primary one lives in the banner -->
+                    <div v-if="secondaryActions.length" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:18px;">
+                        <button v-for="a in secondaryActions" :key="a" :class="actBtnClass(a)" @click="openAct(a)">{{ t.act[a] }}</button>
                     </div>
 
                     <!-- Items -->
@@ -338,7 +487,7 @@ function submitFromVisit() {
                     <!-- State log -->
                     <div style="font-size:11px; font-weight:600; text-transform:uppercase; color:var(--fg-faint); margin-bottom:6px;">{{ t.drawer.log }}</div>
                     <div v-for="log in drawer.claim.state_logs" :key="log.id" style="font-size:12px; padding:6px 0; border-bottom:1px solid var(--line);">
-                        <span class="mono">{{ log.from_status || '∅' }} → {{ log.to_status }}</span>
+                        <span class="mono">{{ t.st[log.from_status] ?? log.from_status ?? '∅' }} → {{ t.st[log.to_status] ?? log.to_status }}</span>
                         <span style="color:var(--fg-faint);"> · {{ log.changed_by?.name ?? '—' }}</span>
                         <div v-if="log.notes" style="color:var(--fg-subtle);">{{ log.notes }}</div>
                     </div>
@@ -428,11 +577,14 @@ function submitFromVisit() {
             </div>
         </div>
 
-        <!-- Draft from visit — searchable picker + coverage preview -->
+        <!-- Create a claim from a visit — searchable picker + coverage preview -->
         <div v-if="visitModal.open" class="modal-backdrop" @click.self="closeVisitModal">
             <div class="modal-panel" role="dialog" aria-modal="true" style="max-width:620px; width:100%;">
                 <div style="display:flex; justify-content:space-between; align-items:center; padding:14px 16px; border-bottom:1px solid var(--line);">
-                    <h3 style="margin:0; font-size:15px; font-weight:600;">{{ t.fromVisitTitle }}</h3>
+                    <div>
+                        <h3 style="margin:0; font-size:15px; font-weight:600;">{{ t.fromVisitTitle }}</h3>
+                        <div style="font-size:11px; color:var(--fg-faint); margin-top:2px;">{{ visitModal.selected ? t.picker.step2 : t.picker.step1 }}</div>
+                    </div>
                     <button class="btn btn-ghost btn-sm btn-icon" @click="closeVisitModal"><Icon name="x" :size="14" /></button>
                 </div>
 
@@ -442,7 +594,7 @@ function submitFromVisit() {
                         <p style="margin:0; font-size:12px; color:var(--fg-subtle);">{{ t.picker.hint }}</p>
                         <div style="position:relative;">
                             <Icon name="search" :size="14" style="position:absolute; inset-inline-start:10px; top:50%; transform:translateY(-50%); color:var(--fg-faint);" />
-                            <input v-model="visitModal.q" @input="onVisitSearch" type="search" :placeholder="t.picker.searchPh" class="input" style="padding-inline-start:32px;" />
+                            <input ref="visitSearchInput" v-model="visitModal.q" @input="onVisitSearch" type="search" :placeholder="t.picker.searchPh" class="input" style="padding-inline-start:32px;" />
                         </div>
 
                         <div v-if="visitModal.searching" style="padding:24px; text-align:center; color:var(--fg-faint); font-size:13px;">{{ t.picker.loading }}</div>
@@ -526,6 +678,7 @@ function submitFromVisit() {
                                 </div>
                             </div>
 
+                            <div v-if="draftBlock" class="err">{{ draftBlock }}</div>
                             <div v-if="visitModal.err" class="err">{{ visitModal.err }}</div>
                         </template>
                     </template>
@@ -534,7 +687,7 @@ function submitFromVisit() {
                 <div style="display:flex; justify-content:flex-end; gap:8px; padding:12px 16px; border-top:1px solid var(--line);">
                     <button type="button" class="btn btn-ghost" @click="closeVisitModal">{{ t.cancel }}</button>
                     <button type="button" class="btn btn-primary"
-                            :disabled="!visitModal.selected || visitModal.busy || visitModal.previewLoading || !(visitModal.preview && visitModal.preview.has_policy)"
+                            :disabled="!visitModal.selected || visitModal.busy || visitModal.previewLoading || !!draftBlock || !(visitModal.preview && visitModal.preview.has_policy)"
                             @click="submitFromVisit">
                         {{ visitModal.busy ? '…' : t.preview.draft }}
                     </button>

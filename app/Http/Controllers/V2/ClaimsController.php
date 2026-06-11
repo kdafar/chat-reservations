@@ -32,6 +32,11 @@ class ClaimsController extends Controller
 
     private const STATUSES = ['draft', 'submitted', 'under_review', 'approved', 'partially_approved', 'rejected', 'paid', 'void'];
 
+    /** Balance owed to us, as a SQL expression — reused for the "outstanding" sort + filter. */
+    private const BALANCE_SQL = '(insurer_payable - paid_amount - write_off_amount - rejected_amount)';
+
+    private const SORTS = ['recent', 'outstanding', 'aging'];
+
     protected function authorizeAccess(Request $request): void
     {
         if (! $request->user() || ! $request->user()->can('view_any_insurance_claims')) {
@@ -43,46 +48,139 @@ class ClaimsController extends Controller
     {
         $this->authorizeAccess($request);
 
-        $filters = [
-            'q' => trim((string) $request->input('q', '')),
-            'status' => $request->input('status', 'all'),
-        ];
+        $q = trim((string) $request->input('q', ''));
+        // A search should look across every claim, not just the current tab —
+        // landing on "Needs action" must never hide a paid claim someone looks up.
+        $status = $q !== '' ? 'all' : (string) $request->input('status', 'needs_action');
+        $insurer = (int) $request->input('insurer', 0);
+        $branch = (int) $request->input('branch', 0);
+        $sort = in_array($request->input('sort'), self::SORTS, true) ? $request->input('sort') : 'recent';
+
+        $filters = ['q' => $q, 'status' => $status, 'insurer' => $insurer ?: null, 'branch' => $branch ?: null, 'sort' => $sort];
+
+        // Insurer/branch scope is applied to BOTH the list and the tab counts so
+        // the numbers on the tabs always match the rows the current filter shows.
+        $scope = function ($qb) use ($insurer, $branch) {
+            if ($insurer) $qb->whereHas('patientPolicy', fn ($p) => $p->where('insurer_id', $insurer));
+            if ($branch) $qb->where('branch_id', $branch);
+            return $qb;
+        };
 
         $query = InsuranceClaim::query()
             ->with([
                 'patientPolicy.patient:id,name',
                 'patientPolicy.insurer:id,name',
                 'visit:id',
-            ]);
+            ])
+            ->tap($scope);
 
-        if ($filters['q'] !== '') {
-            $q = $filters['q'];
+        if ($q !== '') {
             $query->where(function ($qq) use ($q) {
                 $qq->where('claim_number', 'like', "%{$q}%")
                     ->orWhere('reference_no', 'like', "%{$q}%")
                     ->orWhereHas('patientPolicy.patient', fn ($p) => $p->where('name', 'like', "%{$q}%"));
             });
         }
-        if (in_array($filters['status'], self::STATUSES, true)) {
-            $query->where('status', $filters['status']);
+
+        // Tab filters. "needs_action" / "waiting" are workflow buckets, not raw
+        // statuses; the rest map straight through.
+        if ($status === 'needs_action') {
+            $query->where($this->needsActionScope());
+        } elseif ($status === 'waiting') {
+            $query->whereIn('status', [InsuranceClaim::STATUS_SUBMITTED, InsuranceClaim::STATUS_UNDER_REVIEW]);
+        } elseif (in_array($status, self::STATUSES, true)) {
+            $query->where('status', $status);
         }
 
-        $page = $query->orderByDesc('id')->paginate(25)->withQueryString();
+        // Sort: newest, most money owed first, or longest-waiting first (aging).
+        match ($sort) {
+            'outstanding' => $query->orderByRaw(self::BALANCE_SQL.' DESC')->orderByDesc('id'),
+            'aging' => $query->orderByRaw('COALESCE(submitted_at, created_at) ASC')->orderBy('id'),
+            default => $query->orderByDesc('id'),
+        };
+
+        $page = $query->paginate(25)->withQueryString();
         $page->getCollection()->transform(function (InsuranceClaim $c) {
             $c->setAttribute('balance_due', $c->balanceDue());
+            $c->setAttribute('next_step', $this->nextStepFor($c));
+            // Age = days a claim has been with us / the insurer. Use submission
+            // time once sent, else creation time. Only meaningful while open.
+            $ref = $c->submitted_at ?? $c->created_at;
+            $c->setAttribute('age_days', $ref ? (int) $ref->copy()->startOfDay()->diffInDays(now()->startOfDay()) : null);
             return $c;
         });
+
+        $byStatus = InsuranceClaim::query()->tap($scope)->selectRaw('status, COUNT(*) as c')->groupBy('status')->pluck('c', 'status');
 
         return Inertia::render('Claims/Index', [
             'filters' => $filters,
             'page' => $page,
             'statuses' => self::STATUSES,
+            'insurers' => $this->insurerOptions(),
+            'branches' => $this->branchOptions(),
             'counts' => [
-                'total' => InsuranceClaim::query()->count(),
-                'open' => InsuranceClaim::query()->whereNotIn('status', ['paid', 'void', 'rejected'])->count(),
+                'total' => (int) $byStatus->sum(),
+                'needs_action' => (int) InsuranceClaim::query()->tap($scope)->where($this->needsActionScope())->count(),
+                'waiting' => (int) (($byStatus[InsuranceClaim::STATUS_SUBMITTED] ?? 0) + ($byStatus[InsuranceClaim::STATUS_UNDER_REVIEW] ?? 0)),
+                'paid' => (int) ($byStatus[InsuranceClaim::STATUS_PAID] ?? 0),
+                'rejected' => (int) ($byStatus[InsuranceClaim::STATUS_REJECTED] ?? 0),
+                'open' => (int) InsuranceClaim::query()->tap($scope)->whereNotIn('status', ['paid', 'void', 'rejected'])->count(),
             ],
             'can' => $this->capabilities($request),
         ]);
+    }
+
+    /** Insurers that actually appear on a claim — keeps the filter list tight. */
+    protected function insurerOptions(): array
+    {
+        $ids = InsuranceClaim::query()
+            ->join('patient_insurance_policies', 'patient_insurance_policies.id', '=', 'insurance_claims.patient_policy_id')
+            ->distinct()->pluck('patient_insurance_policies.insurer_id')->filter()->all();
+
+        return \App\Models\Insurance\Insurer::query()
+            ->whereIn('id', $ids)->orderBy('name')->get(['id', 'name'])
+            ->map(fn ($i) => ['value' => $i->id, 'label' => $i->name])->all();
+    }
+
+    /** Branches that actually have claims (names are translatable → resolve to locale). */
+    protected function branchOptions(): array
+    {
+        $ids = InsuranceClaim::query()->whereNotNull('branch_id')->distinct()->pluck('branch_id')->all();
+
+        return \App\Models\Branch::query()
+            ->whereIn('id', $ids)->get(['id', 'name'])
+            ->map(fn ($b) => ['value' => $b->id, 'label' => $this->branchName($b)])
+            ->sortBy('label')->values()->all();
+    }
+
+    /**
+     * Query scope for "needs action on our side": a draft to send, or an
+     * approved/partial claim with money still owed to us. submitted/under_review
+     * sit with the insurer, so they are NOT actionable here.
+     */
+    protected function needsActionScope(): \Closure
+    {
+        return function ($q) {
+            $q->where('status', InsuranceClaim::STATUS_DRAFT)
+                ->orWhere(function ($w) {
+                    $w->whereIn('status', [InsuranceClaim::STATUS_APPROVED, InsuranceClaim::STATUS_PARTIALLY_APPROVED])
+                        ->whereRaw('(insurer_payable - paid_amount - write_off_amount - rejected_amount) > 0.0005');
+                });
+        };
+    }
+
+    /** Plain "what happens next" hint for a row, mirrored by the UI's Next-step column. */
+    protected function nextStepFor(InsuranceClaim $c): string
+    {
+        return match (true) {
+            $c->status === InsuranceClaim::STATUS_DRAFT => 'submit',
+            in_array($c->status, [InsuranceClaim::STATUS_SUBMITTED, InsuranceClaim::STATUS_UNDER_REVIEW], true) => 'await',
+            in_array($c->status, [InsuranceClaim::STATUS_APPROVED, InsuranceClaim::STATUS_PARTIALLY_APPROVED], true)
+                => $c->balanceDue() > 0.0005 ? 'record_payment' : 'settled',
+            $c->status === InsuranceClaim::STATUS_PAID => 'settled',
+            $c->status === InsuranceClaim::STATUS_REJECTED => 'rejected',
+            default => 'none',
+        };
     }
 
     /** Stream selected claims as CSV (bulk export). Not an Inertia response. */
@@ -176,11 +274,12 @@ class ClaimsController extends Controller
                 'patient:id,name',
                 'branch:id,name',
             ])
-            // Patient must have at least one active policy. PatientInsurancePolicy
-            // carries the canonical `active` scope (status + effective window), so
-            // build the existence check off that query rather than a raw subquery.
+            // Patient must have an active *primary* policy — that is the policy a
+            // claim is actually built on (createClaimFromVisit), so requiring it
+            // here stops a visit being offered that would then fail to draft.
             ->whereIn('patient_id', PatientInsurancePolicy::query()
                 ->active()
+                ->where('is_primary', true)
                 ->select('patient_id'))
             // No existing non-void claim already drafted for this visit.
             ->whereDoesntHave('insuranceClaims', function ($c) {
@@ -240,7 +339,12 @@ class ClaimsController extends Controller
         $policy = $this->insurance->primaryPolicyFor($visit->patient);
         $policy?->loadMissing(['insurer:id,name', 'plan:id,code,name']);
 
-        $estimate = $this->insurance->estimateForVisit($visit);
+        // Estimate against the SAME single policy the claim will be built on, so
+        // the preview the user signs off on equals the draft they get. With no
+        // primary policy there is nothing to draft — return an empty breakdown.
+        $estimate = $policy
+            ? $this->insurance->estimateForPolicy($visit, $policy)
+            : ['by_kind' => [], 'totals' => ['gross' => 0, 'patient_total' => 0, 'insurer_total' => 0]];
 
         $rows = [];
         foreach (($estimate['by_kind'] ?? []) as $kind => $bucket) {
@@ -398,12 +502,16 @@ class ClaimsController extends Controller
         $this->authorizeAccess($request);
         if (! $request->user()->can('insurance_record_payment')) abort(403);
 
+        // Never let a payment exceed what is still owed — that would drive
+        // balanceDue() negative. Cap at the current outstanding balance.
+        $balance = number_format(max(0, $this->roundedBalance($claim)), 3, '.', '');
+
         $data = $request->validate([
-            'amount' => ['required', 'numeric', 'min:0.001'],
+            'amount' => ['required', 'numeric', 'min:0.001', 'max:'.$balance],
             'method' => ['required', Rule::in(['cheque', 'transfer', 'cash'])],
             'reference_no' => ['nullable', 'string', 'max:64'],
             'deposited_to_account_id' => ['nullable', 'integer', Rule::exists('chart_of_accounts', 'id')],
-        ]);
+        ], ['amount.max' => "Amount can't exceed the outstanding balance of KWD {$balance}."]);
 
         try {
             $payment = $this->insurance->recordInsurerPayment(
@@ -426,10 +534,13 @@ class ClaimsController extends Controller
         $this->authorizeAccess($request);
         if (! $request->user()->can('insurance_writeoff')) abort(403);
 
+        // A write-off can't forgive more than is still outstanding.
+        $balance = number_format(max(0, $this->roundedBalance($claim)), 3, '.', '');
+
         $data = $request->validate([
-            'amount' => ['required', 'numeric', 'min:0.001'],
+            'amount' => ['required', 'numeric', 'min:0.001', 'max:'.$balance],
             'reason' => ['required', 'string', 'max:2000'],
-        ]);
+        ], ['amount.max' => "Amount can't exceed the outstanding balance of KWD {$balance}."]);
 
         try {
             $this->insurance->writeOff($claim, (float) $data['amount'], $data['reason'], $request->user());
@@ -462,6 +573,12 @@ class ClaimsController extends Controller
         }
 
         return back()->with('flash', ['type' => 'success', 'message' => 'Claim updated.']);
+    }
+
+    /** Outstanding balance rounded to fils — the cap for payments and write-offs. */
+    protected function roundedBalance(InsuranceClaim $claim): float
+    {
+        return round($claim->balanceDue(), 3);
     }
 
     protected function capabilities(Request $request): array

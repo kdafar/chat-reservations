@@ -95,6 +95,22 @@ class InsuranceService
         return $this->calculator->estimate($visit, $policies);
     }
 
+    /**
+     * Coverage estimate for a visit against a SINGLE policy. This is the basis a
+     * draft claim is actually built on (see createClaimFromVisit), so the preview
+     * must use this — not the cascaded all-policies estimate — to avoid showing
+     * the user a split that differs from the claim they create.
+     *
+     * @return array{
+     *   by_kind: array<string, array{kind: string, gross: float, patient_copay: float, insurer_portions: array<int, array{policy_id: int, amount: float}>}>,
+     *   totals: array{gross: float, patient_total: float, insurer_total: float}
+     * }
+     */
+    public function estimateForPolicy(Visit $visit, PatientInsurancePolicy $policy): array
+    {
+        return $this->calculator->estimate($visit, collect([$policy]));
+    }
+
     // -------------------------------------------------------------------------
     // CLAIM CREATION
     // -------------------------------------------------------------------------
@@ -302,6 +318,14 @@ class InsuranceService
         }
 
         $payment = DB::transaction(function () use ($claim, $amount, $method, $referenceNo, $depositedToAccountId, $user) {
+            // Re-check the balance against a locked row so two concurrent entries
+            // can't each pass the controller cap and together overpay the claim.
+            $locked = InsuranceClaim::query()->whereKey($claim->getKey())->lockForUpdate()->firstOrFail();
+            $balance = round($locked->balanceDue(), 3);
+            if (round($amount, 3) > $balance + 0.0005) {
+                throw new RuntimeException("Insurer payment of {$amount} exceeds the outstanding balance ({$balance}) for claim #{$claim->claim_number}.");
+            }
+
             $payment = new InsuranceClaimPayment;
             $payment->forceFill([
                 'claim_id' => $claim->id,
@@ -319,7 +343,7 @@ class InsuranceService
                 ->where('claim_id', $claim->id)
                 ->sum('amount');
 
-            $claim->forceFill([
+            $locked->forceFill([
                 'paid_amount' => round((float) $paidSum, 3),
             ])->save();
 
@@ -380,16 +404,23 @@ class InsuranceService
         }
 
         DB::transaction(function () use ($claim, $amount, $reason, $user) {
-            $newWriteOff = round((float) $claim->write_off_amount + $amount, 3);
+            // Lock + re-check so a write-off can't race past the outstanding balance.
+            $locked = InsuranceClaim::query()->whereKey($claim->getKey())->lockForUpdate()->firstOrFail();
+            $balance = round($locked->balanceDue(), 3);
+            if (round($amount, 3) > $balance + 0.0005) {
+                throw new RuntimeException("Write-off of {$amount} exceeds the outstanding balance ({$balance}) for claim #{$claim->claim_number}.");
+            }
 
-            $claim->forceFill([
+            $newWriteOff = round((float) $locked->write_off_amount + $amount, 3);
+
+            $locked->forceFill([
                 'write_off_amount' => $newWriteOff,
             ])->save();
 
             InsuranceClaimStateLog::create([
                 'claim_id' => $claim->id,
-                'from_status' => $claim->status,
-                'to_status' => $claim->status,
+                'from_status' => $locked->status,
+                'to_status' => $locked->status,
                 'changed_by_user_id' => $user->id,
                 'changed_at' => now(),
                 'notes' => 'Write-off '.number_format($amount, 3)." KWD: {$reason}",
