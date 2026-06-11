@@ -1585,7 +1585,7 @@ const primaryPolicy = computed(() => {
                             <!-- Method -->
                             <div>
                                 <div class="eyebrow" style="margin-bottom: 6px;">{{ t.payments.method }}</div>
-                                <div class="seg" style="flex-wrap: wrap;">
+                                <div class="seg seg-wrap">
                                     <button
                                         v-for="m in paymentMethods"
                                         :key="m.id"

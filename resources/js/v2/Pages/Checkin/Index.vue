@@ -26,6 +26,22 @@ const t = computed(() => isRtl.value
         fee: 'رسوم الاستشارة',
         method: 'طريقة الدفع',
         cash: 'كاش', card: 'بطاقة',
+        methods: { cash: 'كاش', card: 'بطاقة', knet: 'كي-نت', link: 'رابط دفع', transfer: 'تحويل', insurance: 'تأمين' },
+        reference: 'رقم المرجع / العملية',
+        referenceOptional: 'اختياري',
+        referenceRequired: 'مطلوب لهذه الطريقة',
+        online: 'دفع إلكتروني',
+        genLink: 'إنشاء رابط دفع / QR',
+        scanToPay: 'اطلب من المريض مسح الرمز للدفع',
+        copyLink: 'نسخ الرابط',
+        sendWa: 'إرسال واتساب',
+        checkStatus: 'تحقق من حالة الدفع',
+        linkFailed: 'تعذّر إنشاء رابط الدفع',
+        waNotSent: 'لم يُرسل عبر واتساب',
+        waSent: 'أُرسل الرابط عبر واتساب',
+        linkCopied: 'تم نسخ الرابط',
+        paymentPending: 'لم يُستلم الدفع بعد',
+        orCash: 'أو سجّل دفعة يدوية',
         collect: 'تحصيل الدفعة',
         feePaid: 'تم تحصيل الرسوم',
         feeRequiredBeforeCheckin: 'يجب تحصيل رسوم الاستشارة قبل تسجيل الوصول.',
@@ -56,6 +72,22 @@ const t = computed(() => isRtl.value
         fee: 'Consultation fee',
         method: 'Payment method',
         cash: 'Cash', card: 'Card',
+        methods: { cash: 'Cash', card: 'Card', knet: 'KNET', link: 'Payment Link', transfer: 'Transfer', insurance: 'Insurance' },
+        reference: 'Transaction / reference no.',
+        referenceOptional: 'optional',
+        referenceRequired: 'required for this method',
+        online: 'Online payment',
+        genLink: 'Generate payment link / QR',
+        scanToPay: 'Ask the patient to scan to pay',
+        copyLink: 'Copy link',
+        sendWa: 'Send WhatsApp',
+        checkStatus: 'Check payment status',
+        linkFailed: 'Could not create payment link',
+        waNotSent: 'WhatsApp not sent',
+        waSent: 'Payment link sent on WhatsApp',
+        linkCopied: 'Link copied',
+        paymentPending: 'Payment not received yet',
+        orCash: 'Or record a manual payment',
         collect: 'Collect payment',
         feePaid: 'Fee collected',
         feeRequiredBeforeCheckin: 'Collect the consultation fee before check-in.',
@@ -85,7 +117,94 @@ const loading = ref(false)
 
 const feeMethod = ref('cash')
 const feeAmount = ref('')
+const feeRef = ref('')
 const collecting = ref(false)
+
+// Payment methods are admin-configurable per clinic/branch; the booking
+// endpoint resolves the enabled set and we render those instead of a fixed
+// cash/card pair.
+const paymentMethods = ref([])
+const methodIcons = { cash: 'banknote', card: 'credit-card', knet: 'smartphone', link: 'link-2', transfer: 'building', insurance: 'shield' }
+function methodLabel(m) { return t.value.methods[m.key] ?? m.label }
+function methodIcon(m) { return methodIcons[m.key] ?? 'wallet' }
+const selectedMethod = computed(() => paymentMethods.value.find((m) => m.key === feeMethod.value) ?? null)
+const methodNeedsRef = computed(() => !!selectedMethod.value?.requires_reference)
+const collectDisabled = computed(() => collecting.value || (methodNeedsRef.value && !feeRef.value.trim()))
+
+// Online payment (MyFatoorah link + QR + WhatsApp) — mirrors VisitSheet. The
+// actual payment is recorded by the gateway callback, so after the patient pays
+// reception taps "Check payment status" to advance.
+const onlineAvailable = ref(false)
+const linkLoading = ref(false)
+const linkUrl = ref('')
+const linkQr = ref('')
+const linkAmount = ref(0)
+const waSending = ref(false)
+const checkingPaid = ref(false)
+function resetLink() { linkUrl.value = ''; linkQr.value = ''; linkAmount.value = 0 }
+
+async function generatePaymentLink() {
+    if (!booking.value || linkLoading.value) return
+    linkLoading.value = true
+    try {
+        const resp = await fetch(`/admin/v2/api/checkin/bookings/${booking.value.id}/payment-link`, {
+            method: 'POST', credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf(), Accept: 'application/json' },
+            body: JSON.stringify({}),
+        })
+        const data = await resp.json().catch(() => ({}))
+        if (!resp.ok || !data.ok) {
+            pushToast({ kind: 'warning', icon: 'alert-triangle', title: t.value.linkFailed, desc: data.error })
+            return
+        }
+        linkUrl.value = data.url
+        linkQr.value = data.qr_svg
+        linkAmount.value = data.amount
+    } finally { linkLoading.value = false }
+}
+
+async function sendLinkWhatsApp() {
+    if (!booking.value || waSending.value) return
+    waSending.value = true
+    try {
+        const resp = await fetch(`/admin/v2/api/checkin/bookings/${booking.value.id}/payment-link/whatsapp`, {
+            method: 'POST', credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf(), Accept: 'application/json' },
+            body: JSON.stringify({}),
+        })
+        const data = await resp.json().catch(() => ({}))
+        if (!resp.ok || !data.ok) {
+            pushToast({ kind: data.soft ? 'info' : 'warning', icon: 'alert-triangle', title: t.value.waNotSent, desc: data.error })
+            return
+        }
+        pushToast({ kind: 'success', icon: 'check', title: t.value.waSent })
+    } finally { waSending.value = false }
+}
+
+function copyPaymentLink() {
+    if (!linkUrl.value) return
+    navigator.clipboard?.writeText(linkUrl.value)
+    pushToast({ kind: 'success', icon: 'check', title: t.value.linkCopied })
+}
+
+// Re-fetch the booking to see if the online payment landed (via callback). If
+// the consultation fee is now covered, advance to room assignment.
+async function checkPaymentStatus() {
+    if (!booking.value || checkingPaid.value) return
+    checkingPaid.value = true
+    try {
+        const r = await fetch(`/admin/v2/api/checkin/bookings/${booking.value.id}`, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+        const data = await r.json()
+        booking.value = data.booking
+        if (booking.value.consultation_paid) {
+            pushToast({ kind: 'success', icon: 'check', title: t.value.feePaid })
+            await loadRooms()
+            step.value = 3
+        } else {
+            pushToast({ kind: 'info', icon: 'clock', title: t.value.paymentPending })
+        }
+    } finally { checkingPaid.value = false }
+}
 
 const rooms = ref([])
 const selectedRoomId = ref(null)
@@ -113,6 +232,14 @@ async function runSearch() {
     }
 }
 
+// Apply the resolved method list and pick a default (prefer cash, else first).
+function applyMethods(list) {
+    paymentMethods.value = Array.isArray(list) && list.length ? list : []
+    feeRef.value = ''
+    const keys = paymentMethods.value.map((m) => m.key)
+    feeMethod.value = keys.includes('cash') ? 'cash' : (keys[0] ?? 'cash')
+}
+
 onMounted(runSearch)
 watch(q, () => {
     clearTimeout(searchDebounce)
@@ -130,6 +257,9 @@ async function pick(b) {
         const data = await r.json()
         booking.value = data.booking
         feeAmount.value = (booking.value.fee ?? 0).toFixed(3)
+        applyMethods(data.payment_methods)
+        onlineAvailable.value = !!data.online_payment_available
+        resetLink()
 
         // If fee already paid OR doctor has no fee, skip to step 3.
         if (booking.value.consultation_paid || (booking.value.fee ?? 0) <= 0) {
@@ -155,7 +285,7 @@ async function collectFee() {
                 'X-CSRF-TOKEN': csrf(),
                 'Accept': 'application/json',
             },
-            body: JSON.stringify({ amount: Number(feeAmount.value), method: feeMethod.value }),
+            body: JSON.stringify({ amount: Number(feeAmount.value), method: feeMethod.value, reference_no: feeRef.value.trim() || null }),
         })
         if (!resp.ok) {
             const err = await resp.json().catch(() => ({}))
@@ -215,6 +345,10 @@ function startOver() {
     selectedRoomId.value = null
     feeAmount.value = ''
     feeMethod.value = 'cash'
+    feeRef.value = ''
+    paymentMethods.value = []
+    onlineAvailable.value = false
+    resetLink()
     success.value = null
     nextTick(runSearch)
 }
@@ -381,27 +515,89 @@ function fmtMoney(n) { return (Number(n) || 0).toFixed(3) }
                     </div>
 
                     <div class="eyebrow" style="margin-bottom: 8px;">{{ t.method }}</div>
-                    <div class="seg" style="margin-bottom: 18px;">
-                        <button type="button" :class="feeMethod === 'cash' ? 'is-active' : ''" @click="feeMethod = 'cash'">
-                            <Icon name="banknote" :size="13" />
-                            {{ t.cash }}
+                    <div class="seg seg-wrap" style="margin-bottom: 14px;">
+                        <button
+                            v-for="m in paymentMethods"
+                            :key="m.key"
+                            type="button"
+                            :class="feeMethod === m.key ? 'is-active' : ''"
+                            @click="feeMethod = m.key; feeRef = ''"
+                        >
+                            <Icon :name="methodIcon(m)" :size="13" />
+                            {{ methodLabel(m) }}
                         </button>
-                        <button type="button" :class="feeMethod === 'card' ? 'is-active' : ''" @click="feeMethod = 'card'">
-                            <Icon name="credit-card" :size="13" />
-                            {{ t.card }}
-                        </button>
+                    </div>
+
+                    <!-- Reference / transaction id — shown for methods that require it -->
+                    <div v-if="methodNeedsRef" style="margin-bottom: 16px;">
+                        <div class="eyebrow" style="margin-bottom: 6px;">
+                            {{ t.reference }}
+                            <span style="color: var(--destructive, var(--fg-subtle)); font-weight: 500;"> · {{ t.referenceRequired }}</span>
+                        </div>
+                        <input
+                            v-model="feeRef"
+                            type="text"
+                            maxlength="64"
+                            class="input tnum"
+                            style="width: 100%;"
+                            :placeholder="t.reference"
+                        />
                     </div>
 
                     <button
                         type="button"
                         class="btn btn-primary"
                         style="width: 100%; height: 44px; font-size: 14px;"
-                        :disabled="collecting"
+                        :disabled="collectDisabled"
                         @click="collectFee"
                     >
                         <Icon :name="collecting ? 'loader' : 'check'" :size="15" />
                         {{ collecting ? t.loading : t.collect }}
                     </button>
+
+                    <!-- Online payment: MyFatoorah link + QR + WhatsApp (recorded
+                         by the gateway callback; reception checks status to advance). -->
+                    <div v-if="onlineAvailable" style="border-top: 1px dashed var(--line); margin-top: 18px; padding-top: 16px;">
+                        <div class="eyebrow" style="margin-bottom: 10px;">{{ t.online }}</div>
+
+                        <button
+                            v-if="!linkUrl"
+                            type="button"
+                            class="btn btn-outline"
+                            style="width: 100%; height: 42px;"
+                            :disabled="linkLoading"
+                            @click="generatePaymentLink"
+                        >
+                            <Icon :name="linkLoading ? 'loader' : 'link'" :size="14" />
+                            {{ linkLoading ? t.loading : t.genLink }}
+                        </button>
+
+                        <div v-else style="display: flex; flex-direction: column; align-items: center; gap: 12px;">
+                            <img :src="linkQr" alt="Payment QR" style="width: 184px; height: 184px; background: #fff; border-radius: 10px; padding: 8px; border: 1px solid var(--line);" />
+                            <div style="font-size: 12.5px; color: var(--fg-muted); text-align: center;">
+                                {{ t.scanToPay }}
+                                <span v-if="linkAmount" class="tnum"> · {{ fmtMoney(linkAmount) }} {{ t.kwd }}</span>
+                            </div>
+                            <div style="display: flex; gap: 8px; width: 100%;">
+                                <button type="button" class="btn btn-outline" style="flex: 1;" @click="copyPaymentLink">
+                                    <Icon name="copy" :size="13" />{{ t.copyLink }}
+                                </button>
+                                <button type="button" class="btn btn-outline" style="flex: 1;" :disabled="waSending" @click="sendLinkWhatsApp">
+                                    <Icon :name="waSending ? 'loader' : 'message-circle'" :size="13" />{{ t.sendWa }}
+                                </button>
+                            </div>
+                            <button
+                                type="button"
+                                class="btn btn-primary"
+                                style="width: 100%; height: 42px;"
+                                :disabled="checkingPaid"
+                                @click="checkPaymentStatus"
+                            >
+                                <Icon :name="checkingPaid ? 'loader' : 'refresh-cw'" :size="14" />
+                                {{ checkingPaid ? t.loading : t.checkStatus }}
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
 

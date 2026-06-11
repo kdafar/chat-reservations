@@ -88,4 +88,25 @@ class ClinicPaymentMethodResolver
             'requires_reference' => (bool) $m->requires_reference,
         ], $rows);
     }
+
+    /**
+     * Same as forBranch(), but never returns an empty list: if a clinic has no
+     * methods configured at all, fall back to the manual POS defaults so the
+     * reception/check-in UIs always have something to render.
+     *
+     * @return array<int, array{key:string,label:string,type:string,requires_reference:bool}>
+     */
+    public function forBranchOrDefault(int $branchId, ?int $partnerId): array
+    {
+        $methods = $this->forBranch($branchId, $partnerId);
+        if (! empty($methods)) {
+            return $methods;
+        }
+
+        return [
+            ['key' => 'cash', 'label' => 'Cash', 'type' => 'manual', 'requires_reference' => false],
+            ['key' => 'knet', 'label' => 'KNET', 'type' => 'manual', 'requires_reference' => true],
+            ['key' => 'card', 'label' => 'Card', 'type' => 'manual', 'requires_reference' => true],
+        ];
+    }
 }

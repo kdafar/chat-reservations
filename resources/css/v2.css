@@ -382,6 +382,11 @@ input[type="radio"]:disabled { opacity: 0.5; cursor: not-allowed; }
     height: 36px;
 }
 .seg-sm { height: 30px; padding: 2px; }
+/* Wrapping variant — for segmented controls with many options (e.g. the full
+   set of configurable payment methods) that need to flow onto multiple rows.
+   Drops the fixed height so wrapped rows aren't clipped. */
+.seg-wrap { height: auto; flex-wrap: wrap; }
+.seg-wrap button { height: 30px; }
 .seg button {
     appearance: none; border: 0; background: transparent;
     padding: 0 12px; border-radius: 6px; font-size: 12px;

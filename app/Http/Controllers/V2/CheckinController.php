@@ -90,7 +90,41 @@ class CheckinController extends Controller
                 'consultation_paid' => $fee > 0 && $paid >= $fee,
                 'already_checked_in' => ! is_null($booking->checked_in_at),
             ]),
+            // Manual desk methods only (cash/KNET/card/transfer). Insurance is a
+            // claim/coverage concept — never a fee paid at reception — and online
+            // is handled separately via the payment-link / QR action below.
+            'payment_methods' => $this->consultationMethods($booking),
+            // Whether a MyFatoorah gateway is configured for this branch, so the
+            // fee step can offer an online payment link / QR (mirrors VisitSheet).
+            'online_payment_available' => $this->onlinePaymentAvailable($booking),
         ]);
+    }
+
+    /**
+     * Manual payment methods valid for collecting a consultation fee at the desk:
+     * the configured set minus online (link) and minus insurance. Online is its
+     * own link/QR flow; insurance is the claim module, not a cash-drawer method.
+     *
+     * @return array<int, array{key:string,label:string,type:string,requires_reference:bool}>
+     */
+    protected function consultationMethods(Booking $booking): array
+    {
+        $methods = app(\App\Services\Clinic\ClinicPaymentMethodResolver::class)
+            ->forBranchOrDefault((int) $booking->branch_id, (int) ($booking->branch?->partner_id ?? 0));
+
+        return array_values(array_filter(
+            $methods,
+            fn ($m) => ($m['type'] ?? 'manual') !== 'online' && ($m['key'] ?? '') !== 'insurance',
+        ));
+    }
+
+    /** Is a MyFatoorah gateway configured for this booking's branch? */
+    protected function onlinePaymentAvailable(Booking $booking): bool
+    {
+        return (bool) \App\Models\GatewayAccount::bestForBranch(
+            (int) $booking->branch_id,
+            (int) ($booking->branch?->partner_id ?? 0) ?: null,
+        );
     }
 
     /**
@@ -102,48 +136,42 @@ class CheckinController extends Controller
     public function collectFee(Request $request, Booking $booking): JsonResponse
     {
         $this->abortIfNotReception();
-        $request->validate([
+
+        // Validate against the manual desk methods (cash/KNET/card/transfer) —
+        // online + insurance are excluded (see consultationMethods()).
+        $methods = $this->consultationMethods($booking);
+        $allowedKeys = array_values(array_filter(array_column($methods, 'key')));
+
+        $data = $request->validate([
             'amount' => 'required|numeric|min:0.001',
-            'method' => 'required|in:cash,card',
+            'method' => ['required', \Illuminate\Validation\Rule::in($allowedKeys)],
+            'reference_no' => 'nullable|string|max:64',
         ]);
+
+        // Card / KNET / transfer require a transaction/reference id — cash
+        // doesn't. Enforce server-side per the method's config flag.
+        $chosen = collect($methods)->firstWhere('key', $data['method']);
+        if (($chosen['requires_reference'] ?? false) && trim((string) ($data['reference_no'] ?? '')) === '') {
+            return response()->json([
+                'ok' => false,
+                'error' => 'A transaction / reference number is required for '.($chosen['label'] ?? $data['method']).' payments.',
+                'field' => 'reference_no',
+            ], 422);
+        }
 
         $fee = (float) ($booking->doctor->consultation_fee ?? 0);
         if ($fee <= 0) {
             return response()->json(['ok' => false, 'error' => 'Doctor has no consultation fee set.'], 422);
         }
 
-        DB::transaction(function () use ($booking, $request, $fee) {
-            $visit = Visit::firstOrCreate(
-                ['booking_id' => $booking->id],
-                [
-                    'patient_id' => $booking->patient_id,
-                    'doctor_id' => $booking->doctor_id,
-                    'branch_id' => $booking->branch_id,
-                    'restaurant_table_id' => $booking->table_id,
-                    'source' => $booking->source,
-                    'booking_code' => $booking->booking_code,
-                    'status' => Visit::STATUS_CREATED,
-                ]
-            );
-
-            // Mirror Filament: a VisitCharge with label='Consultation Fee'
-            // is created/updated for every fee collection. Check-in's
-            // "hasCharge" guard depends on this row.
-            \App\Models\VisitCharge::updateOrCreate(
-                ['visit_id' => $visit->id, 'label' => 'Consultation Fee'],
-                [
-                    'branch_id' => (int) $visit->branch_id,
-                    'qty' => 1,
-                    'unit_price_snapshot' => $fee,
-                    'line_total' => $fee,
-                    'added_by_user_id' => auth()->id(),
-                ]
-            );
+        DB::transaction(function () use ($booking, $data, $fee) {
+            $visit = $this->ensureVisitWithFeeCharge($booking, $fee);
 
             VisitPayment::create([
                 'visit_id' => $visit->id,
-                'amount' => (float) $request->input('amount'),
-                'method' => (string) $request->input('method'),
+                'amount' => (float) $data['amount'],
+                'method' => (string) $data['method'],
+                'reference_no' => $data['reference_no'] ?? null,
                 'status' => 'paid',
                 'kind' => VisitPayment::KIND_CONSULTATION,
                 'collected_by_user_id' => auth()->id(),
@@ -152,6 +180,178 @@ class CheckinController extends Controller
         });
 
         return $this->booking($request, $booking);
+    }
+
+    /**
+     * Get-or-create the Visit shell for a booking and ensure its
+     * 'Consultation Fee' VisitCharge exists. Shared by collectFee() and the
+     * payment-link flow — both need the visit + charge before money can land
+     * against it (the check-in "hasCharge" gate depends on this row).
+     */
+    protected function ensureVisitWithFeeCharge(Booking $booking, float $fee): Visit
+    {
+        $visit = Visit::firstOrCreate(
+            ['booking_id' => $booking->id],
+            [
+                'patient_id' => $booking->patient_id,
+                'doctor_id' => $booking->doctor_id,
+                'branch_id' => $booking->branch_id,
+                'restaurant_table_id' => $booking->table_id,
+                'source' => $booking->source,
+                'booking_code' => $booking->booking_code,
+                'status' => Visit::STATUS_CREATED,
+            ]
+        );
+
+        \App\Models\VisitCharge::updateOrCreate(
+            ['visit_id' => $visit->id, 'label' => 'Consultation Fee'],
+            [
+                'branch_id' => (int) $visit->branch_id,
+                'qty' => 1,
+                'unit_price_snapshot' => $fee,
+                'line_total' => $fee,
+                'added_by_user_id' => auth()->id(),
+            ]
+        );
+
+        return $visit;
+    }
+
+    /**
+     * Generate a MyFatoorah payment link + QR for the consultation fee. The
+     * VisitPayment is recorded by the gateway callback once paid — never here —
+     * so this is safe to call repeatedly. Mirrors VisitConsole's payment-link.
+     */
+    public function createPaymentLink(Request $request, Booking $booking): JsonResponse
+    {
+        $this->abortIfNotReception();
+
+        if (! $this->onlinePaymentAvailable($booking)) {
+            return response()->json(['ok' => false, 'error' => 'Online payment is not configured for this branch.'], 422);
+        }
+
+        $fee = (float) ($booking->doctor->consultation_fee ?? 0);
+        if ($fee <= 0) {
+            return response()->json(['ok' => false, 'error' => 'Doctor has no consultation fee set.'], 422);
+        }
+
+        try {
+            $visit = DB::transaction(fn () => $this->ensureVisitWithFeeCharge($booking, $fee));
+            $res = app(\App\Services\Clinic\VisitPaymentLinkService::class)
+                ->createForVisit($visit, $fee, 'consultation');
+        } catch (\Throwable $e) {
+            return response()->json(['ok' => false, 'error' => $e->getMessage()], 422);
+        }
+
+        return response()->json(['ok' => true] + $res);
+    }
+
+    /**
+     * Generate the consultation-fee payment link and push it to the patient's
+     * WhatsApp. Prefers the approved `clinic_payment_link` template (works
+     * outside the 24h window); falls back to a plain session message.
+     */
+    public function sendPaymentLinkWhatsApp(Request $request, Booking $booking): JsonResponse
+    {
+        $this->abortIfNotReception();
+
+        if (! $this->onlinePaymentAvailable($booking)) {
+            return response()->json(['ok' => false, 'error' => 'Online payment is not configured for this branch.'], 422);
+        }
+
+        $fee = (float) ($booking->doctor->consultation_fee ?? 0);
+        if ($fee <= 0) {
+            return response()->json(['ok' => false, 'error' => 'Doctor has no consultation fee set.'], 422);
+        }
+
+        $phone = (string) ($booking->patient?->phone ?? $booking->msisdn ?? '');
+        if (trim($phone) === '') {
+            return response()->json(['ok' => false, 'error' => 'No phone number on file for this patient.'], 422);
+        }
+
+        try {
+            $visit = DB::transaction(fn () => $this->ensureVisitWithFeeCharge($booking, $fee));
+            $res = app(\App\Services\Clinic\VisitPaymentLinkService::class)
+                ->createForVisit($visit, $fee, 'consultation');
+            $url = $res['url'];
+            $amount = (float) $res['amount'];
+
+            $locale = app()->getLocale() === 'ar' ? 'ar' : 'en';
+            $wa = app(\App\Wa\Services\WhatsApp\WhatsAppService::class);
+
+            if ($this->paymentTemplateApproved($locale)) {
+                $name = $booking->patient?->name ?: ($locale === 'ar' ? 'عميلنا' : 'there');
+                $clinic = $booking->branch?->getTranslation('name', $locale, true) ?: config('app.name', 'Our Clinic');
+                $appointment = $this->paymentApptText($booking, $locale);
+                $amountText = number_format($amount, 3).($locale === 'ar' ? ' د.ك' : ' KWD');
+
+                $wa->sendClinicPaymentLink($phone, $locale, $name, $clinic, $appointment, $amountText, $url);
+
+                return response()->json(['ok' => true, 'via' => 'template']);
+            }
+
+            $name = $booking->patient?->name ?: '';
+            $msg = $locale === 'ar'
+                ? trim("مرحباً {$name}، يرجى إتمام دفع رسوم الاستشارة".($amount ? ' بمبلغ '.number_format($amount, 3).' د.ك' : '').' عبر الرابط: '.$url)
+                : trim("Hello {$name}, please complete your consultation fee payment".($amount ? ' of '.number_format($amount, 3).' KWD' : '').' here: '.$url);
+
+            $sent = $wa->sendTextMessage($phone, $msg);
+        } catch (\Throwable $e) {
+            return response()->json(['ok' => false, 'error' => $e->getMessage()], 422);
+        }
+
+        if (! $sent) {
+            return response()->json([
+                'ok' => false,
+                'soft' => true,
+                'error' => 'Could not send on WhatsApp (patient may be outside the 24-hour window, and the payment-link template is not approved yet). The link is still available to copy or scan.',
+            ], 422);
+        }
+
+        return response()->json(['ok' => true, 'via' => 'text']);
+    }
+
+    /** Is the payment-link WhatsApp template approved on Meta for this language? */
+    protected function paymentTemplateApproved(string $locale): bool
+    {
+        $name = config('services.whatsapp.templates.payment_link', 'clinic_payment_link');
+
+        try {
+            return \App\Wa\Hub\Models\MessageTemplate::query()
+                ->where('name', $name)
+                ->where('status', 'APPROVED')
+                ->where(fn ($q) => $q->where('language', $locale)->orWhereNull('language'))
+                ->exists();
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
+    /** Locale-aware "when" string for the payment template's appointment slot. */
+    protected function paymentApptText(Booking $booking, string $locale): string
+    {
+        $tz = config('app.timezone', 'Asia/Kuwait');
+        $dt = null;
+
+        if (trim((string) $booking->res_date) !== '') {
+            try {
+                $date = str_replace('/', '-', \Illuminate\Support\Str::of((string) $booking->res_date)->before(' ')->value());
+                $time = trim((string) $booking->res_time) !== '' ? trim((string) $booking->res_time) : '00:00';
+                $dt = Carbon::parse("{$date} {$time}", $tz);
+            } catch (\Throwable $e) {
+                $dt = null;
+            }
+        }
+
+        if (! $dt) {
+            return $locale === 'ar' ? 'زيارتك' : 'your visit';
+        }
+
+        $dt = $dt->setTimezone($tz)->locale($locale);
+
+        return $locale === 'ar'
+            ? $dt->isoFormat('dddd D MMMM، h:mm a')
+            : $dt->isoFormat('ddd, MMM D [at] h:mm A');
     }
 
     /**

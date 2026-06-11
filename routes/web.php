@@ -408,6 +408,10 @@ Route::middleware([
     Route::get('/api/checkin/bookings/{booking}', [\App\Http\Controllers\V2\CheckinController::class, 'booking'])->name('api.checkin.booking');
     Route::get('/api/checkin/bookings/{booking}/rooms', [\App\Http\Controllers\V2\CheckinController::class, 'rooms'])->name('api.checkin.rooms');
     Route::post('/api/checkin/bookings/{booking}/collect-fee', [\App\Http\Controllers\V2\CheckinController::class, 'collectFee'])->name('api.checkin.collect-fee');
+    // Online consultation-fee payment (MyFatoorah link/QR + WhatsApp) — recorded
+    // by the gateway callback, not here. Mirrors the visit payment-link flow.
+    Route::post('/api/checkin/bookings/{booking}/payment-link', [\App\Http\Controllers\V2\CheckinController::class, 'createPaymentLink'])->name('api.checkin.payment-link');
+    Route::post('/api/checkin/bookings/{booking}/payment-link/whatsapp', [\App\Http\Controllers\V2\CheckinController::class, 'sendPaymentLinkWhatsApp'])->name('api.checkin.payment-link.whatsapp');
     Route::post('/api/checkin/bookings/{booking}/check-in', [\App\Http\Controllers\V2\CheckinController::class, 'checkin'])->name('api.checkin.check-in');
     // Phase 3 — patient identity review at check-in (phone matched a different name).
     Route::post('/api/checkin/bookings/{booking}/confirm-identity', [\App\Http\Controllers\V2\CheckinController::class, 'confirmIdentity'])->name('api.checkin.confirm-identity');

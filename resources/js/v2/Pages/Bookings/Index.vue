@@ -177,6 +177,7 @@ async function openRow(b) {
         if (resp.ok) {
             const data = await resp.json()
             openData.value = data.booking
+            paymentMethods.value = Array.isArray(data.payment_methods) ? data.payment_methods : []
         }
     } finally {
         openLoading.value = false
@@ -345,10 +346,27 @@ async function submitAssignRoom() {
 const collectOpen = ref(false)
 const collectMethod = ref('cash')
 const collectAmount = ref('')
+const collectRef = ref('')
 const collectLoading = ref(false)
+
+// Payment methods are admin-configurable per clinic/branch; the booking detail
+// endpoint resolves the enabled set (with manual-POS fallback).
+const paymentMethods = ref([])
+const methodIcons = { cash: 'banknote', card: 'credit-card', knet: 'smartphone', link: 'link-2', transfer: 'building', insurance: 'shield' }
+const methodLabels = {
+    cash: { en: 'Cash', ar: 'كاش' }, card: { en: 'Card', ar: 'بطاقة' }, knet: { en: 'KNET', ar: 'كي-نت' },
+    link: { en: 'Payment Link', ar: 'رابط دفع' }, transfer: { en: 'Transfer', ar: 'تحويل' }, insurance: { en: 'Insurance', ar: 'تأمين' },
+}
+function methodLabel(m) { return methodLabels[m.key]?.[locale.value] ?? m.label }
+function methodIcon(m) { return methodIcons[m.key] ?? 'wallet' }
+const selectedMethod = computed(() => paymentMethods.value.find((m) => m.key === collectMethod.value) ?? null)
+const methodNeedsRef = computed(() => !!selectedMethod.value?.requires_reference)
+const collectDisabled = computed(() => collectLoading.value || !Number(collectAmount.value) || (methodNeedsRef.value && !collectRef.value.trim()))
 function openCollect() {
     if (!openData.value) return
-    collectMethod.value = 'cash'
+    const keys = paymentMethods.value.map((m) => m.key)
+    collectMethod.value = keys.includes('cash') ? 'cash' : (keys[0] ?? 'cash')
+    collectRef.value = ''
     collectAmount.value = (openData.value.fee_amount ?? 0).toFixed(3)
     collectOpen.value = true
 }
@@ -360,7 +378,7 @@ async function submitCollect() {
             method: 'POST',
             credentials: 'same-origin',
             headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf(), Accept: 'application/json' },
-            body: JSON.stringify({ amount: Number(collectAmount.value), method: collectMethod.value }),
+            body: JSON.stringify({ amount: Number(collectAmount.value), method: collectMethod.value, reference_no: collectRef.value.trim() || null }),
         })
         const data = await resp.json().catch(() => ({}))
         if (!resp.ok || !data.ok) {
@@ -981,19 +999,31 @@ const canCollect = computed(() => openData.value
                             </div>
                             <div>
                                 <div class="eyebrow" style="margin-bottom: 6px;">{{ isRtl ? 'طريقة الدفع' : 'Method' }}</div>
-                                <div class="seg" style="width: 100%;">
-                                    <button type="button" :class="collectMethod === 'cash' ? 'is-active' : ''" style="flex: 1;" @click="collectMethod = 'cash'">
-                                        <Icon name="banknote" :size="13" /> {{ isRtl ? 'كاش' : 'Cash' }}
-                                    </button>
-                                    <button type="button" :class="collectMethod === 'card' ? 'is-active' : ''" style="flex: 1;" @click="collectMethod = 'card'">
-                                        <Icon name="credit-card" :size="13" /> {{ isRtl ? 'بطاقة' : 'Card' }}
+                                <div class="seg seg-wrap" style="width: 100%;">
+                                    <button
+                                        v-for="m in paymentMethods"
+                                        :key="m.key"
+                                        type="button"
+                                        :class="collectMethod === m.key ? 'is-active' : ''"
+                                        style="flex: 1; min-width: 88px;"
+                                        @click="collectMethod = m.key; collectRef = ''"
+                                    >
+                                        <Icon :name="methodIcon(m)" :size="13" /> {{ methodLabel(m) }}
                                     </button>
                                 </div>
+                            </div>
+                            <!-- Reference / transaction id — for methods that require it -->
+                            <div v-if="methodNeedsRef">
+                                <div class="eyebrow" style="margin-bottom: 6px;">
+                                    {{ isRtl ? 'رقم المرجع / العملية' : 'Transaction / reference no.' }}
+                                    <span class="req">*</span>
+                                </div>
+                                <input v-model="collectRef" type="text" maxlength="64" class="input tnum" />
                             </div>
                         </div>
                         <div style="display: flex; gap: 8px; padding: 12px 20px 18px; border-top: 1px solid var(--line);">
                             <button type="button" class="btn btn-outline" style="flex: 1;" :disabled="collectLoading" @click="collectOpen = false">{{ isRtl ? 'إلغاء' : 'Cancel' }}</button>
-                            <button type="button" class="btn btn-primary" style="flex: 1;" :disabled="collectLoading || !Number(collectAmount)" @click="submitCollect">
+                            <button type="button" class="btn btn-primary" style="flex: 1;" :disabled="collectDisabled" @click="submitCollect">
                                 <Icon v-if="collectLoading" name="loader" :size="13" />
                                 {{ isRtl ? 'تحصيل' : 'Collect' }}
                             </button>

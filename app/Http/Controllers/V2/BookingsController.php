@@ -157,7 +157,27 @@ class BookingsController extends Controller
                 'cancel_reason' => $booking->cancel_reason ?? null,
                 'meta' => $booking->meta ?? null,
             ]),
+            // Manual desk methods only (cash/KNET/card/transfer) — insurance and
+            // online aren't fee-at-reception methods. Same set as the check-in wizard.
+            'payment_methods' => $this->consultationMethods($booking),
         ]);
+    }
+
+    /**
+     * Manual payment methods valid for collecting a consultation fee at the desk:
+     * the configured set minus online (link) and minus insurance.
+     *
+     * @return array<int, array{key:string,label:string,type:string,requires_reference:bool}>
+     */
+    protected function consultationMethods(Booking $booking): array
+    {
+        $methods = app(\App\Services\Clinic\ClinicPaymentMethodResolver::class)
+            ->forBranchOrDefault((int) $booking->branch_id, (int) ($booking->branch?->partner_id ?? 0));
+
+        return array_values(array_filter(
+            $methods,
+            fn ($m) => ($m['type'] ?? 'manual') !== 'online' && ($m['key'] ?? '') !== 'insurance',
+        ));
     }
 
     /**
@@ -663,17 +683,35 @@ class BookingsController extends Controller
     public function collectConsultation(Request $request, Booking $booking): JsonResponse
     {
         $this->abortIfNotReception();
-        $request->validate([
+
+        // Manual desk methods only (cash/KNET/card/transfer); online + insurance
+        // are excluded — see consultationMethods().
+        $methods = $this->consultationMethods($booking);
+        $allowedKeys = array_values(array_filter(array_column($methods, 'key')));
+
+        $data = $request->validate([
             'amount' => 'required|numeric|min:0.001',
-            'method' => 'required|in:cash,card',
+            'method' => ['required', \Illuminate\Validation\Rule::in($allowedKeys)],
+            'reference_no' => 'nullable|string|max:64',
         ]);
+
+        // Card / KNET / transfer / online require a transaction/reference id —
+        // cash doesn't. Enforce server-side per the method's config flag.
+        $chosen = collect($methods)->firstWhere('key', $data['method']);
+        if (($chosen['requires_reference'] ?? false) && trim((string) ($data['reference_no'] ?? '')) === '') {
+            return response()->json([
+                'ok' => false,
+                'error' => 'A transaction / reference number is required for '.($chosen['label'] ?? $data['method']).' payments.',
+                'field' => 'reference_no',
+            ], 422);
+        }
 
         $fee = (float) ($booking->doctor->consultation_fee ?? 0);
         if ($fee <= 0) {
             return response()->json(['ok' => false, 'error' => 'Doctor has no consultation fee set.'], 422);
         }
 
-        DB::transaction(function () use ($booking, $request) {
+        DB::transaction(function () use ($booking, $data) {
             $visit = Visit::firstOrCreate(
                 ['booking_id' => $booking->id],
                 [
@@ -689,8 +727,9 @@ class BookingsController extends Controller
 
             VisitPayment::create([
                 'visit_id' => $visit->id,
-                'amount' => (float) $request->input('amount'),
-                'method' => (string) $request->input('method'),
+                'amount' => (float) $data['amount'],
+                'method' => (string) $data['method'],
+                'reference_no' => $data['reference_no'] ?? null,
                 'status' => 'paid',
                 'kind' => VisitPayment::KIND_CONSULTATION,
                 'collected_by_user_id' => auth()->id(),
