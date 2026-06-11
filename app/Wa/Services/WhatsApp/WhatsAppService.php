@@ -444,6 +444,44 @@ class WhatsAppService
         ], $triggerUserId);
     }
 
+    /**
+     * Send the clinic payment-link UTILITY template (body-only, link in body).
+     * Works inside AND outside the 24-hour window because Meta exempts approved
+     * templates from session messaging rules — this is the whole point.
+     *
+     * Variables: {{1}} name, {{2}} clinic, {{3}} appointment, {{4}} amount, {{5}} link.
+     */
+    public function sendClinicPaymentLink(
+        string $to,
+        string $locale,
+        string $patientName,
+        string $clinicName,
+        string $appointment,
+        string $amountText,
+        string $paymentLink,
+        ?int $triggerUserId = null
+    ): ?array {
+        $langCode = $locale === 'ar' ? 'ar' : 'en';
+        $templateName = config('services.whatsapp.templates.payment_link', 'clinic_payment_link');
+
+        return $this->sendTemplate($to, [
+            'name' => $templateName,
+            'language' => ['code' => $langCode],
+            'components' => [
+                [
+                    'type' => 'body',
+                    'parameters' => [
+                        ['type' => 'text', 'text' => $patientName], // {{1}}
+                        ['type' => 'text', 'text' => $clinicName],  // {{2}}
+                        ['type' => 'text', 'text' => $appointment], // {{3}}
+                        ['type' => 'text', 'text' => $amountText],  // {{4}}
+                        ['type' => 'text', 'text' => $paymentLink], // {{5}}
+                    ],
+                ],
+            ],
+        ], $triggerUserId);
+    }
+
     public function sendStateSelectionList(string $to): void
     {
         $states = State::all();
