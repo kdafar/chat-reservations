@@ -1,6 +1,6 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
-import { Link, usePage } from '@inertiajs/vue3'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { Link, router, usePage } from '@inertiajs/vue3'
 import Icon from '../Components/Icon.vue'
 import FlashToasts from '../Components/FlashToasts.vue'
 import NotificationPoller from '../Components/NotificationPoller.vue'
@@ -25,6 +25,31 @@ const props = defineProps({
 })
 
 const page = usePage()
+
+// Whole-app self-refresh: when the operator returns to the tab (refocus /
+// becomes visible), reload the current page's props so every v2 screen shows
+// live data without a manual refresh. Persistent layout → registered once.
+// preserveState/preserveScroll keep open modals, form inputs, and position;
+// debounced + guarded so it never fires while hidden or stacks up. Individual
+// modals (e.g. VisitSheet) also self-refresh, which is harmless on top of this.
+let _focusRefreshT = null
+function onAppRefocus() {
+    if (document.hidden) return
+    clearTimeout(_focusRefreshT)
+    _focusRefreshT = setTimeout(() => {
+        router.reload({ preserveScroll: true, preserveState: true })
+    }, 350)
+}
+onMounted(() => {
+    window.addEventListener('focus', onAppRefocus)
+    document.addEventListener('visibilitychange', onAppRefocus)
+})
+onUnmounted(() => {
+    window.removeEventListener('focus', onAppRefocus)
+    document.removeEventListener('visibilitychange', onAppRefocus)
+    clearTimeout(_focusRefreshT)
+})
+
 const user = computed(() => page.props.auth?.user ?? null)
 const locale = computed(() => page.props.locale ?? 'en')
 const appName = computed(() => page.props.app?.name ?? 'Clinic')
