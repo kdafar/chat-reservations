@@ -68,6 +68,10 @@ return [
             'welcome_lang_en' => env('WA_TPL_WELCOME_LANG_EN', 'en'),
             'welcome_lang_ar' => env('WA_TPL_WELCOME_LANG_AR', 'ar'),
             'cooldown_minutes' => env('WA_WELCOME_COOLDOWN_MIN', 60),
+
+            // Visit payment-link template (UTILITY). One name, two language
+            // versions (en/ar). Submitted via `php artisan wa:create-payment-template`.
+            'payment_link' => env('WA_TPL_PAYMENT_LINK', 'clinic_payment_link'),
         ],
 
         // Fallback branch if session has no branch context

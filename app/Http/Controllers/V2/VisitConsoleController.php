@@ -1058,9 +1058,13 @@ class VisitConsoleController extends Controller
 
     /**
      * Generate a payment link and push it to the patient's WhatsApp number.
-     * Plain session message — works inside the 24h window; outside it Meta
-     * blocks non-template sends and the WA service logs + no-ops (we surface a
-     * soft error so reception can fall back to QR / copy-link).
+     *
+     * Prefers the approved UTILITY template (`clinic_payment_link`) — Meta
+     * exempts approved templates from the 24-hour customer-service window, so
+     * this delivers even to patients who haven't messaged us recently. If the
+     * template isn't approved yet we fall back to a plain session message
+     * (only valid inside 24h); outside the window Meta blocks it and we surface
+     * a soft error so reception can copy/scan the link instead.
      */
     public function sendPaymentLinkWhatsApp(Request $request, Visit $visit): \Illuminate\Http\JsonResponse
     {
@@ -1092,14 +1096,33 @@ class VisitConsoleController extends Controller
                 $data['kind'] ?? 'other',
             );
             $url = $res['url'];
-            $amount = $res['amount'];
+            $amount = (float) $res['amount'];
 
+            $locale = app()->getLocale() === 'ar' ? 'ar' : 'en';
+            $wa = app(\App\Wa\Services\WhatsApp\WhatsAppService::class);
+
+            if ($this->paymentTemplateApproved($locale)) {
+                // Template path — works inside AND outside the 24-hour window.
+                $name = $visit->patient?->name ?: ($locale === 'ar' ? 'عميلنا' : 'there');
+                $clinic = $visit->branch?->getTranslation('name', $locale, true)
+                    ?: config('app.name', 'Our Clinic');
+                $appointment = $this->paymentApptText($visit, $locale);
+                $amountText = $locale === 'ar'
+                    ? number_format($amount, 3).' د.ك'
+                    : number_format($amount, 3).' KWD';
+
+                $wa->sendClinicPaymentLink($phone, $locale, $name, $clinic, $appointment, $amountText, $url);
+
+                return response()->json(['ok' => true, 'via' => 'template']);
+            }
+
+            // Fallback: plain session message (only valid inside the 24h window).
             $name = $visit->patient?->name ?: '';
-            $msg = app()->getLocale() === 'ar'
-                ? trim("مرحباً {$name}، يرجى إتمام الدفع".($amount ? ' بمبلغ '.number_format((float) $amount, 3).' د.ك' : '').' عبر الرابط: '.$url)
-                : trim("Hello {$name}, please complete your payment".($amount ? ' of '.number_format((float) $amount, 3).' KWD' : '').' here: '.$url);
+            $msg = $locale === 'ar'
+                ? trim("مرحباً {$name}، يرجى إتمام الدفع".($amount ? ' بمبلغ '.number_format($amount, 3).' د.ك' : '').' عبر الرابط: '.$url)
+                : trim("Hello {$name}, please complete your payment".($amount ? ' of '.number_format($amount, 3).' KWD' : '').' here: '.$url);
 
-            $sent = app(\App\Wa\Services\WhatsApp\WhatsAppService::class)->sendTextMessage($phone, $msg);
+            $sent = $wa->sendTextMessage($phone, $msg);
         } catch (\Throwable $e) {
             return response()->json(['ok' => false, 'error' => $e->getMessage()], 422);
         }
@@ -1108,11 +1131,64 @@ class VisitConsoleController extends Controller
             return response()->json([
                 'ok' => false,
                 'soft' => true,
-                'error' => 'Could not send on WhatsApp (patient may be outside the 24-hour window). The link is still available to copy or scan.',
+                'error' => 'Could not send on WhatsApp (patient may be outside the 24-hour window, and the payment-link template is not approved yet). The link is still available to copy or scan.',
             ], 422);
         }
 
-        return response()->json(['ok' => true]);
+        return response()->json(['ok' => true, 'via' => 'text']);
+    }
+
+    /**
+     * Is the payment-link template approved on Meta for this language? (We mirror
+     * Meta status into the local wa.message_templates table on sync.) Only then
+     * can we send outside the 24-hour window.
+     */
+    private function paymentTemplateApproved(string $locale): bool
+    {
+        $name = config('services.whatsapp.templates.payment_link', 'clinic_payment_link');
+
+        try {
+            return \App\Wa\Hub\Models\MessageTemplate::query()
+                ->where('name', $name)
+                ->where('status', 'APPROVED')
+                ->where(fn ($q) => $q->where('language', $locale)->orWhereNull('language'))
+                ->exists();
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
+    /**
+     * Human, locale-aware "when" string for the payment template's {{3}} slot.
+     * Prefers the booking's reserved date/time, then check-in, then created_at —
+     * we never return an empty string (Meta rejects empty template params).
+     */
+    private function paymentApptText(Visit $visit, string $locale): string
+    {
+        $tz = config('app.timezone', 'Asia/Kuwait');
+        $dt = null;
+
+        $b = $visit->booking;
+        if ($b && trim((string) $b->res_date) !== '') {
+            try {
+                $date = str_replace('/', '-', \Illuminate\Support\Str::of((string) $b->res_date)->before(' ')->value());
+                $time = trim((string) $b->res_time) !== '' ? trim((string) $b->res_time) : '00:00';
+                $dt = \Carbon\Carbon::parse("{$date} {$time}", $tz);
+            } catch (\Throwable $e) {
+                $dt = null;
+            }
+        }
+
+        $dt = $dt ?? $visit->checked_in_at ?? $visit->created_at;
+        if (! $dt) {
+            return $locale === 'ar' ? 'زيارتك' : 'your visit';
+        }
+
+        $dt = \Carbon\Carbon::parse($dt)->setTimezone($tz)->locale($locale);
+
+        return $locale === 'ar'
+            ? $dt->isoFormat('dddd D MMMM، h:mm a')
+            : $dt->isoFormat('ddd, MMM D [at] h:mm A');
     }
 
     /**

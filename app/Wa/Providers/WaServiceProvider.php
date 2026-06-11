@@ -72,6 +72,7 @@ class WaServiceProvider extends ServiceProvider
         if ($this->app->runningInConsole()) {
             $this->commands([
                 \App\Wa\Console\Commands\CreateWhatsappCarouselTemplate::class,
+                \App\Wa\Console\Commands\CreatePaymentLinkTemplate::class,
                 \App\Wa\Console\Commands\ProcessScheduledCampaigns::class,
                 \App\Wa\Console\Commands\RefreshContactEngagementStats::class,
                 \App\Wa\Console\Commands\AskForRatings::class,
