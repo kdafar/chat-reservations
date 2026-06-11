@@ -206,6 +206,7 @@ class WaitingPatientsController extends Controller
             'checked_in_at' => null,
             'service_started_at' => null,
             'booking_code' => $b->booking_code,
+            'source' => $b->source,
             'notes' => $b->notes,
             'res_time' => $b->res_time,
             'res_date' => optional($b->res_date)->toDateString(),
@@ -265,6 +266,7 @@ class WaitingPatientsController extends Controller
             'checked_in_at' => optional($v->checked_in_at)->toIso8601String(),
             'service_started_at' => optional($v->service_started_at)->toIso8601String(),
             'booking_code' => $v->booking_code,
+            'source' => $v->source,
             'notes' => $v->notes,
             'fee' => [
                 'amount' => $consultationFee,

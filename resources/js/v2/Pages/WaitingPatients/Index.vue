@@ -10,6 +10,7 @@ import ConfirmDialog from '../../Components/ConfirmDialog.vue'
 import CheckinModal from '../../Components/CheckinModal.vue'
 import NewBookingSheet from '../../Components/NewBookingSheet.vue'
 import VisitSheet from '../../Components/VisitSheet.vue'
+import SearchableSelect from '../../Components/SearchableSelect.vue'
 import { pushToast } from '../../Composables/useNotificationState.js'
 
 const checkinOpen = ref(false)
@@ -116,6 +117,9 @@ const doctorOptionsForOpen = computed(() => {
     if (!bid) return props.doctor_options
     return props.doctor_options.filter((d) => !d.branch_id || Number(d.branch_id) === Number(bid))
 })
+// Shape for the searchable dropdown ({value,label}); labels stripped of "Dr.".
+const doctorReassignItems = computed(() =>
+    doctorOptionsForOpen.value.map((d) => ({ value: d.id, label: docName(d.name) })))
 function csrfToken() {
     return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ?? ''
 }
@@ -175,6 +179,25 @@ function waitedLabel(v) {
 // leading Dr./د. so the template's own "Dr." prefix doesn't double up.
 function docName(name) {
     return String(name ?? '').replace(/^\s*(dr\.\s*|dr\s+|د\.?\s*)/i, '').trim()
+}
+
+// Booking source → icon + bilingual label for the channel chip. Covers the
+// canonical vocabulary (web/whatsapp/call/walk_in/reception) plus follow_up
+// auto-bookings; unknown values fall back to the raw string.
+function sourceMeta(source) {
+    if (!source) return null
+    const map = {
+        whatsapp:  { icon: 'message-circle', tone: 'success', en: 'WhatsApp',  ar: 'واتساب' },
+        web:       { icon: 'globe',          tone: 'info',    en: 'Web',       ar: 'الموقع' },
+        call:      { icon: 'phone',          tone: 'warning', en: 'Call',      ar: 'هاتف' },
+        walk_in:   { icon: 'footprints',     tone: 'primary', en: 'Walk-in',   ar: 'حضور' },
+        reception: { icon: 'concierge-bell', tone: 'primary', en: 'Reception', ar: 'الاستقبال' },
+        follow_up: { icon: 'repeat',         tone: 'violet',  en: 'Follow-up', ar: 'مراجعة' },
+    }
+    const m = map[source]
+    return m
+        ? { icon: m.icon, tone: m.tone, label: locale.value === 'ar' ? m.ar : m.en }
+        : { icon: 'tag', tone: 'muted', label: source }
 }
 
 // Tooltip / aria text for an insurance chip: "Insurer · Plan · #policy".
@@ -547,6 +570,15 @@ const gridCols = 'repeat(auto-fill, minmax(320px, 1fr))'
                                 </div>
                                 <div class="tnum" style="font-size: 11.5px; color: var(--fg-subtle); display: inline-flex; align-items: center; gap: 6px;">
                                     <span>{{ t.code }} {{ v.booking_code ?? `#${v.id}` }}</span>
+                                    <span
+                                        v-if="sourceMeta(v.source)"
+                                        class="wp-source"
+                                        :class="`wp-source-${sourceMeta(v.source).tone}`"
+                                        :title="locale === 'ar' ? 'مصدر الحجز' : 'Booking source'"
+                                    >
+                                        <Icon :name="sourceMeta(v.source).icon" :size="10" :stroke-width="2" />
+                                        {{ sourceMeta(v.source).label }}
+                                    </span>
                                 </div>
                             </div>
                         </div>
@@ -708,6 +740,10 @@ const gridCols = 'repeat(auto-fill, minmax(320px, 1fr))'
                             <div style="font-weight: 500; font-size: 18px;">{{ openPatient.patient?.name ?? '—' }}</div>
                             <div class="tnum" style="font-size: 12.5px; color: var(--fg-subtle);">
                                 {{ t.code }} {{ openPatient.booking_code ?? `#${openPatient.id}` }}
+                                <span v-if="sourceMeta(openPatient.source)" class="wp-source" :class="`wp-source-${sourceMeta(openPatient.source).tone}`" style="margin-inline-start: 6px;" :title="locale === 'ar' ? 'مصدر الحجز' : 'Booking source'">
+                                    <Icon :name="sourceMeta(openPatient.source).icon" :size="10" :stroke-width="2" />
+                                    {{ sourceMeta(openPatient.source).label }}
+                                </span>
                                 <template v-if="openPatient.patient?.age">
                                     <span style="opacity: 0.5; margin: 0 4px;">·</span>{{ openPatient.patient.age }}{{ locale === 'ar' ? ' سنة' : 'y' }}
                                 </template>
@@ -733,18 +769,17 @@ const gridCols = 'repeat(auto-fill, minmax(320px, 1fr))'
                     <div class="rgrid-2" style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
                         <div style="display: flex; flex-direction: column; gap: 4px;">
                             <div class="eyebrow" style="font-size: 10px;">{{ t.doctor }}</div>
-                            <div v-if="canReassignDoctor && doctorOptionsForOpen.length" style="display: inline-flex; align-items: center; gap: 6px;">
-                                <Icon name="stethoscope" :size="13" :style="{ color: 'var(--fg-subtle)' }" />
-                                <select
-                                    class="input"
-                                    style="font-size: 13px; padding: 4px 8px; max-width: 180px;"
+                            <div v-if="canReassignDoctor && doctorOptionsForOpen.length" style="display: inline-flex; align-items: center; gap: 6px; min-width: 0;">
+                                <Icon name="stethoscope" :size="13" :style="{ color: 'var(--fg-subtle)', flexShrink: 0 }" />
+                                <SearchableSelect
+                                    :model-value="openPatient.doctor?.id ?? null"
+                                    :items="doctorReassignItems"
+                                    :nullable="false"
                                     :disabled="reassigningId === openPatient.id"
-                                    :value="openPatient.doctor?.id ?? ''"
-                                    @change="(e) => reassignDoctor(openPatient.id, e.target.value)"
-                                >
-                                    <option value="" disabled>{{ locale === 'ar' ? 'اختر طبيباً' : 'Select doctor' }}</option>
-                                    <option v-for="d in doctorOptionsForOpen" :key="d.id" :value="d.id">{{ docName(d.name) }}</option>
-                                </select>
+                                    :placeholder="locale === 'ar' ? 'اختر طبيباً' : 'Select doctor'"
+                                    style="min-width: 170px;"
+                                    @update:model-value="(val) => val && reassignDoctor(openPatient.id, val)"
+                                />
                             </div>
                             <div v-else style="font-size: 13px; display: inline-flex; align-items: center; gap: 6px; color: var(--fg);">
                                 <Icon name="stethoscope" :size="13" :style="{ color: 'var(--fg-subtle)' }" />
@@ -897,6 +932,30 @@ const gridCols = 'repeat(auto-fill, minmax(320px, 1fr))'
     transition: background 0.1s;
 }
 .wp-menu-row:hover { background: var(--bg-hover); }
+
+/* Booking-source channel pill next to the booking code — brand-toned so the
+   channel (WhatsApp / Web / Call …) is scannable at a glance. */
+.wp-source {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 1.5px 7px 1.5px 6px;
+    border: 1px solid transparent;
+    border-radius: 9999px;
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    line-height: 1.5;
+    white-space: nowrap;
+}
+.wp-source :deep(svg) { opacity: 0.85; }
+
+.wp-source-success { background: var(--success-soft); color: var(--success); border-color: color-mix(in oklch, var(--success) 25%, transparent); }
+.wp-source-info    { background: var(--info-soft);    color: var(--info);    border-color: color-mix(in oklch, var(--info) 25%, transparent); }
+.wp-source-warning { background: var(--warning-soft); color: var(--warning); border-color: color-mix(in oklch, var(--warning) 25%, transparent); }
+.wp-source-primary { background: var(--primary-soft); color: var(--primary); border-color: color-mix(in oklch, var(--primary) 25%, transparent); }
+.wp-source-violet  { background: var(--violet-soft);  color: var(--violet);  border-color: color-mix(in oklch, var(--violet) 25%, transparent); }
+.wp-source-muted   { background: var(--bg-sunken);    color: var(--fg-muted); border-color: var(--line); }
 
 /* Small info chips on the queue card (phone / paid-balance / insurance / discount). */
 .wp-chip {
