@@ -364,6 +364,22 @@ class ClinicFilamentPermissionSeeder extends Seeder
         // this; doctors + reception already hold it).
         $grant(['clinic_admin', 'branch_manager'], ['view_any_visits']);
 
+        // ===== Payroll & extended HR =====
+        // Sensitive pay data: full control for clinic_admin + accountant only.
+        // Every resource verb (view_any/view/create/update/delete + family) on
+        // the new payroll resources, granted via wildcard on the resource keys.
+        $payrollResources = [
+            'staff_compensation_profiles', 'payroll_runs', 'staff_loans',
+            'staff_settlements', 'staff_leave_entitlements',
+        ];
+        $payrollPerms = Permission::where('guard_name', 'web')
+            ->where(function ($q) use ($payrollResources) {
+                foreach ($payrollResources as $r) {
+                    $q->orWhere('name', 'like', '%_'.$r);
+                }
+            })->get();
+        $grant(['clinic_admin', 'accountant'], $payrollPerms->pluck('name')->all());
+
         // Re-fetch admin's full perm set so all the new perms above are included.
         $admin->syncPermissions(Permission::where('guard_name', 'web')->get());
 

@@ -453,6 +453,43 @@ Route::middleware([
     Route::put('/staff-attendances/{staffAttendance}',            [\App\Http\Controllers\V2\StaffAttendancesController::class, 'update'])->name('staff-attendances.update');
     Route::delete('/staff-attendances/{staffAttendance}',         [\App\Http\Controllers\V2\StaffAttendancesController::class, 'destroy'])->name('staff-attendances.destroy');
 
+    // Payroll — staff salary profiles (basic + allowances/deductions + gratuity dates).
+    Route::get('/staff-compensation-profiles',            [\App\Http\Controllers\V2\StaffCompensationProfilesController::class, 'index'])->name('staff-compensation-profiles.index');
+    Route::post('/staff-compensation-profiles',           [\App\Http\Controllers\V2\StaffCompensationProfilesController::class, 'store'])->name('staff-compensation-profiles.store');
+    Route::put('/staff-compensation-profiles/{profile}',  [\App\Http\Controllers\V2\StaffCompensationProfilesController::class, 'update'])->name('staff-compensation-profiles.update');
+    Route::delete('/staff-compensation-profiles/{profile}', [\App\Http\Controllers\V2\StaffCompensationProfilesController::class, 'destroy'])->name('staff-compensation-profiles.destroy');
+
+    // Payroll runs (monthly batches → payslips → GL accrual + payment).
+    Route::get('/payroll-runs',                          [\App\Http\Controllers\V2\PayrollRunsController::class, 'index'])->name('payroll-runs.index');
+    Route::get('/payroll-runs/{payrollRun}',             [\App\Http\Controllers\V2\PayrollRunsController::class, 'show'])->name('payroll-runs.show');
+    Route::post('/payroll-runs',                         [\App\Http\Controllers\V2\PayrollRunsController::class, 'store'])->name('payroll-runs.store');
+    Route::post('/payroll-runs/{payrollRun}/generate',  [\App\Http\Controllers\V2\PayrollRunsController::class, 'generate'])->name('payroll-runs.generate');
+    Route::post('/payroll-runs/{payrollRun}/approve',   [\App\Http\Controllers\V2\PayrollRunsController::class, 'approve'])->name('payroll-runs.approve');
+    Route::post('/payroll-runs/{payrollRun}/mark-paid', [\App\Http\Controllers\V2\PayrollRunsController::class, 'markPaid'])->name('payroll-runs.mark-paid');
+    Route::delete('/payroll-runs/{payrollRun}',         [\App\Http\Controllers\V2\PayrollRunsController::class, 'destroy'])->name('payroll-runs.destroy');
+
+    // Staff loans & advances.
+    Route::get('/staff-loans',                  [\App\Http\Controllers\V2\StaffLoansController::class, 'index'])->name('staff-loans.index');
+    Route::post('/staff-loans',                 [\App\Http\Controllers\V2\StaffLoansController::class, 'store'])->name('staff-loans.store');
+    Route::put('/staff-loans/{staffLoan}',      [\App\Http\Controllers\V2\StaffLoansController::class, 'update'])->name('staff-loans.update');
+    Route::post('/staff-loans/{staffLoan}/approve', [\App\Http\Controllers\V2\StaffLoansController::class, 'approve'])->name('staff-loans.approve');
+    Route::post('/staff-loans/{staffLoan}/cancel',  [\App\Http\Controllers\V2\StaffLoansController::class, 'cancel'])->name('staff-loans.cancel');
+    Route::delete('/staff-loans/{staffLoan}',   [\App\Http\Controllers\V2\StaffLoansController::class, 'destroy'])->name('staff-loans.destroy');
+
+    // End-of-service settlements.
+    Route::get('/staff-settlements',                       [\App\Http\Controllers\V2\StaffSettlementsController::class, 'index'])->name('staff-settlements.index');
+    Route::post('/staff-settlements/preview',              [\App\Http\Controllers\V2\StaffSettlementsController::class, 'preview'])->name('staff-settlements.preview');
+    Route::post('/staff-settlements',                      [\App\Http\Controllers\V2\StaffSettlementsController::class, 'store'])->name('staff-settlements.store');
+    Route::put('/staff-settlements/{staffSettlement}',     [\App\Http\Controllers\V2\StaffSettlementsController::class, 'update'])->name('staff-settlements.update');
+    Route::post('/staff-settlements/{staffSettlement}/approve',   [\App\Http\Controllers\V2\StaffSettlementsController::class, 'approve'])->name('staff-settlements.approve');
+    Route::post('/staff-settlements/{staffSettlement}/mark-paid', [\App\Http\Controllers\V2\StaffSettlementsController::class, 'markPaid'])->name('staff-settlements.mark-paid');
+    Route::delete('/staff-settlements/{staffSettlement}',  [\App\Http\Controllers\V2\StaffSettlementsController::class, 'destroy'])->name('staff-settlements.destroy');
+
+    // Leave balances (annual entitlement vs approved usage).
+    Route::get('/leave-balances',           [\App\Http\Controllers\V2\LeaveBalancesController::class, 'index'])->name('leave-balances.index');
+    Route::post('/leave-balances/upsert',   [\App\Http\Controllers\V2\LeaveBalancesController::class, 'upsert'])->name('leave-balances.upsert');
+    Route::post('/leave-balances/seed-year', [\App\Http\Controllers\V2\LeaveBalancesController::class, 'seedYear'])->name('leave-balances.seed-year');
+
     // Doctors (v2 replacement for DoctorResource).
     Route::get('/doctors',                   [\App\Http\Controllers\V2\DoctorsController::class, 'index'])->name('doctors.index');
     Route::post('/doctors',                  [\App\Http\Controllers\V2\DoctorsController::class, 'store'])->name('doctors.store');
@@ -580,9 +617,31 @@ Route::middleware([
     Route::post('/stock-transfers/{transfer}/dispatch', [\App\Http\Controllers\V2\StockTransfersController::class, 'dispatchTransfer'])->name('stock-transfers.dispatch');
     Route::post('/stock-transfers/{transfer}/cancel',   [\App\Http\Controllers\V2\StockTransfersController::class, 'cancel'])->name('stock-transfers.cancel');
 
+    // Purchasing — purchase orders (procurement → stock → Accounts Payable).
+    Route::get ('/purchase-orders',                  [\App\Http\Controllers\V2\PurchaseOrdersController::class, 'index'])  ->name('purchase-orders.index');
+    Route::get ('/purchase-orders/create',           [\App\Http\Controllers\V2\PurchaseOrdersController::class, 'create']) ->name('purchase-orders.create');
+    Route::post('/purchase-orders',                  [\App\Http\Controllers\V2\PurchaseOrdersController::class, 'store'])  ->name('purchase-orders.store');
+    Route::get ('/purchase-orders/{order}',          [\App\Http\Controllers\V2\PurchaseOrdersController::class, 'show'])   ->name('purchase-orders.show');
+    Route::get ('/purchase-orders/{order}/edit',     [\App\Http\Controllers\V2\PurchaseOrdersController::class, 'edit'])   ->name('purchase-orders.edit');
+    Route::put ('/purchase-orders/{order}',          [\App\Http\Controllers\V2\PurchaseOrdersController::class, 'update']) ->name('purchase-orders.update');
+    Route::get ('/purchase-orders/{order}/print',    [\App\Http\Controllers\V2\PurchaseOrdersController::class, 'print'])  ->name('purchase-orders.print');
+    Route::post('/purchase-orders/{order}/submit',   [\App\Http\Controllers\V2\PurchaseOrdersController::class, 'submit']) ->name('purchase-orders.submit');
+    Route::post('/purchase-orders/{order}/approve',  [\App\Http\Controllers\V2\PurchaseOrdersController::class, 'approve'])->name('purchase-orders.approve');
+    Route::post('/purchase-orders/{order}/reject',   [\App\Http\Controllers\V2\PurchaseOrdersController::class, 'reject']) ->name('purchase-orders.reject');
+    Route::post('/purchase-orders/{order}/send',     [\App\Http\Controllers\V2\PurchaseOrdersController::class, 'send'])   ->name('purchase-orders.send');
+    Route::post('/purchase-orders/{order}/acknowledge', [\App\Http\Controllers\V2\PurchaseOrdersController::class, 'acknowledge'])->name('purchase-orders.acknowledge');
+    Route::post('/purchase-orders/{order}/receive',  [\App\Http\Controllers\V2\PurchaseOrdersController::class, 'receive'])->name('purchase-orders.receive');
+    Route::post('/purchase-orders/{order}/pay',      [\App\Http\Controllers\V2\PurchaseOrdersController::class, 'pay'])    ->name('purchase-orders.pay');
+    Route::post('/purchase-orders/{order}/close',    [\App\Http\Controllers\V2\PurchaseOrdersController::class, 'close'])  ->name('purchase-orders.close');
+    Route::post('/purchase-orders/{order}/short-close', [\App\Http\Controllers\V2\PurchaseOrdersController::class, 'shortClose'])->name('purchase-orders.short-close');
+    Route::post('/purchase-orders/{order}/cancel',   [\App\Http\Controllers\V2\PurchaseOrdersController::class, 'cancel']) ->name('purchase-orders.cancel');
+    Route::post('/purchase-receipts/{receipt}/reverse', [\App\Http\Controllers\V2\PurchaseOrdersController::class, 'reverseReceipt'])->name('purchase-receipts.reverse');
+    Route::post('/purchase-payments/{payment}/void', [\App\Http\Controllers\V2\PurchaseOrdersController::class, 'voidPayment'])->name('purchase-payments.void');
+
     // Pharmacy — Visit stock requests (v2 replacement for VisitStockRequestResource).
     Route::get('/visit-stock-requests', [\App\Http\Controllers\V2\VisitStockRequestsController::class, 'index'])->name('visit-stock-requests.index');
     Route::post('/visit-stock-requests/{visitStockRequest}/fulfill', [\App\Http\Controllers\V2\VisitStockRequestsController::class, 'fulfill'])->name('visit-stock-requests.fulfill');
+    Route::post('/visit-stock-requests/{visitStockRequest}/receive',  [\App\Http\Controllers\V2\VisitStockRequestsController::class, 'receive'])->name('visit-stock-requests.receive');
     Route::post('/visit-stock-requests/{visitStockRequest}/cancel',  [\App\Http\Controllers\V2\VisitStockRequestsController::class, 'cancel'])->name('visit-stock-requests.cancel');
 
     // Setup — Clinic packages catalog (v2 replacement for ClinicPackageResource).
@@ -842,6 +901,9 @@ Route::middleware([
     Route::get('/exports/insurance-plans',   [\App\Http\Controllers\V2\InsurancePlansController::class, 'export'])->name('insurance.plans.export');
     Route::get('/exports/users',             [\App\Http\Controllers\V2\UsersController::class, 'export'])->name('users.export');
     Route::get('/exports/doctor-comp-profiles', [\App\Http\Controllers\V2\DoctorCompProfilesController::class, 'export'])->name('doctor-compensation-profiles.export');
+    Route::get('/exports/staff-compensation-profiles', [\App\Http\Controllers\V2\StaffCompensationProfilesController::class, 'export'])->name('staff-compensation-profiles.export');
+    Route::get('/exports/staff-loans',       [\App\Http\Controllers\V2\StaffLoansController::class, 'export'])->name('staff-loans.export');
+    Route::get('/exports/payroll-runs/{payrollRun}', [\App\Http\Controllers\V2\PayrollRunsController::class, 'export'])->name('payroll-runs.export');
     Route::get('/exports/follow-up-plans',   [\App\Http\Controllers\V2\FollowUpPlansController::class, 'export'])->name('follow-up-plans.export');
     Route::get('/exports/visit-stock-requests', [\App\Http\Controllers\V2\VisitStockRequestsController::class, 'export'])->name('visit-stock-requests.export');
     Route::get('/exports/patient-files',     [\App\Http\Controllers\V2\PatientFilesController::class, 'export'])->name('patient-files.export');

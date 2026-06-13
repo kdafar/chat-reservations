@@ -21,6 +21,7 @@ class DoctorCompensationLedger extends Model
         'doctor_id' => 'integer',
         'visit_id' => 'integer',
         'branch_id' => 'integer',
+        'settled_payroll_run_id' => 'integer',
     ];
 
     public function doctor(): BelongsTo

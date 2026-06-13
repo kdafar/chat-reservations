@@ -582,6 +582,472 @@ class AccountingService
     // -------------------------------------------------------------------------
 
     /**
+     * Goods received against a purchase order: Dr Inventory (1200) /
+     * Cr Accounts Payable (2010), at the PO unit cost. The stock movements
+     * themselves use a 'purchase_in' type the stock observer ignores, so this
+     * is the single authoritative GL entry for the receipt. Idempotent.
+     */
+    public function recordPurchaseReceipt(\App\Models\Purchasing\PurchaseReceipt $receipt, ?int $userId = null): ?JournalEntry
+    {
+        try {
+            if ($receipt->journal_entry_id) {
+                return $receipt->journalEntry;
+            }
+            if ($existing = $this->existingFor($receipt)) {
+                return $existing;
+            }
+
+            // Goods value (KWD → vendor Accounts Payable) and allocated landed
+            // costs (KWD → Import Costs Payable). Inventory is debited the sum.
+            $goods = round((float) $receipt->total_amount, 3);
+            $landed = round((float) $receipt->landed_amount, 3);
+            $inventoryValue = round($goods + $landed, 3);
+            if ($inventoryValue <= 0) {
+                return null;
+            }
+
+            $inventory = $this->coa->resolve('1200');
+            $payable = $this->coa->resolve('2010');
+            $importPayable = $landed > 0 ? $this->coa->resolve('2015') : null;
+            if (! $inventory || ! $payable || ($landed > 0 && ! $importPayable)) {
+                Log::warning('[AccountingService] missing accounts for PurchaseReceipt', [
+                    'receipt_id' => $receipt->id,
+                ]);
+
+                return null;
+            }
+
+            $vendorName = $receipt->purchaseOrder?->vendor?->name ?? 'Vendor';
+
+            $lines = [
+                [
+                    'account_id' => $inventory->id,
+                    'debit' => $inventoryValue,
+                    'credit' => 0,
+                    'description' => 'Inventory in: '.$receipt->code,
+                    'branch_id' => $receipt->branch_id,
+                ],
+                [
+                    'account_id' => $payable->id,
+                    'debit' => 0,
+                    'credit' => $goods,
+                    'description' => 'Payable to '.$vendorName,
+                    'branch_id' => $receipt->branch_id,
+                ],
+            ];
+            if ($landed > 0 && $importPayable) {
+                $lines[] = [
+                    'account_id' => $importPayable->id,
+                    'debit' => 0,
+                    'credit' => $landed,
+                    'description' => 'Landed/import costs: '.$receipt->code,
+                    'branch_id' => $receipt->branch_id,
+                ];
+            }
+
+            $entry = $this->postBalancedEntry(
+                date: $receipt->received_at ?? now(),
+                narration: "Goods received {$receipt->code} ({$vendorName})",
+                source: $receipt,
+                branchId: (int) $receipt->branch_id,
+                lines: $lines,
+                userId: $userId,
+            );
+
+            $receipt->forceFill(['journal_entry_id' => $entry->id])->save();
+
+            return $entry;
+        } catch (\Throwable $e) {
+            Log::error('[AccountingService::recordPurchaseReceipt] error', [
+                'receipt_id' => $receipt->id,
+                'msg' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
+    /**
+     * Payment to a vendor against a purchase order: Dr Accounts Payable (2010) /
+     * Cr Cash or Bank (resolved from the payment method). Idempotent.
+     */
+    public function recordPurchasePayment(\App\Models\Purchasing\PurchasePayment $payment, ?int $userId = null): ?JournalEntry
+    {
+        try {
+            if ($payment->journal_entry_id) {
+                return $payment->journalEntry;
+            }
+            if ($existing = $this->existingFor($payment)) {
+                return $existing;
+            }
+
+            $amount = round((float) $payment->amount, 3);
+            if ($amount <= 0) {
+                return null;
+            }
+
+            $payable = $this->coa->resolve('2010');
+            $credit = $payment->paymentAccount
+                ?? $this->coa->cashAccountFor($payment->method, (int) $payment->branch_id);
+            if (! $payable || ! $credit) {
+                Log::warning('[AccountingService] missing accounts for PurchasePayment', [
+                    'payment_id' => $payment->id,
+                ]);
+
+                return null;
+            }
+
+            $vendorName = $payment->vendor?->name ?? 'Vendor';
+
+            $entry = $this->postBalancedEntry(
+                date: $payment->payment_date ?? now(),
+                narration: "Vendor payment {$payment->code} ({$vendorName})",
+                source: $payment,
+                branchId: (int) $payment->branch_id,
+                lines: [
+                    [
+                        'account_id' => $payable->id,
+                        'debit' => $amount,
+                        'credit' => 0,
+                        'description' => 'Settle payable: '.$vendorName,
+                        'branch_id' => $payment->branch_id,
+                    ],
+                    [
+                        'account_id' => $credit->id,
+                        'debit' => 0,
+                        'credit' => $amount,
+                        'description' => 'Paid '.$vendorName.' ('.$payment->method.')',
+                        'branch_id' => $payment->branch_id,
+                    ],
+                ],
+                userId: $userId,
+            );
+
+            $payment->forceFill(['journal_entry_id' => $entry->id])->save();
+
+            return $entry;
+        } catch (\Throwable $e) {
+            Log::error('[AccountingService::recordPurchasePayment] error', [
+                'payment_id' => $payment->id,
+                'msg' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
+    /**
+     * Reverse the GL entry tied to a voided vendor payment.
+     */
+    public function recordPurchasePaymentReversal(\App\Models\Purchasing\PurchasePayment $payment, ?string $reason = null): ?JournalEntry
+    {
+        return $this->reverseSourceEntry($payment, $reason ?? 'Vendor payment voided');
+    }
+
+    /**
+     * Reverse the GL entry tied to a reversed goods receipt (Dr AP + Import
+     * Costs Payable / Cr Inventory — the mirror of the original posting).
+     */
+    public function recordPurchaseReceiptReversal(\App\Models\Purchasing\PurchaseReceipt $receipt, ?string $reason = null): ?JournalEntry
+    {
+        return $this->reverseSourceEntry($receipt, $reason ?? 'Goods receipt reversed');
+    }
+
+    // -------------------------------------------------------------------------
+    // PAYROLL / HR
+    //
+    // A payroll run posts TWO entries (accrual + payment) against the same
+    // source, which would collide on the (source_type, source_id, status)
+    // unique index. So payroll/settlement entries are posted UNLINKED
+    // (source = null) with the run/settlement captured in meta; idempotency is
+    // guarded on the run's own *_journal_entry_id columns instead.
+    // -------------------------------------------------------------------------
+
+    /**
+     * Salary accrual for an approved payroll run:
+     *   Dr 6015 Staff Salaries (total_salary)  /  Cr 2030 Staff Salaries Payable.
+     *
+     * Doctor commission is NOT accrued here — it was already expensed per-visit
+     * via the compensation ledger (Dr 6010 / Cr 2020). Idempotent on the run.
+     */
+    public function recordPayrollAccrual(\App\Models\PayrollRun $run, ?int $userId = null): ?JournalEntry
+    {
+        try {
+            if ($run->accrual_journal_entry_id) {
+                return JournalEntry::find($run->accrual_journal_entry_id);
+            }
+            $salary = round((float) $run->total_salary, 3);
+            if ($salary <= 0) {
+                return null; // pure-commission run — nothing new to accrue
+            }
+
+            $expense = $this->coa->resolve('6015'); // Staff Salaries
+            $payable = $this->coa->resolve('2030'); // Staff Salaries Payable
+            if (! $expense || ! $payable) {
+                Log::warning('[AccountingService] missing accounts for payroll accrual', ['run_id' => $run->id]);
+
+                return null;
+            }
+
+            $entry = $this->postBalancedEntry(
+                date: $run->pay_date ?? now(),
+                narration: "Payroll accrual {$run->periodLabel()}",
+                source: null,
+                branchId: $run->branch_id,
+                lines: [
+                    ['account_id' => $expense->id, 'debit' => $salary, 'credit' => 0, 'description' => 'Staff salaries '.$run->periodLabel(), 'branch_id' => $run->branch_id],
+                    ['account_id' => $payable->id, 'debit' => 0, 'credit' => $salary, 'description' => 'Salaries payable '.$run->periodLabel(), 'branch_id' => $run->branch_id],
+                ],
+                userId: $userId,
+            );
+            $this->tagSource($entry, ['payroll_run_id' => $run->id, 'kind' => 'payroll_accrual']);
+            $run->forceFill(['accrual_journal_entry_id' => $entry->id])->save();
+
+            return $entry;
+        } catch (\Throwable $e) {
+            Log::error('[AccountingService::recordPayrollAccrual] error', ['run_id' => $run->id, 'msg' => $e->getMessage()]);
+
+            return null;
+        }
+    }
+
+    /**
+     * Disbursement for a paid payroll run:
+     *   Dr 2030 Salaries Payable (total_salary)
+     *   Dr 2020 Doctor Payable   (total_commission — settles standing accrual)
+     *     Cr 1130 Staff Loans Receivable (total_loan_repaid — withheld installments)
+     *     Cr Cash/Bank                   (net cash actually paid out)
+     *
+     * Idempotent on the run. Cash account: the run's payment_account_id, else
+     * the branch cash account.
+     */
+    public function recordPayrollPayment(\App\Models\PayrollRun $run, ?int $userId = null): ?JournalEntry
+    {
+        try {
+            if ($run->payment_journal_entry_id) {
+                return JournalEntry::find($run->payment_journal_entry_id);
+            }
+
+            $salary = round((float) $run->total_salary, 3);
+            $commission = round((float) $run->total_commission, 3);
+            $loan = round((float) $run->total_loan_repaid, 3);
+            $cash = round($salary + $commission - $loan, 3);
+            if ($salary + $commission <= 0) {
+                return null;
+            }
+
+            $cashAccount = $run->payment_account_id
+                ? \App\Models\Accounting\Account::find($run->payment_account_id)
+                : $this->coa->cashAccountFor('cash', (int) ($run->branch_id ?? 0));
+            $salaryPayable = $this->coa->resolve('2030');
+            $doctorPayable = $this->coa->resolve('2020');
+            $loanRecv = $this->coa->resolve('1130');
+            if (! $cashAccount || ! $salaryPayable || ! $doctorPayable || ! $loanRecv) {
+                Log::warning('[AccountingService] missing accounts for payroll payment', ['run_id' => $run->id]);
+
+                return null;
+            }
+
+            $lines = [];
+            if ($salary > 0) {
+                $lines[] = ['account_id' => $salaryPayable->id, 'debit' => $salary, 'credit' => 0, 'description' => 'Settle salaries '.$run->periodLabel(), 'branch_id' => $run->branch_id];
+            }
+            if ($commission > 0) {
+                $lines[] = ['account_id' => $doctorPayable->id, 'debit' => $commission, 'credit' => 0, 'description' => 'Settle doctor commission '.$run->periodLabel(), 'branch_id' => $run->branch_id];
+            }
+            if ($loan > 0) {
+                $lines[] = ['account_id' => $loanRecv->id, 'debit' => 0, 'credit' => $loan, 'description' => 'Loan repayments withheld '.$run->periodLabel(), 'branch_id' => $run->branch_id];
+            }
+            $lines[] = ['account_id' => $cashAccount->id, 'debit' => 0, 'credit' => $cash, 'description' => 'Net payroll paid '.$run->periodLabel(), 'branch_id' => $run->branch_id];
+
+            $entry = $this->postBalancedEntry(
+                date: $run->paid_at ?? $run->pay_date ?? now(),
+                narration: "Payroll paid {$run->periodLabel()}",
+                source: null,
+                branchId: $run->branch_id,
+                lines: $lines,
+                userId: $userId,
+            );
+            $this->tagSource($entry, ['payroll_run_id' => $run->id, 'kind' => 'payroll_payment']);
+            $run->forceFill(['payment_journal_entry_id' => $entry->id])->save();
+
+            return $entry;
+        } catch (\Throwable $e) {
+            Log::error('[AccountingService::recordPayrollPayment] error', ['run_id' => $run->id, 'msg' => $e->getMessage()]);
+
+            return null;
+        }
+    }
+
+    /**
+     * Loan/advance disbursement: Dr 1130 Staff Loans Receivable / Cr Cash/Bank.
+     * Source-linked + idempotent on the loan's journal_entry_id.
+     */
+    public function recordLoanDisbursement(\App\Models\StaffLoan $loan, ?int $userId = null): ?JournalEntry
+    {
+        try {
+            if ($loan->journal_entry_id) {
+                return $loan->journalEntry;
+            }
+            $amount = round((float) $loan->principal_amount, 3);
+            if ($amount <= 0) {
+                return null;
+            }
+
+            $loanRecv = $this->coa->resolve('1130');
+            $cashAccount = $loan->payment_account_id
+                ? \App\Models\Accounting\Account::find($loan->payment_account_id)
+                : $this->coa->cashAccountFor('cash', (int) ($loan->branch_id ?? 0));
+            if (! $loanRecv || ! $cashAccount) {
+                Log::warning('[AccountingService] missing accounts for loan disbursement', ['loan_id' => $loan->id]);
+
+                return null;
+            }
+
+            $entry = $this->postBalancedEntry(
+                date: $loan->issued_on ?? now(),
+                narration: ucfirst($loan->type)." to {$loan->user?->name} (#{$loan->id})",
+                source: $loan,
+                branchId: $loan->branch_id,
+                lines: [
+                    ['account_id' => $loanRecv->id, 'debit' => $amount, 'credit' => 0, 'description' => 'Staff '.$loan->type.' receivable', 'branch_id' => $loan->branch_id],
+                    ['account_id' => $cashAccount->id, 'debit' => 0, 'credit' => $amount, 'description' => 'Cash out: '.$loan->type, 'branch_id' => $loan->branch_id],
+                ],
+                userId: $userId,
+            );
+            $loan->forceFill(['journal_entry_id' => $entry->id])->save();
+
+            return $entry;
+        } catch (\Throwable $e) {
+            Log::error('[AccountingService::recordLoanDisbursement] error', ['loan_id' => $loan->id, 'msg' => $e->getMessage()]);
+
+            return null;
+        }
+    }
+
+    /**
+     * End-of-service settlement accrual:
+     *   Dr 6016 End-of-Service Expense (gratuity)
+     *   Dr 6015 Staff Salaries        (leave encashment + other additions)
+     *     Cr 1130 Loans Receivable    (loan clawback)
+     *     Cr 4040 Other Income        (other deductions recovered)
+     *     Cr 2030 Salaries Payable    (net settlement owed)
+     * Idempotent on the settlement.
+     */
+    public function recordSettlementAccrual(\App\Models\StaffSettlement $s, ?int $userId = null): ?JournalEntry
+    {
+        try {
+            if ($s->accrual_journal_entry_id) {
+                return JournalEntry::find($s->accrual_journal_entry_id);
+            }
+            $gratuity = round((float) $s->gratuity_amount, 3);
+            $extras = round((float) $s->leave_encashment + (float) $s->other_additions, 3);
+            $clawback = round((float) $s->loan_clawback, 3);
+            $otherDed = round((float) $s->other_deductions, 3);
+            $net = round((float) $s->net_settlement, 3);
+            if ($gratuity + $extras <= 0) {
+                return null;
+            }
+
+            $eosExpense = $this->coa->resolve('6016');
+            $salaryExpense = $this->coa->resolve('6015');
+            $loanRecv = $this->coa->resolve('1130');
+            $otherIncome = $this->coa->resolve('4040');
+            $payable = $this->coa->resolve('2030');
+            if (! $eosExpense || ! $salaryExpense || ! $loanRecv || ! $otherIncome || ! $payable) {
+                Log::warning('[AccountingService] missing accounts for settlement accrual', ['settlement_id' => $s->id]);
+
+                return null;
+            }
+
+            $lines = [];
+            if ($gratuity > 0) {
+                $lines[] = ['account_id' => $eosExpense->id, 'debit' => $gratuity, 'credit' => 0, 'description' => 'End-of-service gratuity', 'branch_id' => $s->branch_id];
+            }
+            if ($extras > 0) {
+                $lines[] = ['account_id' => $salaryExpense->id, 'debit' => $extras, 'credit' => 0, 'description' => 'Leave encashment / additions', 'branch_id' => $s->branch_id];
+            }
+            if ($clawback > 0) {
+                $lines[] = ['account_id' => $loanRecv->id, 'debit' => 0, 'credit' => $clawback, 'description' => 'Outstanding loan netted off', 'branch_id' => $s->branch_id];
+            }
+            if ($otherDed > 0) {
+                $lines[] = ['account_id' => $otherIncome->id, 'debit' => 0, 'credit' => $otherDed, 'description' => 'Settlement deductions', 'branch_id' => $s->branch_id];
+            }
+            $lines[] = ['account_id' => $payable->id, 'debit' => 0, 'credit' => $net, 'description' => 'Final settlement payable', 'branch_id' => $s->branch_id];
+
+            $entry = $this->postBalancedEntry(
+                date: $s->last_working_day ?? now(),
+                narration: "End-of-service settlement: {$s->user?->name} (#{$s->id})",
+                source: null,
+                branchId: $s->branch_id,
+                lines: $lines,
+                userId: $userId,
+            );
+            $this->tagSource($entry, ['settlement_id' => $s->id, 'kind' => 'settlement_accrual']);
+            $s->forceFill(['accrual_journal_entry_id' => $entry->id])->save();
+
+            return $entry;
+        } catch (\Throwable $e) {
+            Log::error('[AccountingService::recordSettlementAccrual] error', ['settlement_id' => $s->id, 'msg' => $e->getMessage()]);
+
+            return null;
+        }
+    }
+
+    /**
+     * End-of-service settlement payment: Dr 2030 Salaries Payable / Cr Cash.
+     * Idempotent on the settlement.
+     */
+    public function recordSettlementPayment(\App\Models\StaffSettlement $s, ?int $userId = null): ?JournalEntry
+    {
+        try {
+            if ($s->payment_journal_entry_id) {
+                return JournalEntry::find($s->payment_journal_entry_id);
+            }
+            $net = round((float) $s->net_settlement, 3);
+            if ($net <= 0) {
+                return null;
+            }
+
+            $payable = $this->coa->resolve('2030');
+            $cashAccount = $s->payment_account_id
+                ? \App\Models\Accounting\Account::find($s->payment_account_id)
+                : $this->coa->cashAccountFor('cash', (int) ($s->branch_id ?? 0));
+            if (! $payable || ! $cashAccount) {
+                Log::warning('[AccountingService] missing accounts for settlement payment', ['settlement_id' => $s->id]);
+
+                return null;
+            }
+
+            $entry = $this->postBalancedEntry(
+                date: $s->paid_at ?? now(),
+                narration: "End-of-service paid: {$s->user?->name} (#{$s->id})",
+                source: null,
+                branchId: $s->branch_id,
+                lines: [
+                    ['account_id' => $payable->id, 'debit' => $net, 'credit' => 0, 'description' => 'Settle final settlement', 'branch_id' => $s->branch_id],
+                    ['account_id' => $cashAccount->id, 'debit' => 0, 'credit' => $net, 'description' => 'Final settlement paid', 'branch_id' => $s->branch_id],
+                ],
+                userId: $userId,
+            );
+            $this->tagSource($entry, ['settlement_id' => $s->id, 'kind' => 'settlement_payment']);
+            $s->forceFill(['payment_journal_entry_id' => $entry->id])->save();
+
+            return $entry;
+        } catch (\Throwable $e) {
+            Log::error('[AccountingService::recordSettlementPayment] error', ['settlement_id' => $s->id, 'msg' => $e->getMessage()]);
+
+            return null;
+        }
+    }
+
+    /** Persist traceability meta on an unlinked (source=null) entry. */
+    protected function tagSource(JournalEntry $entry, array $meta): void
+    {
+        $entry->forceFill(['meta' => array_merge((array) $entry->meta, $meta)])->save();
+    }
+
+    /**
      * Post a balanced entry in one shot, validating debits == credits.
      *
      * Race protection: if a parallel call (observer + manual call, double-fire,

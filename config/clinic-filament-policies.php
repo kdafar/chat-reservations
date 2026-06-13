@@ -49,6 +49,7 @@ return [
         \App\Models\Medication::class => 'medications',
         \App\Models\StockTransfer::class => 'stock_transfers',
         \App\Models\ClinicPaymentMethod::class => 'clinic_payment_methods',
+        \App\Models\Purchasing\PurchaseOrder::class => 'purchase_orders',
 
         // Accounting layer
         \App\Models\Accounting\Account::class => 'accounting_accounts',
@@ -80,6 +81,13 @@ return [
         // HR layer (any staff — not just doctors)
         \App\Models\StaffLeave::class => 'staff_leaves',
         \App\Models\StaffAttendance::class => 'staff_attendances',
+
+        // Payroll & extended HR
+        \App\Models\StaffCompensationProfile::class => 'staff_compensation_profiles',
+        \App\Models\PayrollRun::class => 'payroll_runs',
+        \App\Models\StaffLoan::class => 'staff_loans',
+        \App\Models\StaffSettlement::class => 'staff_settlements',
+        \App\Models\StaffLeaveEntitlement::class => 'staff_leave_entitlements',
 
         // Laboratory layer
         \App\Models\Lab\LabTest::class => 'lab_tests',

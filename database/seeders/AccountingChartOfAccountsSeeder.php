@@ -38,6 +38,7 @@ class AccountingChartOfAccountsSeeder extends Seeder
             ['1100', 'Accounts Receivable',                   Account::TYPE_ASSET, '1000', true],
             ['1110', 'Patient Receivables',                   Account::TYPE_ASSET, '1100', true],
             ['1120', 'Insurance Receivables',                 Account::TYPE_ASSET, '1100', false],
+            ['1130', 'Staff Loans & Advances Receivable',     Account::TYPE_ASSET, '1100', false],
             ['1200', 'Inventory - Medical Supplies',          Account::TYPE_ASSET, '1000', true],
             ['1300', 'Prepaid Expenses',                      Account::TYPE_ASSET, '1000', false],
             ['1400', 'Fixed Assets - Equipment',              Account::TYPE_ASSET, '1000', false],
@@ -48,6 +49,7 @@ class AccountingChartOfAccountsSeeder extends Seeder
             ['2010', 'Accounts Payable',                      Account::TYPE_LIABILITY, '2000', true],
             ['2020', 'Doctor Payable',                        Account::TYPE_LIABILITY, '2000', true],
             ['2030', 'Staff Salaries Payable',                Account::TYPE_LIABILITY, '2000', false],
+            ['2040', 'End-of-Service Provision',              Account::TYPE_LIABILITY, '2000', false],
             ['2100', 'Customer Deposits',                     Account::TYPE_LIABILITY, '2000', false],
 
             // ===== EQUITY (3xxx) =====
@@ -74,6 +76,7 @@ class AccountingChartOfAccountsSeeder extends Seeder
             // by migration 2026_05_24_100010 to back the insurance claims write-off
             // auto-posting. Staff Salaries moved to 6015 to free the slot.
             ['6015', 'Staff Salaries',                        Account::TYPE_EXPENSE, '6000', false],
+            ['6016', 'End-of-Service Expense',                Account::TYPE_EXPENSE, '6000', false],
             ['6020', 'Bad Debt Expense',                      Account::TYPE_EXPENSE, '6000', true],
             ['6030', 'Rent',                                  Account::TYPE_EXPENSE, '6000', false],
             ['6040', 'Utilities',                             Account::TYPE_EXPENSE, '6000', false],
