@@ -16,7 +16,7 @@ export const HELP_PAGES = new Set([
     // Laboratory
     'lab-tests',
     // Pharmacy & stock
-    'clinic-items', 'clinic-stock', 'stock-movements', 'stock-requests', 'clinic-packages',
+    'clinic-items', 'clinic-stock', 'stock-movements', 'stock-requests', 'purchase-orders', 'clinic-packages',
     // HR
     'leaves', 'attendance', 'doctors', 'users', 'doctor-comp', 'doctor-earnings',
     // Accounting

@@ -380,6 +380,23 @@ return [
         ['q' => 'Where do these requests come from?', 'a' => 'They are raised from the visit console when a doctor or nurse needs stock items for a visit; this page is where pharmacy fulfils or cancels them.'],
     ]],
 ],
+'purchase-orders' => [
+    'what' => ['heading' => 'What is this?', 'body' => 'The procurement workspace: raise a purchase order to a vendor, receive the goods into a branch\'s stock, and pay the vendor. Receiving and paying post automatically to the accounting books, so inventory and Accounts Payable always stay correct.'],
+    'how' => ['heading' => 'How to use it', 'items' => [
+        'Click "New PO", pick the vendor and receiving branch, then add each item with its quantity and unit cost; the order total updates live. The PO is created as a draft.',
+        'Open a draft and click "Approve" once the order is confirmed with the vendor. Only draft POs can be edited or cancelled.',
+        'When goods arrive, click "Receive" — enter the quantity received for each line (you can receive in several batches). This adds the items to stock and books Dr Inventory / Cr Accounts Payable at the PO cost.',
+        'Click "Pay" to record a payment to the vendor: enter the amount (defaulting to the outstanding balance), the method, and an optional reference. This books Dr Accounts Payable / Cr Cash or Bank.',
+        'Use the status filter, vendor filter and search box to find POs; expand a row to see its lines, receipts, payments and the outstanding balance.',
+    ]],
+    'faq' => ['heading' => 'Common questions', 'items' => [
+        ['q' => 'When does stock actually increase?', 'a' => 'Only when you receive goods — each receipt adds the received quantity to on-hand on the Clinic Stock page and writes a stock movement. Creating or approving a PO does not touch stock.'],
+        ['q' => 'How does this affect the accounting books?', 'a' => 'Receiving posts Dr Inventory (1200) / Cr Accounts Payable (2010) at the purchase cost; paying the vendor posts Dr Accounts Payable / Cr Cash or Bank. The outstanding balance on a PO is what you still owe the vendor (received minus paid).'],
+        ['q' => 'Can I receive only part of an order?', 'a' => 'Yes. Enter whatever arrived for each line; the PO moves to "Partially received" and remembers what is still outstanding so you can receive the rest later. It becomes "Received" once every line is fully received.'],
+        ['q' => 'What if I record a payment by mistake?', 'a' => 'Void the payment — it reverses the journal entry it created and removes it from the PO, restoring the outstanding balance.'],
+        ['q' => 'Does the unit cost change my item costs?', 'a' => 'The purchase cost is used for the inventory value posted to the books. It does not overwrite the item\'s own default cost used elsewhere.'],
+    ]],
+],
 'clinic-packages' => [
     'what' => ['heading' => 'What is this?', 'body' => 'Reusable bundles of clinic items sold at a single price that a doctor can add to a visit in one tap. Use it to set up common combinations such as a consultation-plus-supplies package.'],
     'how' => ['heading' => 'How to use it', 'items' => [

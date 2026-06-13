@@ -27,6 +27,8 @@ class Vendor extends Model
         'email',
         'address',
         'tax_number',
+        'default_currency',
+        'country',
         'default_account_id',
         'default_payable_account_id',
         'notes',

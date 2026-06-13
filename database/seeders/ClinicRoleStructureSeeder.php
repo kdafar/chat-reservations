@@ -31,6 +31,7 @@ class ClinicRoleStructureSeeder extends Seeder
         $this->seedNurse();
         $this->seedClinicalLibrary();
         $this->seedStockTransfers();
+        $this->seedPurchaseOrders();
         $this->restrictDoctorCatalogToReadOnly();
         $this->pruneLegacyOverGrants();
         $this->consolidateRoles();
@@ -49,6 +50,28 @@ class ClinicRoleStructureSeeder extends Seeder
             'clinic_reception' => $this->verbs(['view', 'create', 'update', 'delete'], ['stock_transfers']),
             'clinic_doctor' => $this->verbs(['view', 'create'], ['stock_transfers']),
             'clinic_nurse' => $this->verbs(['view', 'create'], ['stock_transfers']),
+        ];
+
+        foreach ($grants as $roleName => $names) {
+            $role = Role::firstOrCreate(['name' => $roleName, 'guard_name' => 'web']);
+            $perms = Permission::where('guard_name', 'web')->whereIn('name', $names->all())->get();
+            $existing = $role->permissions()->pluck('id')->all();
+            $role->syncPermissions(array_values(array_unique(array_merge($existing, $perms->pluck('id')->all()))));
+        }
+    }
+
+    /**
+     * Purchasing: clinic_admin can do everything (create/approve/receive/pay/
+     * cancel = view+create+update+delete). Reception can raise + manage POs
+     * (view+create+update) but not the destructive delete family. Doctors get
+     * read-only visibility. Admin bypasses. Additive.
+     */
+    protected function seedPurchaseOrders(): void
+    {
+        $grants = [
+            'clinic_admin' => $this->verbs(['view', 'create', 'update', 'delete'], ['purchase_orders']),
+            'clinic_reception' => $this->verbs(['view', 'create', 'update'], ['purchase_orders']),
+            'clinic_doctor' => $this->verbs(['view'], ['purchase_orders']),
         ];
 
         foreach ($grants as $roleName => $names) {
