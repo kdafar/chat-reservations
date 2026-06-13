@@ -46,6 +46,18 @@ class PurchaseOrdersController extends Controller
         return (bool) $request->user()?->can('update_purchase_orders');
     }
 
+    /** Approve / reject a PO — segregated from create + operate. */
+    protected function canApprove(Request $request): bool
+    {
+        return (bool) $request->user()?->can('approve_purchase_orders');
+    }
+
+    /** Pay a vendor / void a payment — finance gate, segregated from ops. */
+    protected function canPay(Request $request): bool
+    {
+        return (bool) $request->user()?->can('pay_purchase_orders');
+    }
+
     public function index(Request $request): Response
     {
         $this->authorizeView($request);
@@ -164,14 +176,17 @@ class PurchaseOrdersController extends Controller
         return Inertia::render('Purchases/Show', [
             'order' => $this->poDetail($order),
             'pay_accounts' => $this->payAccounts(),
+            'can_create' => $this->canCreate($request),
             'can_manage' => $this->canManage($request),
+            'can_approve' => $this->canApprove($request),
+            'can_pay' => $this->canPay($request),
         ]);
     }
 
     public function edit(Request $request, PurchaseOrder $order): Response
     {
         $this->authorizeView($request);
-        abort_unless($this->canManage($request), 403, 'Not authorized to edit purchase orders.');
+        abort_unless($this->canCreate($request), 403, 'Not authorized to edit purchase orders.');
 
         if (! $order->isEditable()) {
             return redirect()->route('v2.purchase-orders.show', ['order' => $order->id])
@@ -187,7 +202,7 @@ class PurchaseOrdersController extends Controller
     public function update(Request $request, PurchaseOrder $order): RedirectResponse
     {
         $this->authorizeView($request);
-        abort_unless($this->canManage($request), 403, 'Not authorized to edit purchase orders.');
+        abort_unless($this->canCreate($request), 403, 'Not authorized to edit purchase orders.');
 
         $data = $request->validate(array_merge($this->headerRules(), $this->lineRules()));
 
@@ -204,7 +219,7 @@ class PurchaseOrdersController extends Controller
     public function approve(Request $request, PurchaseOrder $order): RedirectResponse
     {
         $this->authorizeView($request);
-        abort_unless($this->canManage($request), 403, 'Not authorized to approve purchase orders.');
+        abort_unless($this->canApprove($request), 403, 'Not authorized to approve purchase orders.');
 
         try {
             $this->svc->approve($order, (int) (auth()->id() ?? 0));
@@ -218,7 +233,7 @@ class PurchaseOrdersController extends Controller
     public function submit(Request $request, PurchaseOrder $order): RedirectResponse
     {
         $this->authorizeView($request);
-        abort_unless($this->canManage($request) || $this->canCreate($request), 403, 'Not authorized.');
+        abort_unless($this->canCreate($request), 403, 'Not authorized.');
 
         try {
             $this->svc->submit($order, (int) (auth()->id() ?? 0));
@@ -232,7 +247,7 @@ class PurchaseOrdersController extends Controller
     public function reject(Request $request, PurchaseOrder $order): RedirectResponse
     {
         $this->authorizeView($request);
-        abort_unless($this->canManage($request), 403, 'Not authorized to reject purchase orders.');
+        abort_unless($this->canApprove($request), 403, 'Not authorized to reject purchase orders.');
 
         $data = $request->validate(['reason' => ['nullable', 'string', 'max:2000']]);
 
@@ -325,7 +340,7 @@ class PurchaseOrdersController extends Controller
     public function pay(Request $request, PurchaseOrder $order): RedirectResponse
     {
         $this->authorizeView($request);
-        abort_unless($this->canManage($request), 403, 'Not authorized to pay vendors.');
+        abort_unless($this->canPay($request), 403, 'Not authorized to pay vendors.');
 
         $data = $request->validate([
             'amount' => ['required', 'numeric', 'min:0.001'],
@@ -362,7 +377,7 @@ class PurchaseOrdersController extends Controller
     public function voidPayment(Request $request, PurchasePayment $payment): RedirectResponse
     {
         $this->authorizeView($request);
-        abort_unless($this->canManage($request), 403, 'Not authorized to void payments.');
+        abort_unless($this->canPay($request), 403, 'Not authorized to void payments.');
 
         try {
             $this->svc->voidPayment($payment);
@@ -418,13 +433,14 @@ class PurchaseOrdersController extends Controller
                 'partner_id' => $i->partner_id,
             ])->all();
 
-        $vendorsFull = Vendor::query()->active()->orderBy('name')->get(['id', 'default_currency', 'country'])
+        $vendorsFull = Vendor::query()->active()->orderBy('name')->get(['id', 'default_currency', 'country', 'default_payment_terms_days'])
             ->keyBy('id');
 
         return [
             'vendors' => array_map(fn ($v) => array_merge($v, [
                 'default_currency' => $vendorsFull[$v['id']]->default_currency ?? null,
                 'country' => $vendorsFull[$v['id']]->country ?? null,
+                'default_payment_terms_days' => (int) ($vendorsFull[$v['id']]->default_payment_terms_days ?? 0),
             ]), $vendors),
             'branches' => $this->accessibleBranches()->all(),
             'items' => $items,
@@ -440,6 +456,7 @@ class PurchaseOrdersController extends Controller
             'currency' => ['nullable', 'string', 'size:3'],
             'exchange_rate' => ['nullable', 'numeric', 'min:0.00000001'],
             'incoterm' => ['nullable', 'string', 'max:16'],
+            'payment_terms_days' => ['nullable', 'integer', 'min:0', 'max:365'],
             'expected_date' => ['nullable', 'date'],
             'ship_date' => ['nullable', 'date'],
             'eta' => ['nullable', 'date'],
@@ -473,7 +490,7 @@ class PurchaseOrdersController extends Controller
     protected function headerAttrsFrom(array $d): array
     {
         return collect([
-            'currency', 'exchange_rate', 'incoterm', 'expected_date', 'ship_date', 'eta',
+            'currency', 'exchange_rate', 'incoterm', 'payment_terms_days', 'expected_date', 'ship_date', 'eta',
             'carrier', 'tracking_no', 'container_no', 'vendor_reference', 'notes',
             'freight_amount', 'customs_amount', 'clearance_amount', 'insurance_amount', 'other_charges_amount',
         ])->mapWithKeys(fn ($k) => [$k => $d[$k] ?? null])->all();
@@ -525,6 +542,10 @@ class PurchaseOrdersController extends Controller
             'exchange_rate' => (float) $order->exchange_rate,
             'is_foreign' => $order->isForeign(),
             'incoterm' => $order->incoterm,
+            'payment_terms_days' => (int) $order->payment_terms_days,
+            'payment_due_date' => optional($order->payment_due_date)->toDateString(),
+            'days_until_due' => $order->daysUntilDue(),
+            'is_overdue' => $order->isOverdue(),
             // Money
             'goods_total' => (float) $order->goods_total,
             'goods_total_kwd' => (float) $order->goods_total_kwd,

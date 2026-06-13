@@ -49,6 +49,9 @@ class PurchaseOrder extends Model
         'expected_date' => 'date',
         'ship_date' => 'date',
         'eta' => 'date',
+        'payment_terms_days' => 'integer',
+        'payment_due_date' => 'date',
+        'last_payment_reminder_at' => 'datetime',
         'subtotal' => 'decimal:3',
         'goods_total' => 'decimal:3',
         'goods_total_kwd' => 'decimal:3',
@@ -129,6 +132,23 @@ class PurchaseOrder extends Model
     public function isForeign(): bool
     {
         return strtoupper((string) $this->currency) !== 'KWD';
+    }
+
+    /** Days until the vendor payment is due (negative = overdue). Null if no due date / nothing owed. */
+    public function daysUntilDue(): ?int
+    {
+        if (! $this->payment_due_date || $this->outstanding() <= 0) {
+            return null;
+        }
+
+        return (int) round(now()->startOfDay()->diffInDays($this->payment_due_date->copy()->startOfDay(), false));
+    }
+
+    public function isOverdue(): bool
+    {
+        $d = $this->daysUntilDue();
+
+        return $d !== null && $d < 0;
     }
 
     public function isEditable(): bool

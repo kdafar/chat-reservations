@@ -68,10 +68,25 @@ class ClinicRoleStructureSeeder extends Seeder
      */
     protected function seedPurchaseOrders(): void
     {
+        // Custom permissions beyond the generated verb set, for segregation of
+        // duties: approving a PO and paying a vendor are gated separately from
+        // raising (create) and operating (update: send/receive/etc.) it.
+        foreach (['approve_purchase_orders', 'pay_purchase_orders'] as $name) {
+            Permission::firstOrCreate(['name' => $name, 'guard_name' => 'web']);
+        }
+
         $grants = [
-            'clinic_admin' => $this->verbs(['view', 'create', 'update', 'delete'], ['purchase_orders']),
+            // Admin: full control incl. approve + pay.
+            'clinic_admin' => $this->verbs(['view', 'create', 'update', 'delete'], ['purchase_orders'])
+                ->push('approve_purchase_orders', 'pay_purchase_orders'),
+            // Reception/storekeeper: raise + operate (send/receive/cancel) but
+            // CANNOT approve POs or pay vendors (separation of duties).
             'clinic_reception' => $this->verbs(['view', 'create', 'update'], ['purchase_orders']),
+            // Doctor: read-only.
             'clinic_doctor' => $this->verbs(['view'], ['purchase_orders']),
+            // Accountant: read + settle vendor payments (finance), no approval/ops.
+            'accountant' => $this->verbs(['view'], ['purchase_orders'])
+                ->push('pay_purchase_orders'),
         ];
 
         foreach ($grants as $roleName => $names) {
@@ -79,6 +94,13 @@ class ClinicRoleStructureSeeder extends Seeder
             $perms = Permission::where('guard_name', 'web')->whereIn('name', $names->all())->get();
             $existing = $role->permissions()->pluck('id')->all();
             $role->syncPermissions(array_values(array_unique(array_merge($existing, $perms->pluck('id')->all()))));
+        }
+
+        // The platform super-role syncs "all permissions" earlier in
+        // ClinicFilamentPermissionSeeder — before these custom perms existed —
+        // so grant them explicitly here too.
+        if ($admin = Role::where('name', 'admin')->where('guard_name', 'web')->first()) {
+            $admin->givePermissionTo('approve_purchase_orders', 'pay_purchase_orders');
         }
     }
 

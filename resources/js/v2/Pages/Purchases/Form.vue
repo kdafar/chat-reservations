@@ -27,7 +27,7 @@ const t = computed(() => isRtl.value ? {
     crumbs: 'أوامر الشراء', create: 'أمر شراء جديد', edit: 'تعديل أمر الشراء', back: 'رجوع', cancel: 'إلغاء', save: 'حفظ',
     secVendor: 'المورّد والتسليم', secCurrency: 'العملة والشروط', secShip: 'الشحن / الاستيراد', secItems: 'الأصناف', secLanded: 'تكاليف الوصول (د.ك)', secNotes: 'ملاحظات',
     vendor: 'المورّد', branch: 'فرع الاستلام', orderDate: 'تاريخ الأمر', expected: 'موعد التسليم المتوقع',
-    currency: 'العملة', exRate: 'سعر الصرف', exRateHint: 'د.ك لكل 1', incoterm: 'شرط التسليم',
+    currency: 'العملة', exRate: 'سعر الصرف', exRateHint: 'د.ك لكل 1', incoterm: 'شرط التسليم', payTerms: 'شروط الدفع', dueOnReceipt: 'مستحق عند الاستلام', net: 'صافي',
     carrier: 'الناقل', tracking: 'رقم التتبع', container: 'رقم الحاوية', shipDate: 'تاريخ الشحن', eta: 'الوصول المتوقع', vendorRef: 'مرجع المورّد',
     item: 'الصنف', qty: 'الكمية', unitCost: 'تكلفة الوحدة', discount: 'الخصم', origin: 'بلد المنشأ', add: 'إضافة', pickBranchFirst: 'اختر الفرع أولاً', noLines: 'لم تُضف أصناف بعد', lineTotal: 'الإجمالي',
     freight: 'الشحن', customs: 'الجمارك', clearance: 'التخليص', insurance: 'التأمين', other: 'رسوم أخرى', landedNote: 'تُضاف تكاليف الوصول إلى تكلفة المخزون.',
@@ -38,7 +38,7 @@ const t = computed(() => isRtl.value ? {
     crumbs: 'Purchase Orders', create: 'New purchase order', edit: 'Edit purchase order', back: 'Back', cancel: 'Cancel', save: 'Save',
     secVendor: 'Vendor & delivery', secCurrency: 'Currency & terms', secShip: 'Shipment / import', secItems: 'Items', secLanded: 'Landed costs (KWD)', secNotes: 'Notes',
     vendor: 'Vendor', branch: 'Receiving branch', orderDate: 'Order date', expected: 'Expected delivery',
-    currency: 'Currency', exRate: 'Exchange rate', exRateHint: 'KWD per 1', incoterm: 'Incoterm',
+    currency: 'Currency', exRate: 'Exchange rate', exRateHint: 'KWD per 1', incoterm: 'Incoterm', payTerms: 'Payment terms', dueOnReceipt: 'Due on receipt', net: 'Net',
     carrier: 'Carrier', tracking: 'Tracking no.', container: 'Container no.', shipDate: 'Ship date', eta: 'ETA', vendorRef: 'Vendor reference',
     item: 'Item', qty: 'Qty', unitCost: 'Unit cost', discount: 'Discount', origin: 'Country of origin', add: 'Add', pickBranchFirst: 'Select a branch first', noLines: 'No items added yet', lineTotal: 'Line total',
     freight: 'Freight', customs: 'Customs', clearance: 'Clearance', insurance: 'Insurance', other: 'Other charges', landedNote: 'These capitalise into inventory cost.',
@@ -57,6 +57,7 @@ const form = useForm({
     currency: o.value.currency ?? 'KWD',
     exchange_rate: o.value.exchange_rate ?? 1,
     incoterm: o.value.incoterm ?? null,
+    payment_terms_days: o.value.payment_terms_days ?? 0,
     ship_date: o.value.ship_date ?? '',
     eta: o.value.eta ?? '',
     carrier: o.value.carrier ?? '',
@@ -84,6 +85,12 @@ const vendorItems = computed(() => props.vendors.map(v => ({ value: v.id, label:
 const branchItems = computed(() => props.branches.map(b => ({ value: b.id, label: b.name })))
 const currencyItems = computed(() => props.currencies.map(c => ({ value: c, label: c })))
 const incotermItems = computed(() => props.incoterms.map(i => ({ value: i, label: i })))
+const termsItems = computed(() => [
+    { value: 0, label: t.value.dueOnReceipt },
+    { value: 30, label: `${t.value.net} 30` },
+    { value: 60, label: `${t.value.net} 60` },
+    { value: 90, label: `${t.value.net} 90` },
+])
 
 const vendorName = computed(() => props.vendors.find(v => v.id === form.vendor_id)?.name || ('#' + form.vendor_id))
 const branchName = computed(() => props.branches.find(b => b.id === form.branch_id)?.name || ('#' + form.branch_id))
@@ -117,6 +124,9 @@ watch(() => form.vendor_id, (vid) => {
     const v = props.vendors.find(x => x.id === vid)
     if (v && v.default_currency && form.currency === 'KWD') {
         form.currency = v.default_currency
+    }
+    if (v && v.default_payment_terms_days && !form.payment_terms_days) {
+        form.payment_terms_days = v.default_payment_terms_days
     }
 })
 
@@ -260,6 +270,10 @@ function save() {
                         <div>
                             <label class="lbl">{{ t.incoterm }}</label>
                             <SearchableSelect v-model="form.incoterm" :items="incotermItems" :nullable="true" :placeholder="t.selIncoterm" :null-label="'—'" />
+                        </div>
+                        <div>
+                            <label class="lbl">{{ t.payTerms }}</label>
+                            <SearchableSelect v-model="form.payment_terms_days" :items="termsItems" :nullable="false" />
                         </div>
                     </div>
                 </section>

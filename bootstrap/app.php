@@ -88,6 +88,10 @@ return Application::configure(basePath: dirname(__DIR__))
             ->withoutOverlapping()
             ->onOneServer();
         $schedule->command('clinic:daily-cleanup')->dailyAt('03:00');
+        $schedule->command('clinic:vendor-payment-reminders')
+            ->dailyAt('09:00')
+            ->withoutOverlapping()
+            ->onOneServer();
         $schedule->command('booking:cleanup-holds')->everyMinute();
         $schedule->command('wa:sessions:expire')->everyFifteenMinutes();
         $schedule->command('tables:free-stuck --hours=6')->dailyAt('03:00');

@@ -289,11 +289,16 @@ class PurchaseService
 
             $this->accounting->recordPurchaseReceipt($receipt->refresh(), $userId ?: null);
 
-            $po->forceFill([
+            $attrs = [
                 'status' => $fullyReceived
                     ? PurchaseOrder::STATUS_RECEIVED
                     : PurchaseOrder::STATUS_PARTIALLY_RECEIVED,
-            ])->save();
+            ];
+            // First goods received → start the payment clock (net terms).
+            if (! $po->payment_due_date) {
+                $attrs['payment_due_date'] = now()->addDays((int) $po->payment_terms_days)->toDateString();
+            }
+            $po->forceFill($attrs)->save();
 
             return $receipt->refresh();
         });
@@ -474,6 +479,7 @@ class PurchaseService
             'currency' => $currency,
             'exchange_rate' => $rate,
             'incoterm' => $a['incoterm'] ?? $existing?->incoterm,
+            'payment_terms_days' => (int) ($a['payment_terms_days'] ?? $existing?->payment_terms_days ?? 0),
             'expected_date' => $a['expected_date'] ?? $existing?->expected_date,
             'notes' => $a['notes'] ?? $existing?->notes,
             'vendor_reference' => $a['vendor_reference'] ?? $existing?->vendor_reference,

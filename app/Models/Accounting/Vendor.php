@@ -29,6 +29,7 @@ class Vendor extends Model
         'tax_number',
         'default_currency',
         'country',
+        'default_payment_terms_days',
         'default_account_id',
         'default_payable_account_id',
         'notes',

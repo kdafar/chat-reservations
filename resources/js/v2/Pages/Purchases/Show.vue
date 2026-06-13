@@ -11,7 +11,10 @@ import { confirm } from '../../Composables/useConfirm.js'
 const props = defineProps({
     order: { type: Object, required: true },
     pay_accounts: { type: Array, default: () => [] },
+    can_create: { type: Boolean, default: false },
     can_manage: { type: Boolean, default: false },
+    can_approve: { type: Boolean, default: false },
+    can_pay: { type: Boolean, default: false },
 })
 
 const pageProps = usePage()
@@ -25,6 +28,7 @@ const t = computed(() => isRtl.value ? {
     order: 'الأمر', shipment: 'الشحنة',
     vendor: 'المورد', branch: 'الفرع', orderDate: 'تاريخ الأمر', expDate: 'التاريخ المتوقع', incoterm: 'إنكوترمز',
     currency: 'العملة', rate: 'سعر الصرف', vendorRef: 'مرجع المورد', notes: 'ملاحظات',
+    payTerms: 'شروط الدفع', dueOnReceipt: 'مستحق عند الاستلام', net: 'صافي', payDue: 'تاريخ الاستحقاق', overdueBy: 'متأخر', dueIn: 'خلال',
     carrier: 'الناقل', tracking: 'رقم التتبع', container: 'رقم الحاوية', shipDate: 'تاريخ الشحن', eta: 'الوصول المتوقع',
     lines: 'البنود', item: 'الصنف', country: 'بلد المنشأ', ordered: 'المطلوب', received: 'المستلم', remaining: 'المتبقي', unitCost: 'سعر الوحدة', discount: 'الخصم', lineTotal: 'الإجمالي',
     totals: 'الإجماليات', goods: 'البضاعة', landed: 'التكاليف الإجمالية', freight: 'الشحن', customs: 'الجمارك', clearance: 'التخليص', insurance: 'التأمين', other: 'أخرى', landedTotal: 'إجمالي التكلفة الواصلة',
@@ -45,6 +49,7 @@ const t = computed(() => isRtl.value ? {
     order: 'Order', shipment: 'Shipment',
     vendor: 'Vendor', branch: 'Branch', orderDate: 'Order date', expDate: 'Expected date', incoterm: 'Incoterm',
     currency: 'Currency', rate: 'Exchange rate', vendorRef: 'Vendor reference', notes: 'Notes',
+    payTerms: 'Payment terms', dueOnReceipt: 'Due on receipt', net: 'Net', payDue: 'Payment due', overdueBy: 'overdue', dueIn: 'in',
     carrier: 'Carrier', tracking: 'Tracking no.', container: 'Container no.', shipDate: 'Ship date', eta: 'ETA',
     lines: 'Lines', item: 'Item', country: 'Country', ordered: 'Ordered', received: 'Received', remaining: 'Remaining', unitCost: 'Unit cost', discount: 'Discount', lineTotal: 'Line total',
     totals: 'Totals', goods: 'Goods', landed: 'Landed costs', freight: 'Freight', customs: 'Customs', clearance: 'Clearance', insurance: 'Insurance', other: 'Other charges', landedTotal: 'Landed total',
@@ -218,21 +223,19 @@ const st = computed(() => order.value.status)
                 </h1>
             </div>
 
-            <!-- Action bar -->
+            <!-- Action bar — each button gated by its own permission -->
             <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                <template v-if="can_manage">
-                    <button v-if="order.is_editable" class="btn btn-outline btn-sm" @click="doEdit"><Icon name="pencil" :size="13" /> {{ t.edit }}</button>
-                    <button v-if="st === 'draft' || st === 'rejected'" class="btn btn-primary btn-sm" @click="doSubmit"><Icon name="send" :size="13" /> {{ t.submit }}</button>
-                    <button v-if="st === 'pending_approval'" class="btn btn-primary btn-sm" @click="doApprove"><Icon name="check" :size="13" /> {{ t.approve }}</button>
-                    <button v-if="st === 'pending_approval'" class="btn btn-ghost btn-sm" :class="{ 'is-active': panel === 'reject' }" style="color: var(--destructive);" @click="togglePanel('reject')"><Icon name="x" :size="13" /> {{ t.reject }}</button>
-                    <button v-if="st === 'approved'" class="btn btn-primary btn-sm" @click="doSend"><Icon name="truck" :size="13" /> {{ t.send }}</button>
-                    <button v-if="st === 'sent'" class="btn btn-primary btn-sm" :class="{ 'is-active': panel === 'ack' }" @click="togglePanel('ack')"><Icon name="check-check" :size="13" /> {{ t.acknowledge }}</button>
-                    <button v-if="order.is_receivable" class="btn btn-primary btn-sm" :class="{ 'is-active': panel === 'receive' }" @click="panel === 'receive' ? closePanel() : openReceive()"><Icon name="package-check" :size="13" /> {{ t.receive }}</button>
-                    <button v-if="Number(order.outstanding) > 0" class="btn btn-outline btn-sm" :class="{ 'is-active': panel === 'pay' }" @click="panel === 'pay' ? closePanel() : openPay()"><Icon name="banknote" :size="13" /> {{ t.pay }}</button>
-                    <button v-if="st === 'received'" class="btn btn-outline btn-sm" @click="doClose"><Icon name="lock" :size="13" /> {{ t.close }}</button>
-                    <button v-if="st === 'partially_received'" class="btn btn-outline btn-sm" @click="doShortClose"><Icon name="lock" :size="13" /> {{ t.shortClose }}</button>
-                    <button v-if="order.is_cancellable" class="btn btn-ghost btn-sm" style="color: var(--destructive);" @click="doCancel"><Icon name="ban" :size="13" /> {{ t.cancel }}</button>
-                </template>
+                <button v-if="order.is_editable && can_create" class="btn btn-outline btn-sm" @click="doEdit"><Icon name="pencil" :size="13" /> {{ t.edit }}</button>
+                <button v-if="(st === 'draft' || st === 'rejected') && can_create" class="btn btn-primary btn-sm" @click="doSubmit"><Icon name="send" :size="13" /> {{ t.submit }}</button>
+                <button v-if="st === 'pending_approval' && can_approve" class="btn btn-primary btn-sm" @click="doApprove"><Icon name="check" :size="13" /> {{ t.approve }}</button>
+                <button v-if="st === 'pending_approval' && can_approve" class="btn btn-ghost btn-sm" :class="{ 'is-active': panel === 'reject' }" style="color: var(--destructive);" @click="togglePanel('reject')"><Icon name="x" :size="13" /> {{ t.reject }}</button>
+                <button v-if="st === 'approved' && can_manage" class="btn btn-primary btn-sm" @click="doSend"><Icon name="truck" :size="13" /> {{ t.send }}</button>
+                <button v-if="st === 'sent' && can_manage" class="btn btn-primary btn-sm" :class="{ 'is-active': panel === 'ack' }" @click="togglePanel('ack')"><Icon name="check-check" :size="13" /> {{ t.acknowledge }}</button>
+                <button v-if="order.is_receivable && can_manage" class="btn btn-primary btn-sm" :class="{ 'is-active': panel === 'receive' }" @click="panel === 'receive' ? closePanel() : openReceive()"><Icon name="package-check" :size="13" /> {{ t.receive }}</button>
+                <button v-if="Number(order.outstanding) > 0 && can_pay" class="btn btn-outline btn-sm" :class="{ 'is-active': panel === 'pay' }" @click="panel === 'pay' ? closePanel() : openPay()"><Icon name="banknote" :size="13" /> {{ t.pay }}</button>
+                <button v-if="st === 'received' && can_manage" class="btn btn-outline btn-sm" @click="doClose"><Icon name="lock" :size="13" /> {{ t.close }}</button>
+                <button v-if="st === 'partially_received' && can_manage" class="btn btn-outline btn-sm" @click="doShortClose"><Icon name="lock" :size="13" /> {{ t.shortClose }}</button>
+                <button v-if="order.is_cancellable && can_manage" class="btn btn-ghost btn-sm" style="color: var(--destructive);" @click="doCancel"><Icon name="ban" :size="13" /> {{ t.cancel }}</button>
                 <button class="btn btn-ghost btn-sm" @click="doPrint"><Icon name="printer" :size="13" /> {{ t.print }}</button>
             </div>
         </div>
@@ -372,6 +375,16 @@ const st = computed(() => order.value.status)
                 <div class="ir"><span>{{ t.currency }}</span><b>{{ order.currency }}</b></div>
                 <div v-if="isForeign" class="ir"><span>{{ t.rate }}</span><b>1 {{ order.currency }} = {{ KWD(order.exchange_rate) }} KWD</b></div>
                 <div v-if="order.vendor_reference" class="ir"><span>{{ t.vendorRef }}</span><b>{{ order.vendor_reference }}</b></div>
+                <div class="ir"><span>{{ t.payTerms }}</span><b>{{ order.payment_terms_days > 0 ? (t.net + ' ' + order.payment_terms_days) : t.dueOnReceipt }}</b></div>
+                <div v-if="order.payment_due_date" class="ir">
+                    <span>{{ t.payDue }}</span>
+                    <b :style="{ color: order.is_overdue ? '#b91c1c' : 'var(--fg)' }">
+                        {{ fmtDate(order.payment_due_date) }}
+                        <span v-if="Number(order.outstanding) > 0 && order.days_until_due !== null" class="badge" :class="order.is_overdue ? 'badge-destructive' : 'badge-warning'" style="margin-inline-start: 6px; font-size: 9px;">
+                            {{ order.is_overdue ? (t.overdueBy + ' ' + Math.abs(order.days_until_due) + 'd') : (t.dueIn + ' ' + order.days_until_due + 'd') }}
+                        </span>
+                    </b>
+                </div>
                 <div v-if="order.notes" class="ir" style="border: 0;"><span>{{ t.notes }}</span><b style="font-weight: 400; text-align: end;">{{ order.notes }}</b></div>
             </div>
 
@@ -486,7 +499,7 @@ const st = computed(() => order.value.status)
                         <div class="tnum" style="font-size: 12px; color: var(--fg-subtle);">{{ fmtDate(p.payment_date) }}</div>
                         <div class="tnum" style="text-align: end; font-weight: 600;">{{ KWD(p.amount) }}</div>
                         <div style="text-align: end;">
-                            <button v-if="can_manage" class="btn btn-ghost btn-sm btn-icon" style="color: var(--destructive);" :title="t.void" @click="voidPayment(p)"><Icon name="trash-2" :size="13" /></button>
+                            <button v-if="can_pay" class="btn btn-ghost btn-sm btn-icon" style="color: var(--destructive);" :title="t.void" @click="voidPayment(p)"><Icon name="trash-2" :size="13" /></button>
                         </div>
                     </div>
                 </template>

@@ -85,4 +85,21 @@ return [
         'template_lang' => env('CLINIC_REMINDERS_TEMPLATE_LANG', 'en'),
         'dry_run' => (bool) env('CLINIC_REMINDERS_DRY_RUN', false),
     ],
+
+    // Vendor-payment due reminders (net 30/60/90 credit terms).
+    //   enabled:    master switch for the daily command
+    //   alert_days_before: start nudging this many days before the due date
+    //   in_app/email/whatsapp: per-channel switches (WhatsApp off by default — Meta bills)
+    //   whatsapp_template: approved Business-Manager template name for the WA channel
+    //   dry_run:    log "would notify" without sending
+    'vendor_payment_reminders' => [
+        'enabled' => (bool) env('CLINIC_VENDOR_PAY_REMINDERS_ENABLED', false),
+        'alert_days_before' => (int) env('CLINIC_VENDOR_PAY_ALERT_DAYS_BEFORE', 5),
+        'in_app' => (bool) env('CLINIC_VENDOR_PAY_REMINDERS_INAPP', true),
+        'email' => (bool) env('CLINIC_VENDOR_PAY_REMINDERS_EMAIL', true),
+        'whatsapp' => (bool) env('CLINIC_VENDOR_PAY_REMINDERS_WHATSAPP', false),
+        'whatsapp_template' => env('CLINIC_VENDOR_PAY_REMINDERS_WA_TEMPLATE', 'vendor_payment_due'),
+        'whatsapp_template_lang' => env('CLINIC_VENDOR_PAY_REMINDERS_WA_LANG', 'en'),
+        'dry_run' => (bool) env('CLINIC_VENDOR_PAY_REMINDERS_DRY_RUN', false),
+    ],
 ];
