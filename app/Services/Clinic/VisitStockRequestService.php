@@ -135,17 +135,28 @@ class VisitStockRequestService
     /**
      * Fulfill request: consume stock (only if stockable) and upsert visit_items
      */
+    /**
+     * Issue the requested stock from branch inventory.
+     *
+     * @param  bool  $autoReceive  When true (default — preserves the legacy
+     *   one-step behaviour for the console/Filament callers) the items are also
+     *   billed to the patient in full and the request is marked RECEIVED. When
+     *   false (the v2 store worklist) the request stops at FULFILLED: stock has
+     *   left the store but nothing is billed until the doctor confirms receipt
+     *   via receive().
+     */
     public function fulfill(
         VisitStockRequest $request,
         int $fulfilledByUserId = 0,
         ?string $notes = null,
         string $resumeStatus = 'awaiting_doctor',
+        bool $autoReceive = true,
     ): VisitStockRequest {
         if (! $this->enabled()) {
             return $request;
         }
 
-        return DB::transaction(function () use ($request, $fulfilledByUserId, $notes, $resumeStatus) {
+        return DB::transaction(function () use ($request, $fulfilledByUserId, $notes, $resumeStatus, $autoReceive) {
             /** @var VisitStockRequest $req */
             $req = VisitStockRequest::query()
                 ->lockForUpdate()
@@ -179,7 +190,8 @@ class VisitStockRequestService
 
                 // [Legacy Architect Fix]
                 // If item is NOT stockable (e.g. Service), do NOT try to consume stock.
-                // Just add it to the visit bill and continue.
+                // Stock physically leaves the store at fulfilment, regardless of
+                // whether the doctor has confirmed receipt yet.
                 if ($item->is_stockable) {
                     $stockSvc->consume(
                         $branchId,
@@ -191,23 +203,35 @@ class VisitStockRequestService
                     );
                 }
 
-                // Always add to visit items (Bill/Usage record).
-                // Use the line's price snapshot when present so admin price changes
-                // between request and fulfillment don't bleed into the patient bill.
-                $this->upsertVisitItemFromFulfillment(
-                    $visit,
-                    $item,
-                    $qtyBase,
-                    $line->unit_cost_snapshot !== null ? (float) $line->unit_cost_snapshot : null,
-                    $line->unit_price_snapshot !== null ? (float) $line->unit_price_snapshot : null,
-                );
+                // Bill the patient only on the one-step path. When the doctor's
+                // receipt is required (autoReceive=false) billing is deferred to
+                // receive(); the line's received_qty stays null until then.
+                if ($autoReceive) {
+                    $this->upsertVisitItemFromFulfillment(
+                        $visit,
+                        $item,
+                        $qtyBase,
+                        $line->unit_cost_snapshot !== null ? (float) $line->unit_cost_snapshot : null,
+                        $line->unit_price_snapshot !== null ? (float) $line->unit_price_snapshot : null,
+                    );
+                    $line->forceFill(['received_qty' => $qtyBase])->save();
+                }
             }
 
             $now = Carbon::now(config('app.timezone', 'Asia/Kuwait'));
 
-            $req->status = VisitStockRequest::STATUS_FULFILLED;
             $req->fulfilled_by_user_id = $fulfilledByUserId > 0 ? $fulfilledByUserId : null;
             $req->fulfilled_at = $now;
+
+            if ($autoReceive) {
+                // Issued and billed in one go — also stamp the receipt.
+                $req->status = VisitStockRequest::STATUS_RECEIVED;
+                $req->received_by_user_id = $fulfilledByUserId > 0 ? $fulfilledByUserId : null;
+                $req->received_at = $now;
+            } else {
+                // Issued — now awaiting the doctor's receipt before billing.
+                $req->status = VisitStockRequest::STATUS_FULFILLED;
+            }
 
             if ($notes !== null) {
                 $req->notes = $this->appendNote((string) ($req->notes ?? ''), $notes);
@@ -223,6 +247,105 @@ class VisitStockRequestService
                 $visit->status = $target;
                 $visit->save();
             }
+
+            return $req->refresh()->load('lines.clinicItem');
+        });
+    }
+
+    /**
+     * Doctor confirms receipt of an issued (FULFILLED) request. This is the
+     * point the patient is billed — only for the quantities the doctor confirms.
+     *
+     * Per-line confirmed quantities are passed keyed by line id; any line not
+     * present defaults to the full issued qty (qty_base). Each confirmed qty is
+     * clamped to 0..issued. If the doctor short-receives a stockable item, the
+     * unconfirmed remainder (already consumed from inventory at fulfilment) is
+     * returned to branch stock so on-hand stays accurate.
+     *
+     * @param  array<int, float|int|string>  $lineQtys  [visit_stock_request_line.id => confirmed qty]
+     */
+    public function receive(
+        VisitStockRequest $request,
+        int $receivedByUserId = 0,
+        array $lineQtys = [],
+        ?string $notes = null,
+    ): VisitStockRequest {
+        if (! $this->enabled()) {
+            return $request;
+        }
+
+        return DB::transaction(function () use ($request, $receivedByUserId, $lineQtys, $notes) {
+            /** @var VisitStockRequest $req */
+            $req = VisitStockRequest::query()
+                ->lockForUpdate()
+                ->with(['lines.clinicItem'])
+                ->findOrFail((int) $request->id);
+
+            // Only an issued-but-unreceived request can be received.
+            if (($req->status ?? null) !== VisitStockRequest::STATUS_FULFILLED) {
+                return $req;
+            }
+
+            /** @var Visit $visit */
+            $visit = Visit::query()->lockForUpdate()->findOrFail((int) $req->visit_id);
+
+            $branchId = (int) $req->branch_id;
+            $stockSvc = app(ClinicStockService::class);
+
+            foreach ($req->lines as $line) {
+                $issued = (float) ($line->qty_base ?? 0);
+                $item = $line->clinicItem;
+
+                // Confirmed qty: explicit value for this line, else full issued.
+                $raw = array_key_exists((int) $line->id, $lineQtys)
+                    ? (float) $lineQtys[(int) $line->id]
+                    : $issued;
+                $confirmed = max(0.0, min($raw, $issued));
+
+                $line->forceFill(['received_qty' => $confirmed])->save();
+
+                if (! $item || $issued <= 0) {
+                    continue;
+                }
+
+                // Bill the patient for what the doctor actually received.
+                if ($confirmed > 0) {
+                    $this->upsertVisitItemFromFulfillment(
+                        $visit,
+                        $item,
+                        $confirmed,
+                        $line->unit_cost_snapshot !== null ? (float) $line->unit_cost_snapshot : null,
+                        $line->unit_price_snapshot !== null ? (float) $line->unit_price_snapshot : null,
+                    );
+                }
+
+                // Return the short-received remainder to stock (it was consumed
+                // at fulfilment but the doctor didn't take it).
+                $remainder = $issued - $confirmed;
+                if ($remainder > 0.00005 && $item->is_stockable) {
+                    $stockSvc->restock(
+                        $branchId,
+                        $item,
+                        null,
+                        $remainder,
+                        $receivedByUserId,
+                        'Stock request short-receive return',
+                        $req,
+                        'receive_return',
+                    );
+                }
+            }
+
+            $now = Carbon::now(config('app.timezone', 'Asia/Kuwait'));
+            $req->status = VisitStockRequest::STATUS_RECEIVED;
+            $req->received_by_user_id = $receivedByUserId > 0 ? $receivedByUserId : null;
+            $req->received_at = $now;
+
+            if ($notes !== null) {
+                $req->notes = $this->appendNote((string) ($req->notes ?? ''), 'Received: '.$notes);
+            }
+
+            $req->save();
 
             return $req->refresh()->load('lines.clinicItem');
         });

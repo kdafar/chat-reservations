@@ -20,28 +20,36 @@ const isRtl = computed(() => locale.value === 'ar')
 const t = computed(() => isRtl.value ? {
     title: 'طلبات صرف المخزون', eyebrow: 'الصيدلية والمخزون',
     desc: 'طلبات الأصناف المرفوعة من شاشة الزيارة، مقارنةً بالمخزون الحالي للفرع.',
-    status: { pending: 'معلّقة', fulfilled: 'تم الصرف', cancelled: 'ملغاة' },
+    status: { pending: 'معلّقة', fulfilled: 'بانتظار الاستلام', received: 'تم الاستلام', cancelled: 'ملغاة' },
     visit: 'الزيارة', branch: 'الفرع', by: 'بواسطة', items: 'الأصناف',
-    available: 'متوفر', short: 'ناقص!', ok: 'متوفر',
+    available: 'متوفر', short: 'ناقص!', ok: 'متوفر', recv: 'مستلم',
     empty: 'لا توجد طلبات', emptyDesc: 'لا توجد طلبات بهذه الحالة.',
     packageRemoved: 'أُزيلت الباقة', nothingToDo: 'لا إجراء مطلوب',
-    fulfill: 'صرف', cancel: 'إلغاء', open: 'فتح الزيارة',
-    fulfillModal: { title: 'صرف الطلب', notes: 'ملاحظات الصرف', resume: 'استئناف حالة الزيارة',
+    fulfill: 'صرف', receive: 'استلام', cancel: 'إلغاء', open: 'فتح الزيارة',
+    fulfillModal: { title: 'صرف المخزون', notes: 'ملاحظات الصرف', resume: 'استئناف حالة الزيارة',
         awaiting: 'بانتظار الطبيب', inProgress: 'قيد التنفيذ', resumeHelp: 'إلى أي حالة تعود الزيارة بعد الصرف؟',
+        note: 'يصرف المخزن الأصناف الآن؛ تُحتسب على المريض بعد تأكيد الطبيب للاستلام.',
         confirm: 'تأكيد الصرف', cancelBtn: 'إلغاء' },
+    receiveModal: { title: 'تأكيد الاستلام', issued: 'صُرف',
+        help: 'أكّد الكميات التي استلمها الطبيب فعلياً. قلّل أي صنف للاستلام الجزئي؛ يعود الباقي للمخزون. تُحتسب الكميات المستلمة فقط على المريض.',
+        notes: 'ملاحظات الاستلام', confirmAll: 'تأكيد الكل كما صُرف', confirm: 'تأكيد الاستلام', cancelBtn: 'إلغاء' },
     cancelModal: { title: 'إلغاء الطلب', reason: 'السبب', confirm: 'تأكيد الإلغاء', cancelBtn: 'تراجع' },
 } : {
     title: 'Visit Stock Requests', eyebrow: 'Pharmacy & Stock',
     desc: 'Item requests raised from the visit console, checked against live branch stock.',
-    status: { pending: 'Pending', fulfilled: 'Fulfilled', cancelled: 'Cancelled' },
+    status: { pending: 'Pending', fulfilled: 'Awaiting receipt', received: 'Received', cancelled: 'Cancelled' },
     visit: 'Visit', branch: 'Branch', by: 'by', items: 'Items',
-    available: 'avail', short: 'short!', ok: 'ok',
+    available: 'avail', short: 'short!', ok: 'ok', recv: 'recv',
     empty: 'No requests', emptyDesc: 'No requests with this status.',
     packageRemoved: 'Package removed', nothingToDo: 'Nothing to do',
-    fulfill: 'Fulfil', cancel: 'Cancel', open: 'Open visit',
-    fulfillModal: { title: 'Fulfil request', notes: 'Fulfilment notes', resume: 'Resume visit status',
+    fulfill: 'Fulfil', receive: 'Receive', cancel: 'Cancel', open: 'Open visit',
+    fulfillModal: { title: 'Issue stock', notes: 'Fulfilment notes', resume: 'Resume visit status',
         awaiting: 'Awaiting doctor', inProgress: 'In progress', resumeHelp: 'Which status should the visit return to after issuing stock?',
-        confirm: 'Confirm fulfil', cancelBtn: 'Cancel' },
+        note: 'The store issues the items now; the patient is billed only after the doctor confirms receipt.',
+        confirm: 'Confirm issue', cancelBtn: 'Cancel' },
+    receiveModal: { title: 'Confirm receipt', issued: 'issued',
+        help: 'Confirm the quantities the doctor actually received. Reduce a line to short-receive — the remainder returns to stock. Only received quantities are billed to the patient.',
+        notes: 'Receipt notes', confirmAll: 'Confirm all as issued', confirm: 'Confirm receipt', cancelBtn: 'Cancel' },
     cancelModal: { title: 'Cancel request', reason: 'Reason', confirm: 'Confirm cancel', cancelBtn: 'Back' },
 })
 
@@ -64,6 +72,33 @@ function submitFulfil() {
         onSuccess: () => { fulfilOpen.value = false },
         onFinish: () => { busy.value = false },
     })
+}
+
+// Receive modal (doctor confirms receipt → bills the patient)
+const receiveOpen = ref(false)
+const receiveForm = reactive({ notes: '' })
+const receiveLines = ref([])
+function openReceive(row) {
+    acting.value = row
+    receiveForm.notes = ''
+    // Default each line to the full issued qty; the doctor can short-receive.
+    receiveLines.value = row.lines.map((l) => ({ line_id: l.id, name: l.name, issued: Number(l.qty), qty: Number(l.qty) }))
+    receiveOpen.value = true
+}
+function submitReceive() {
+    busy.value = true
+    router.post(route('v2.visit-stock-requests.receive', { visitStockRequest: acting.value.id }), {
+        lines: receiveLines.value.map((l) => ({ line_id: l.line_id, qty: l.qty })),
+        notes: receiveForm.notes,
+    }, {
+        preserveScroll: true,
+        onSuccess: () => { receiveOpen.value = false },
+        onFinish: () => { busy.value = false },
+    })
+}
+function confirmAllReceive() {
+    receiveLines.value.forEach((l) => { l.qty = l.issued })
+    submitReceive()
 }
 
 // Cancel modal
@@ -111,6 +146,7 @@ const isPackageRemoved = (row) => row.status === 'cancelled'
             <div class="seg seg-sm">
                 <button :class="status === 'pending' ? 'is-active' : ''" @click="setStatus('pending')">{{ t.status.pending }} · {{ counts.pending }}</button>
                 <button :class="status === 'fulfilled' ? 'is-active' : ''" @click="setStatus('fulfilled')">{{ t.status.fulfilled }} · {{ counts.fulfilled }}</button>
+                <button :class="status === 'received' ? 'is-active' : ''" @click="setStatus('received')">{{ t.status.received }} · {{ counts.received }}</button>
                 <button :class="status === 'cancelled' ? 'is-active' : ''" @click="setStatus('cancelled')">{{ t.status.cancelled }} · {{ counts.cancelled }}</button>
             </div>
         </div>
@@ -140,18 +176,55 @@ const isPackageRemoved = (row) => row.status === 'cancelled'
                     <button class="btn btn-primary btn-sm" @click="openFulfil(row)"><Icon name="check-circle" :size="13" /><span>{{ t.fulfill }}</span></button>
                     <button class="btn btn-ghost btn-sm" style="color:var(--err, #dc2626);" @click="openCancel(row)"><Icon name="x-circle" :size="13" /></button>
                 </div>
+                <div v-else-if="canAct && row.status === 'fulfilled'" style="display:flex; gap:6px; flex-shrink:0;">
+                    <button class="btn btn-primary btn-sm" @click="openReceive(row)"><Icon name="package-check" :size="13" /><span>{{ t.receive }}</span></button>
+                </div>
             </div>
 
             <div class="lines">
                 <div v-for="(l, i) in row.lines" :key="i" class="line" :class="l.short ? 'is-short' : ''">
                     <span style="flex:1;">{{ l.name }}</span>
                     <span class="mono" style="font-weight:600;">{{ fmt(l.qty) }}</span>
-                    <span v-if="l.available !== null" class="mono line-avail" :class="l.short ? 'short' : 'ok'">
+                    <span v-if="l.received_qty !== null" class="mono line-avail" :class="l.received_qty < l.qty ? 'short' : 'ok'">
+                        · {{ t.recv }} {{ fmt(l.received_qty) }}
+                    </span>
+                    <span v-else-if="l.available !== null" class="mono line-avail" :class="l.short ? 'short' : 'ok'">
                         / {{ fmt(l.available) }} {{ l.short ? t.short : t.ok }}
                     </span>
                 </div>
                 <div v-if="!row.lines.length" style="color:var(--fg-faint); font-size:12px; font-style:italic;">—</div>
             </div>
+        </div>
+    </div>
+
+    <!-- Receive modal (doctor confirms receipt) -->
+    <div v-if="receiveOpen" class="modal-backdrop" @click.self="receiveOpen = false">
+        <div class="modal-panel" role="dialog" aria-modal="true" style="max-width:520px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:14px 16px; border-bottom:1px solid var(--line);">
+                <h3 style="margin:0; font-size:15px; font-weight:600;">{{ t.receiveModal.title }} · {{ acting?.visit_code }}</h3>
+                <button class="btn btn-ghost btn-sm btn-icon" @click="receiveOpen = false"><Icon name="x" :size="14" /></button>
+            </div>
+            <form @submit.prevent="submitReceive" style="padding:16px; display:flex; flex-direction:column; gap:12px;">
+                <div style="font-size:12px; color:var(--fg-subtle);">{{ t.receiveModal.help }}</div>
+                <div style="display:flex; flex-direction:column; gap:6px;">
+                    <div v-for="l in receiveLines" :key="l.line_id" style="display:flex; align-items:center; gap:10px;">
+                        <span style="flex:1; font-size:13px;">{{ l.name }}</span>
+                        <span class="mono" style="font-size:11.5px; color:var(--fg-faint);">{{ fmt(l.issued) }} {{ t.receiveModal.issued }}</span>
+                        <input v-model.number="l.qty" type="number" step="0.0001" min="0" :max="l.issued" class="input mono" style="width:96px; text-align:right;" />
+                    </div>
+                </div>
+                <div>
+                    <label class="label">{{ t.receiveModal.notes }}</label>
+                    <textarea v-model="receiveForm.notes" class="input" rows="2" maxlength="2000"></textarea>
+                </div>
+                <div style="display:flex; justify-content:space-between; gap:8px; padding-top:8px; border-top:1px solid var(--line);">
+                    <button type="button" class="btn btn-ghost" @click="receiveOpen = false">{{ t.receiveModal.cancelBtn }}</button>
+                    <div style="display:flex; gap:8px;">
+                        <button type="button" class="btn btn-outline" :disabled="busy" @click="confirmAllReceive">{{ t.receiveModal.confirmAll }}</button>
+                        <button type="submit" class="btn btn-primary" :disabled="busy">{{ busy ? '…' : t.receiveModal.confirm }}</button>
+                    </div>
+                </div>
+            </form>
         </div>
     </div>
 
@@ -167,6 +240,9 @@ const isPackageRemoved = (row) => row.status === 'cancelled'
                     <label class="label">{{ t.fulfillModal.resume }}</label>
                     <SearchableSelect v-model="fulfilForm.resume_status" :items="resumeStatusItems" :nullable="false" />
                     <div style="font-size:11px; color:var(--fg-faint); margin-top:4px;">{{ t.fulfillModal.resumeHelp }}</div>
+                </div>
+                <div style="font-size:12px; color:var(--fg-subtle); background:var(--bg-hover); border:1px solid var(--line); border-radius:8px; padding:8px 10px;">
+                    <Icon name="info" :size="12" style="vertical-align:-1px;" /> {{ t.fulfillModal.note }}
                 </div>
                 <div>
                     <label class="label">{{ t.fulfillModal.notes }}</label>
@@ -208,7 +284,8 @@ const isPackageRemoved = (row) => row.status === 'cancelled'
 .badge-visit:hover { border-color:var(--accent, #2563eb); }
 .badge-status { font-size:10.5px; font-weight:600; padding:2px 8px; border-radius:999px; border:1px solid; }
 .st-pending { color:var(--warn, #d97706); border-color:var(--warn, #d97706); }
-.st-fulfilled { color:var(--ok); border-color:var(--ok); }
+.st-fulfilled { color:var(--accent, #2563eb); border-color:var(--accent, #2563eb); }
+.st-received { color:var(--ok); border-color:var(--ok); }
 .st-cancelled { color:var(--err, #dc2626); border-color:var(--err, #dc2626); }
 .badge-short { font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px; color:var(--err, #dc2626); background:rgba(220,38,38,0.08); }
 .badge-removed { font-size:10.5px; font-weight:600; padding:2px 8px; border-radius:999px; color:var(--fg-faint); background:var(--bg-hover); border:1px solid var(--line); }

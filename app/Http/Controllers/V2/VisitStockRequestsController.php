@@ -69,7 +69,7 @@ class VisitStockRequestsController extends Controller
         $query = VisitStockRequest::query()
             ->with(['visit:id,booking_code,patient_id', 'visit.patient:id,name', 'branch', 'requestedBy:id,name', 'lines.clinicItem']);
 
-        if (in_array($status, [VisitStockRequest::STATUS_PENDING, VisitStockRequest::STATUS_FULFILLED, VisitStockRequest::STATUS_CANCELLED], true)) {
+        if (in_array($status, [VisitStockRequest::STATUS_PENDING, VisitStockRequest::STATUS_FULFILLED, VisitStockRequest::STATUS_RECEIVED, VisitStockRequest::STATUS_CANCELLED], true)) {
             $query->where('status', $status);
         }
 
@@ -83,6 +83,7 @@ class VisitStockRequestsController extends Controller
             'counts' => [
                 'pending' => VisitStockRequest::query()->where('status', VisitStockRequest::STATUS_PENDING)->count(),
                 'fulfilled' => VisitStockRequest::query()->where('status', VisitStockRequest::STATUS_FULFILLED)->count(),
+                'received' => VisitStockRequest::query()->where('status', VisitStockRequest::STATUS_RECEIVED)->count(),
                 'cancelled' => VisitStockRequest::query()->where('status', VisitStockRequest::STATUS_CANCELLED)->count(),
             ],
         ]);
@@ -102,14 +103,57 @@ class VisitStockRequestsController extends Controller
         ]);
 
         try {
+            // Store issues the stock but does NOT bill — the patient is billed
+            // only once the doctor confirms receipt (see receive()).
             $this->svc->fulfill(
                 $visitStockRequest,
                 (int) ($request->user()->id ?? 0),
                 $data['notes'] ?? null,
                 $data['resume_status'],
+                false, // autoReceive: defer billing to the doctor's receipt
             );
 
-            return back()->with('flash', ['type' => 'success', 'message' => 'Request fulfilled and stock issued.']);
+            return back()->with('flash', ['type' => 'success', 'message' => 'Stock issued — awaiting doctor receipt.']);
+        } catch (\Throwable $e) {
+            return back()->with('flash', ['type' => 'error', 'message' => $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Doctor confirms receipt of an issued request. Bills the patient for the
+     * confirmed quantities (per line, or full when omitted) and returns any
+     * short-received remainder to stock.
+     */
+    public function receive(Request $request, VisitStockRequest $visitStockRequest): RedirectResponse
+    {
+        $this->authorizeAct($request);
+
+        if ($visitStockRequest->status !== VisitStockRequest::STATUS_FULFILLED) {
+            return back()->with('flash', ['type' => 'error', 'message' => 'Request is not awaiting receipt.']);
+        }
+
+        $data = $request->validate([
+            'lines' => ['nullable', 'array'],
+            'lines.*.line_id' => ['required', 'integer'],
+            'lines.*.qty' => ['required', 'numeric', 'min:0'],
+            'notes' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        // Map [line_id => qty]; lines omitted entirely default to full issued qty.
+        $lineQtys = [];
+        foreach ($data['lines'] ?? [] as $row) {
+            $lineQtys[(int) $row['line_id']] = (float) $row['qty'];
+        }
+
+        try {
+            $this->svc->receive(
+                $visitStockRequest,
+                (int) ($request->user()->id ?? 0),
+                $lineQtys,
+                $data['notes'] ?? null,
+            );
+
+            return back()->with('flash', ['type' => 'success', 'message' => 'Receipt confirmed and items billed.']);
         } catch (\Throwable $e) {
             return back()->with('flash', ['type' => 'error', 'message' => $e->getMessage()]);
         }
@@ -149,8 +193,10 @@ class VisitStockRequestsController extends Controller
             $avail = ($isPending && $item) ? $this->stock->availableBase($branchId, $item->id) : null;
 
             return [
+                'id' => (int) $line->id,
                 'name' => $item?->localized_name ?? ('#'.$line->clinic_item_id),
                 'qty' => $req,
+                'received_qty' => $line->received_qty !== null ? (float) $line->received_qty : null,
                 'available' => $avail,
                 'short' => $avail !== null && $avail < $req,
             ];

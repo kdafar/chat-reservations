@@ -19,11 +19,17 @@ class VisitStockRequest extends Model
         'requested_by_user_id' => 'integer',
         'fulfilled_by_user_id' => 'integer',
         'fulfilled_at' => 'datetime',
+        'received_by_user_id' => 'integer',
+        'received_at' => 'datetime',
     ];
 
     public const STATUS_PENDING = 'pending';
 
+    /** Store has issued the stock (inventory consumed) but the doctor has not yet confirmed receipt → not billed. */
     public const STATUS_FULFILLED = 'fulfilled';
+
+    /** Doctor confirmed receipt; the received quantities are billed to the patient. */
+    public const STATUS_RECEIVED = 'received';
 
     public const STATUS_CANCELLED = 'cancelled';
 
@@ -45,6 +51,11 @@ class VisitStockRequest extends Model
     public function fulfilledBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'fulfilled_by_user_id');
+    }
+
+    public function receivedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'received_by_user_id');
     }
 
     public function lines(): HasMany
