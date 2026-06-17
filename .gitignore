@@ -23,3 +23,6 @@ yarn-error.log
 
 # local DB backups
 storage/backup_*.sql.gz
+
+# compiled front-end assets (run `npm run build` on deploy)
+/public/build
