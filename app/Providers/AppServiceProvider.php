@@ -78,6 +78,37 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->registerExcelExports();
 
+        // Inject the editable public-site contact details (managed in v2
+        // Settings → Public Website) into the clinic React app shell, so the
+        // front-end reads them from the server instead of hardcoded values.
+        \Illuminate\Support\Facades\View::composer('clinic.landing', function ($view) {
+            $keys = ['name_en', 'name_ar', 'tagline_en', 'tagline_ar', 'logo_url', 'phone', 'whatsapp', 'email', 'website', 'address_en', 'address_ar', 'instagram', 'tiktok', 'snapchat'];
+            $settings = [];
+            try {
+                $stored = \App\Models\SystemSetting::query()
+                    ->whereIn('key', array_map(fn ($k) => 'clinic.public.'.$k, $keys))
+                    ->pluck('value', 'key');
+                foreach ($keys as $k) {
+                    $v = $stored->get('clinic.public.'.$k);
+                    if (is_array($v)) {
+                        $v = $v[0] ?? null;
+                    }
+                    $settings[$k] = is_string($v) ? trim($v) : '';
+                }
+            } catch (\Throwable $e) {
+                $settings = []; // table missing / migration pending — front-end falls back to defaults
+            }
+            $view->with('clinicSettings', $settings);
+        });
+
+        // Friendlier validation messages everywhere: nested array fields would
+        // otherwise surface their raw path (e.g. "The lines.1.account_id field
+        // is required."). HumanizedValidator rewrites that to "The account field
+        // is required." globally, so no form has to configure attribute names.
+        \Illuminate\Support\Facades\Validator::resolver(
+            fn ($translator, $data, $rules, $messages = [], $attributes = []) => new \App\Validation\HumanizedValidator($translator, $data, $rules, $messages, $attributes)
+        );
+
         // super_admin is the all-powerful role: grant every ability before any
         // policy/permission check. (The `admin` role is granted all permissions
         // explicitly by the permission seeder.) Without this a pure-super_admin

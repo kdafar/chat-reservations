@@ -201,9 +201,17 @@ Route::group(['prefix' => 'clinic', 'middleware' => ['web']], function () {
     Route::post('/api/bookings/cancel', [ClinicBookingController::class, 'cancel']);
 
     Route::get('/api/services', [ClinicBookingController::class, 'services']);
+    Route::get('/api/stats', [ClinicBookingController::class, 'stats']);
     Route::get('/api/branches/index', [ClinicBookingController::class, 'branchesIndex']);
     Route::get('/api/branches/{branch:slug}', [ClinicBookingController::class, 'branchShow']);
     Route::get('/api/doctors/{doctor}', [ClinicBookingController::class, 'doctorShow']);
+
+    // SPA fallback: serve the React shell for any other /clinic/* page (e.g.
+    // /clinic/clinics, /clinic/services, /clinic/doctors/5) so direct loads,
+    // refreshes and full-page redirects (language switch) boot the app and let
+    // React Router handle the route. Excludes /clinic/api/* (handled above).
+    Route::get('/{any}', fn () => view('clinic.landing'))
+        ->where('any', '^(?!api).*$');
 });
 
 Route::get('/clinic', function () {
@@ -679,12 +687,20 @@ Route::middleware([
 
     // Accounting — Chart of Accounts (v2 replacement for ChartOfAccountResource).
     Route::get('/accounting/chart-of-accounts',           [\App\Http\Controllers\V2\ChartOfAccountsController::class, 'index'])->name('accounting.accounts.index');
+    Route::get('/accounting/chart-of-accounts/create',    [\App\Http\Controllers\V2\ChartOfAccountsController::class, 'create'])->name('accounting.accounts.create');
+    Route::get('/accounting/chart-of-accounts/{account}/edit', [\App\Http\Controllers\V2\ChartOfAccountsController::class, 'edit'])->name('accounting.accounts.edit');
     Route::post('/accounting/chart-of-accounts',          [\App\Http\Controllers\V2\ChartOfAccountsController::class, 'store'])->name('accounting.accounts.store');
     Route::put('/accounting/chart-of-accounts/{account}', [\App\Http\Controllers\V2\ChartOfAccountsController::class, 'update'])->name('accounting.accounts.update');
     Route::delete('/accounting/chart-of-accounts/{account}', [\App\Http\Controllers\V2\ChartOfAccountsController::class, 'destroy'])->name('accounting.accounts.destroy');
 
+    // Accounting — Auto-Posting Accounts (map each automated posting role → account).
+    Route::get('/accounting/posting-accounts', [\App\Http\Controllers\V2\PostingAccountsController::class, 'index'])->name('accounting.posting.index');
+    Route::put('/accounting/posting-accounts', [\App\Http\Controllers\V2\PostingAccountsController::class, 'update'])->name('accounting.posting.update');
+
     // Accounting — Expenses (v2 replacement for ExpenseResource).
     Route::get('/accounting/expenses',                 [\App\Http\Controllers\V2\ExpensesController::class, 'index'])->name('accounting.expenses.index');
+    Route::get('/accounting/expenses/create',          [\App\Http\Controllers\V2\ExpensesController::class, 'create'])->name('accounting.expenses.create');
+    Route::get('/accounting/expenses/{expense}/edit',  [\App\Http\Controllers\V2\ExpensesController::class, 'edit'])->name('accounting.expenses.edit');
     Route::post('/accounting/expenses',                [\App\Http\Controllers\V2\ExpensesController::class, 'store'])->name('accounting.expenses.store');
     Route::put('/accounting/expenses/{expense}',       [\App\Http\Controllers\V2\ExpensesController::class, 'update'])->name('accounting.expenses.update');
     Route::post('/accounting/expenses/{expense}/post', [\App\Http\Controllers\V2\ExpensesController::class, 'post'])->name('accounting.expenses.post');
@@ -693,6 +709,9 @@ Route::middleware([
 
     // Accounting — Journal Entries (v2 replacement for JournalEntryResource).
     Route::get('/accounting/journal-entries',                      [\App\Http\Controllers\V2\JournalEntriesController::class, 'index'])->name('accounting.journal-entries.index');
+    Route::get('/accounting/journal-entries/create',               [\App\Http\Controllers\V2\JournalEntriesController::class, 'create'])->name('accounting.journal-entries.create');
+    Route::get('/accounting/journal-entries/{journalEntry}/edit',  [\App\Http\Controllers\V2\JournalEntriesController::class, 'edit'])->name('accounting.journal-entries.edit');
+    Route::get('/accounting/journal-entries/{journalEntry}/reverse', [\App\Http\Controllers\V2\JournalEntriesController::class, 'reverseForm'])->name('accounting.journal-entries.reverse-form');
     Route::get('/api/accounting/journal-entries/{journalEntry}',   [\App\Http\Controllers\V2\JournalEntriesController::class, 'show'])->name('api.accounting.journal-entries.show');
     Route::post('/accounting/journal-entries',                     [\App\Http\Controllers\V2\JournalEntriesController::class, 'store'])->name('accounting.journal-entries.store');
     Route::put('/accounting/journal-entries/{journalEntry}',       [\App\Http\Controllers\V2\JournalEntriesController::class, 'update'])->name('accounting.journal-entries.update');
@@ -702,7 +721,8 @@ Route::middleware([
 
     // Accounting — Bank Reconciliation (v2 replacement for BankReconciliationResource).
     Route::get('/accounting/bank-reconciliations',                          [\App\Http\Controllers\V2\BankReconciliationController::class, 'index'])->name('accounting.bank-rec.index');
-    Route::get('/api/accounting/bank-reconciliations/{bankReconciliation}', [\App\Http\Controllers\V2\BankReconciliationController::class, 'show'])->name('api.accounting.bank-rec.show');
+    Route::get('/accounting/bank-reconciliations/create',                   [\App\Http\Controllers\V2\BankReconciliationController::class, 'create'])->name('accounting.bank-rec.create');
+    Route::get('/accounting/bank-reconciliations/{bankReconciliation}',     [\App\Http\Controllers\V2\BankReconciliationController::class, 'show'])->name('accounting.bank-rec.show');
     Route::post('/accounting/bank-reconciliations',                         [\App\Http\Controllers\V2\BankReconciliationController::class, 'store'])->name('accounting.bank-rec.store');
     Route::put('/accounting/bank-reconciliations/{bankReconciliation}',     [\App\Http\Controllers\V2\BankReconciliationController::class, 'update'])->name('accounting.bank-rec.update');
     Route::post('/accounting/bank-reconciliations/{bankReconciliation}/recompute',  [\App\Http\Controllers\V2\BankReconciliationController::class, 'recompute'])->name('accounting.bank-rec.recompute');
@@ -715,6 +735,8 @@ Route::middleware([
 
     // Accounting — Vendors (v2 replacement for Accounting\VendorResource).
     Route::get('/accounting/vendors',           [\App\Http\Controllers\V2\VendorsController::class, 'index'])->name('accounting.vendors.index');
+    Route::get('/accounting/vendors/create',    [\App\Http\Controllers\V2\VendorsController::class, 'create'])->name('accounting.vendors.create');
+    Route::get('/accounting/vendors/{vendor}/edit', [\App\Http\Controllers\V2\VendorsController::class, 'edit'])->name('accounting.vendors.edit');
     Route::post('/accounting/vendors',          [\App\Http\Controllers\V2\VendorsController::class, 'store'])->name('accounting.vendors.store');
     Route::put('/accounting/vendors/{vendor}',  [\App\Http\Controllers\V2\VendorsController::class, 'update'])->name('accounting.vendors.update');
     Route::delete('/accounting/vendors/{vendor}', [\App\Http\Controllers\V2\VendorsController::class, 'destroy'])->name('accounting.vendors.destroy');
@@ -866,6 +888,8 @@ Route::middleware([
     // Platform — System settings (v2 replacement for SystemSettingResource).
     Route::get('/settings',  [\App\Http\Controllers\V2\SystemSettingsController::class, 'index'])->name('settings.index');
     Route::put('/settings',  [\App\Http\Controllers\V2\SystemSettingsController::class, 'update'])->name('settings.update');
+    Route::post('/settings/logo',   [\App\Http\Controllers\V2\SystemSettingsController::class, 'uploadLogo'])->name('settings.logo.upload');
+    Route::delete('/settings/logo', [\App\Http\Controllers\V2\SystemSettingsController::class, 'removeLogo'])->name('settings.logo.remove');
 
     // Reports (v2 replacements for the Filament report pages).
     Route::get('/reports',                [\App\Http\Controllers\V2\ClinicReportsController::class, 'index'])->name('reports.clinic');
@@ -912,6 +936,7 @@ Route::middleware([
     Route::get('/exports/wa-messages',       [\App\Http\Controllers\V2\WaMessagesController::class, 'export'])->name('whatsapp.messages.export');
     Route::get('/exports/audience-metrics',  [\App\Http\Controllers\V2\AudienceMetricsController::class, 'export'])->name('whatsapp.audience-metrics.export');
     Route::get('/exports/vendors',           [\App\Http\Controllers\V2\VendorsController::class, 'export'])->name('accounting.vendors.export');
+    Route::get('/exports/purchase-orders',   [\App\Http\Controllers\V2\PurchaseOrdersController::class, 'export'])->name('purchase-orders.export');
     Route::get('/exports/lab-tests',         [\App\Http\Controllers\V2\LabTestsController::class, 'export'])->name('lab-tests.export');
 
     // Excel imports for master/reference tables. {type} resolves via ImportRegistry.

@@ -40,6 +40,23 @@ class SystemSettingResource extends Resource
             'whatsapp.template.invite' => ['type' => 'text', 'label' => 'Template: Invite (name)'],
             'whatsapp.template.lang_en' => ['type' => 'text', 'label' => 'Template Language (EN)', 'placeholder' => 'en'],
             'whatsapp.template.lang_ar' => ['type' => 'text', 'label' => 'Template Language (AR)', 'placeholder' => 'ar'],
+
+            // Public booking website (EVA) — brand, contact + socials shown to visitors.
+            // Leave the phone blank to show a "Book Now" button instead of a call button.
+            'clinic.public.name_en' => ['type' => 'text', 'label' => 'Brand name (English)', 'placeholder' => 'EVA Medical'],
+            'clinic.public.name_ar' => ['type' => 'text', 'label' => 'Brand name (Arabic)', 'placeholder' => 'إيفا الطبية'],
+            'clinic.public.tagline_en' => ['type' => 'text', 'label' => 'Tagline (English)', 'placeholder' => 'Aesthetic & Dermatology'],
+            'clinic.public.tagline_ar' => ['type' => 'text', 'label' => 'Tagline (Arabic)', 'placeholder' => 'التجميل والجلدية'],
+            'clinic.public.logo_url' => ['type' => 'image', 'label' => 'Logo (square image, PNG/JPG/WebP)'],
+            'clinic.public.phone' => ['type' => 'text', 'label' => 'Public phone number', 'placeholder' => '+965 5000 0000'],
+            'clinic.public.whatsapp' => ['type' => 'text', 'label' => 'WhatsApp number', 'placeholder' => '+965 5000 0000'],
+            'clinic.public.email' => ['type' => 'text', 'label' => 'Public email', 'placeholder' => 'hello@evamedical.kw'],
+            'clinic.public.website' => ['type' => 'text', 'label' => 'Website (shown)', 'placeholder' => 'evamedical.kw'],
+            'clinic.public.address_en' => ['type' => 'text', 'label' => 'Address (English)'],
+            'clinic.public.address_ar' => ['type' => 'text', 'label' => 'Address (Arabic)'],
+            'clinic.public.instagram' => ['type' => 'text', 'label' => 'Instagram URL'],
+            'clinic.public.tiktok' => ['type' => 'text', 'label' => 'TikTok URL'],
+            'clinic.public.snapchat' => ['type' => 'text', 'label' => 'Snapchat URL'],
         ];
     }
 

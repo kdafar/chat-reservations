@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\SystemSetting;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -73,6 +74,11 @@ class SystemSettingsController extends Controller
             }
             $type = $defs[$key]['type'] ?? 'text';
 
+            // Images are managed by the dedicated upload/remove endpoints below.
+            if ($type === 'image') {
+                continue;
+            }
+
             // Secrets: skip when left blank so we don't wipe a stored token.
             if ($type === 'secret' && ($value === null || $value === '')) {
                 continue;
@@ -88,6 +94,50 @@ class SystemSettingsController extends Controller
         }
 
         return back()->with('flash', ['type' => 'success', 'message' => 'Settings saved.']);
+    }
+
+    /** Upload (replace) the public-site logo and store its URL in settings. */
+    public function uploadLogo(Request $request): RedirectResponse
+    {
+        $this->authorizeAccess($request);
+        abort_unless($this->canEdit($request), 403);
+
+        $request->validate([
+            'logo' => ['required', 'image', 'mimes:png,jpg,jpeg,webp', 'max:2048'],
+        ]);
+
+        // Remove the previous file (best-effort) before storing the new one.
+        $this->deleteStoredLogo();
+
+        $path = $request->file('logo')->store('branding', 'public');
+        SystemSetting::updateOrCreate(['key' => 'clinic.public.logo_url'], ['value' => Storage::disk('public')->url($path)]);
+
+        return back()->with('flash', ['type' => 'success', 'message' => 'Logo updated.']);
+    }
+
+    /** Remove the public-site logo. */
+    public function removeLogo(Request $request): RedirectResponse
+    {
+        $this->authorizeAccess($request);
+        abort_unless($this->canEdit($request), 403);
+
+        $this->deleteStoredLogo();
+        SystemSetting::updateOrCreate(['key' => 'clinic.public.logo_url'], ['value' => '']);
+
+        return back()->with('flash', ['type' => 'success', 'message' => 'Logo removed.']);
+    }
+
+    /** Delete the currently-stored logo file from the public disk, if any. */
+    protected function deleteStoredLogo(): void
+    {
+        $current = SystemSetting::where('key', 'clinic.public.logo_url')->value('value');
+        if (is_array($current)) {
+            $current = $current[0] ?? null;
+        }
+        if (is_string($current) && str_contains($current, '/storage/')) {
+            $rel = ltrim(substr($current, strpos($current, '/storage/') + strlen('/storage/')), '/');
+            Storage::disk('public')->delete($rel);
+        }
     }
 
     /** Coerce a stored (array-cast) value back to a scalar for the form input. */
@@ -108,6 +158,7 @@ class SystemSettingsController extends Controller
     {
         if (str_starts_with($key, 'whatsapp.template')) return 'WhatsApp Templates';
         if (str_starts_with($key, 'whatsapp.')) return 'WhatsApp API';
+        if (str_starts_with($key, 'clinic.public.')) return 'Public Website';
         return 'General';
     }
 }

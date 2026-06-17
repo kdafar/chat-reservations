@@ -40,6 +40,18 @@ function submit() {
         preserveScroll: true, onFinish: () => { saving.value = false },
     })
 }
+
+function uploadLogo(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const fd = new FormData()
+    fd.append('logo', file)
+    router.post(route('v2.settings.logo.upload'), fd, { preserveScroll: true, forceFormData: true })
+    e.target.value = ''
+}
+function removeLogo() {
+    router.delete(route('v2.settings.logo.remove'), { preserveScroll: true })
+}
 </script>
 
 <template>
@@ -67,6 +79,18 @@ function submit() {
                                 </label>
                                 <!-- int -->
                                 <input v-else-if="fld.type === 'int'" :id="'set_' + fld.key" v-model="form[fld.key]" type="number" class="input" :placeholder="fld.placeholder || ''" :disabled="!can_edit" />
+                                <!-- image (logo upload) -->
+                                <div v-else-if="fld.type === 'image'" style="display:flex; align-items:center; gap:12px;">
+                                    <img v-if="fld.value" :src="fld.value" alt="logo" style="width:48px; height:48px; border-radius:8px; object-fit:cover; border:1px solid var(--line); background:#fff;" />
+                                    <div v-else style="width:48px; height:48px; border-radius:8px; display:flex; align-items:center; justify-content:center; background:var(--bg-hover); color:var(--fg-faint);"><Icon name="image" :size="20" /></div>
+                                    <label v-if="can_edit" class="btn btn-ghost btn-sm" style="cursor:pointer; margin:0;">
+                                        <Icon name="upload" :size="14" /><span>{{ fld.value ? (isRtl ? 'تغيير' : 'Change') : (isRtl ? 'رفع' : 'Upload') }}</span>
+                                        <input type="file" accept="image/png,image/jpeg,image/webp" style="display:none" @change="uploadLogo($event)" />
+                                    </label>
+                                    <button v-if="can_edit && fld.value" type="button" class="btn btn-ghost btn-sm" @click="removeLogo">
+                                        <Icon name="trash-2" :size="14" /><span>{{ isRtl ? 'إزالة' : 'Remove' }}</span>
+                                    </button>
+                                </div>
                                 <!-- secret -->
                                 <template v-else-if="fld.type === 'secret'">
                                     <input :id="'set_' + fld.key" v-model="form[fld.key]" type="password" class="input" autocomplete="new-password"
