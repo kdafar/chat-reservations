@@ -471,6 +471,24 @@ abstract class AbstractImport
         return (int) $id;
     }
 
+    /** Resolve a staff user id from email (preferred) or exact name. */
+    protected function resolveUserId(?string $value): int
+    {
+        $value = trim((string) $value);
+        if ($value === '') {
+            $this->fail('Staff member is required.');
+        }
+        $query = \App\Models\User::query();
+        $id = str_contains($value, '@')
+            ? $query->where('email', $value)->value('id')
+            : $query->where('name', $value)->orWhere('email', $value)->value('id');
+        if (! $id) {
+            $this->fail("No staff member found matching \"{$value}\" (email or name).");
+        }
+
+        return (int) $id;
+    }
+
     /** Resolve a chart-of-accounts id from its code. */
     protected function resolveAccountId(?string $code, bool $required = true): ?int
     {

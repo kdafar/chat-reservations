@@ -1,6 +1,7 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
-import { Head, router, usePage } from '@inertiajs/vue3'
+import { Head, Link, router, usePage } from '@inertiajs/vue3'
+import { confirm } from '../../Composables/useConfirm.js'
 import AppLayout from '../../Layouts/AppLayout.vue'
 defineOptions({ layout: AppLayout })
 import Icon from '../../Components/Icon.vue'
@@ -31,6 +32,7 @@ const t = computed(() => isRtl.value
         notClockedIn: 'لم تسجّل دخول اليوم بعد.',
         onShift: 'مازلت على ورديتك.',
         offShift: 'انتهت الوردية',
+        searchStaffPh: 'ابحث عن موظف…', allStaff: 'كل الموظفين', notes: 'ملاحظات',
         col: { staff: 'الموظف', date: 'التاريخ', in: 'دخول', out: 'خروج', hours: 'ساعات', recordedBy: 'سجّله' },
         empty: 'لا توجد سجلات', emptyDesc: 'لا توجد سجلات حضور تطابق الفلاتر.',
         clear: 'مسح', filterFrom: 'من تاريخ', filterTo: 'إلى تاريخ',
@@ -48,6 +50,7 @@ const t = computed(() => isRtl.value
         notClockedIn: "You haven't clocked in today.",
         onShift: 'On shift since',
         offShift: 'Shift ended',
+        searchStaffPh: 'Search staff…', allStaff: 'All staff', notes: 'Notes',
         col: { staff: 'Staff', date: 'Date', in: 'In', out: 'Out', hours: 'Hours', recordedBy: 'Recorded by' },
         empty: 'No attendance records', emptyDesc: 'No records match your filters.',
         clear: 'Clear', filterFrom: 'From', filterTo: 'To',
@@ -107,8 +110,7 @@ function submitEdit() {
     })
 }
 function removeRow(row) {
-    if (!window.confirm(t.value.deleteConfirm)) return
-    router.delete(route('v2.staff-attendances.destroy', { staffAttendance: row.id }), { preserveScroll: true })
+    confirm({ body: t.value.deleteConfirm, tone: 'destructive', onConfirm: () => router.delete(route('v2.staff-attendances.destroy', { staffAttendance: row.id }), { preserveScroll: true }) })
 }
 
 function fmtTime(iso) {
@@ -180,9 +182,9 @@ function canClockOutRow(row) {
             <div class="card" style="padding:12px; margin-bottom:12px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
                 <div v-if="is_hr_manager" style="position:relative; flex:1; min-width:240px;">
                     <Icon name="search" :size="14" style="position:absolute; inset-inline-start:10px; top:50%; transform:translateY(-50%); color:var(--fg-faint);" />
-                    <input v-model="f.q" type="search" placeholder="Search staff…" class="input" style="padding-inline-start:32px;" />
+                    <input v-model="f.q" type="search" :placeholder="t.searchStaffPh" class="input" style="padding-inline-start:32px;" />
                 </div>
-                <SearchableSelect v-if="is_hr_manager" v-model="f.user_id" :items="staff_options" null-label="All staff" :width="200" />
+                <SearchableSelect v-if="is_hr_manager" v-model="f.user_id" :items="staff_options" :null-label="t.allStaff" :width="200" />
                 <DateTimePicker v-model="f.from" :with-time="false" :width="170" :locale="locale" :placeholder="t.filterFrom" />
                 <DateTimePicker v-model="f.to" :with-time="false" :width="170" :locale="locale" :placeholder="t.filterTo" />
                 <button v-if="f.q || f.user_id || f.from || f.to" class="btn btn-ghost btn-sm" @click="clearFilters">{{ t.clear }}</button>
@@ -242,9 +244,9 @@ function canClockOutRow(row) {
             <div v-if="page.last_page > 1" style="display:flex; justify-content:space-between; align-items:center; margin-top:12px; padding:0 4px; font-size:12px; color:var(--fg-subtle);">
                 <span>{{ t.showing }} {{ page.from }}–{{ page.to }} {{ t.of }} {{ page.total }}</span>
                 <div style="display:flex; gap:4px;">
-                    <a v-for="link in page.links" :key="link.label" :href="link.url || undefined" v-html="link.label"
+                    <component :is="link.url ? Link : 'span'" v-for="link in page.links" :key="link.label" :href="link.url || undefined" v-html="link.label"
                        :class="['btn', 'btn-sm', link.active ? 'btn-primary' : 'btn-ghost', !link.url ? 'is-disabled' : '']"
-                       style="min-width:32px;" />
+                       style="min-width:32px;" preserve-scroll preserve-state />
                 </div>
             </div>
         </div>
@@ -273,7 +275,7 @@ function canClockOutRow(row) {
                         <div v-if="errors.clock_out_at" class="err">{{ errors.clock_out_at }}</div>
                     </div>
                     <div style="grid-column:span 2;">
-                        <label class="label">Notes</label>
+                        <label class="label">{{ t.notes }}</label>
                         <textarea v-model="editForm.notes" rows="2" class="input" maxlength="500"></textarea>
                     </div>
                     <div style="grid-column:span 2; display:flex; justify-content:flex-end; gap:8px; margin-top:8px; padding-top:12px; border-top:1px solid var(--line);">

@@ -1,9 +1,11 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
 import { Head, router, usePage } from '@inertiajs/vue3'
+import { confirm } from '../../../Composables/useConfirm.js'
 import AppLayout from '../../../Layouts/AppLayout.vue'
 defineOptions({ layout: AppLayout })
 import Icon from '../../../Components/Icon.vue'
+import ImportButton from '../../../Components/ImportButton.vue'
 import SearchableSelect from '../../../Components/SearchableSelect.vue'
 
 const props = defineProps({
@@ -79,10 +81,11 @@ function apply() {
 function clearFilters() { f.q = ''; apply() }
 
 function seedYear() {
-    if (!window.confirm(t.value.seedConfirm)) return
-    router.post(route('v2.leave-balances.seed-year'), { year: f.year }, {
-        preserveScroll: true,
-    })
+    confirm({ body: t.value.seedConfirm, tone: 'primary', onConfirm: () => {
+        router.post(route('v2.leave-balances.seed-year'), { year: f.year }, {
+            preserveScroll: true,
+        })
+    } })
 }
 
 // --- Edit-entitlement modal ---
@@ -145,6 +148,7 @@ function remainingColor(n) {
                 </div>
                 <div v-if="can_manage" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
                     <button class="btn btn-sm btn-outline" @click="seedYear"><Icon name="sparkles" :size="13" /><span>{{ t.seed }}</span></button>
+                    <ImportButton type="leave-entitlements" />
                 </div>
             </div>
 

@@ -161,6 +161,50 @@ class ClinicRoleStructureSeeder extends Seeder
         $revoke('accountant', $glDelete);
         $revoke('clinic_admin', $glDelete);
 
+        // clinic_admin is a BRANCH-OPERATIONS role with financial OVERSIGHT. It
+        // may SEE the whole general ledger and every financial report (a branch
+        // manager needs visibility), but the accountant owns the writes: posting
+        // journals, opening/closing periods, running payroll, paying vendors.
+        // So clinic_admin is trimmed to READ-ONLY on accounting, loses payroll
+        // entirely (sensitive salary data), and loses vendor payment + branch
+        // record edits. KEEPS: all accounting *views* + every report, plus the
+        // operational stack (patients, visits, stock, purchasing raise/approve,
+        // insurance ops, inpatient, lab, clinical library).
+        $mutationVerbs = ['create', 'update', 'delete', 'delete_any',
+            'force_delete', 'force_delete_any', 'restore', 'restore_any', 'reorder'];
+
+        $branchOpsRevoke = [];
+        // General ledger + vendor master: keep view/list, drop every WRITE verb.
+        // Financial statement report pages (trial balance, P&L, balance sheet,
+        // cash flow, general ledger) are view-only perms and are intentionally
+        // left untouched so the branch manager keeps full report visibility.
+        foreach ([
+            'accounting_accounts', 'accounting_bank_reconciliations',
+            'accounting_expenses', 'accounting_journal_entries',
+            'accounting_periods', 'accounting_vendors',
+        ] as $r) {
+            foreach ($mutationVerbs as $v) {
+                $branchOpsRevoke[] = "{$v}_{$r}";
+            }
+        }
+        // Payroll + staff compensation: sensitive pay data → accountant only.
+        // Removed outright, including view.
+        foreach ([
+            'payroll_runs', 'staff_compensation_profiles', 'staff_loans',
+            'staff_settlements', 'staff_leave_entitlements',
+        ] as $r) {
+            foreach (array_merge(['view_any', 'view'], $mutationVerbs) as $v) {
+                $branchOpsRevoke[] = "{$v}_{$r}";
+            }
+        }
+        // Doctor pay ledgers, vendor payment, and editing/deleting branch records.
+        $branchOpsRevoke = array_merge($branchOpsRevoke, [
+            'view_any_doctor_compensation_ledgers', 'view_doctor_compensation_ledgers',
+            'pay_purchase_orders',
+            'branches.update', 'branches.delete',
+        ]);
+        $revoke('clinic_admin', $branchOpsRevoke);
+
         app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
     }
 

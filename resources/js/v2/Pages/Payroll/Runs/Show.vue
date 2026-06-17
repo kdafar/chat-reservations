@@ -1,6 +1,7 @@
 <script setup>
 import { computed, reactive, ref } from 'vue'
 import { Head, router, usePage } from '@inertiajs/vue3'
+import { confirm } from '../../../Composables/useConfirm.js'
 import AppLayout from '../../../Layouts/AppLayout.vue'
 defineOptions({ layout: AppLayout })
 import Icon from '../../../Components/Icon.vue'
@@ -55,13 +56,15 @@ function regenerate() {
     router.post(route('v2.payroll-runs.generate', { payrollRun: props.run.id }), {}, { preserveScroll: true, onFinish: () => (busy.value = false) })
 }
 function approve() {
-    if (!window.confirm(t.value.confirmApprove)) return
-    busy.value = true
-    router.post(route('v2.payroll-runs.approve', { payrollRun: props.run.id }), {}, { preserveScroll: true, onFinish: () => (busy.value = false) })
+    confirm({ body: t.value.confirmApprove, tone: 'primary', onConfirm: () => {
+        busy.value = true
+        router.post(route('v2.payroll-runs.approve', { payrollRun: props.run.id }), {}, { preserveScroll: true, onFinish: () => (busy.value = false) })
+    } })
 }
 function destroy() {
-    if (!window.confirm(t.value.confirmDelete)) return
-    router.delete(route('v2.payroll-runs.destroy', { payrollRun: props.run.id }))
+    confirm({ body: t.value.confirmDelete, tone: 'destructive', onConfirm: () => {
+        router.delete(route('v2.payroll-runs.destroy', { payrollRun: props.run.id }))
+    } })
 }
 
 // --- Pay modal ---

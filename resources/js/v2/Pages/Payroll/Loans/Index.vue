@@ -1,9 +1,11 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
 import { Head, router, usePage } from '@inertiajs/vue3'
+import { confirm } from '../../../Composables/useConfirm.js'
 import AppLayout from '../../../Layouts/AppLayout.vue'
 defineOptions({ layout: AppLayout })
 import Icon from '../../../Components/Icon.vue'
+import ImportButton from '../../../Components/ImportButton.vue'
 import SearchableSelect from '../../../Components/SearchableSelect.vue'
 import DateTimePicker from '../../../Components/DateTimePicker.vue'
 
@@ -186,16 +188,13 @@ function submit() {
 }
 
 function approve(row) {
-    if (!window.confirm(t.value.act.approveConfirm)) return
-    router.post(route('v2.staff-loans.approve', { staffLoan: row.id }), {}, { preserveScroll: true })
+    confirm({ body: t.value.act.approveConfirm, tone: 'primary', onConfirm: () => router.post(route('v2.staff-loans.approve', { staffLoan: row.id }), {}, { preserveScroll: true }) })
 }
 function cancel(row) {
-    if (!window.confirm(t.value.act.cancelConfirm)) return
-    router.post(route('v2.staff-loans.cancel', { staffLoan: row.id }), {}, { preserveScroll: true })
+    confirm({ body: t.value.act.cancelConfirm, tone: 'destructive', onConfirm: () => router.post(route('v2.staff-loans.cancel', { staffLoan: row.id }), {}, { preserveScroll: true }) })
 }
 function destroy(row) {
-    if (!window.confirm(t.value.act.deleteConfirm)) return
-    router.delete(route('v2.staff-loans.destroy', { staffLoan: row.id }), { preserveScroll: true })
+    confirm({ body: t.value.act.deleteConfirm, tone: 'destructive', onConfirm: () => router.delete(route('v2.staff-loans.destroy', { staffLoan: row.id }), { preserveScroll: true }) })
 }
 
 function statusColor(s) {
@@ -225,6 +224,7 @@ function progressPct(row) {
                 </div>
                 <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
                     <a class="btn btn-sm btn-outline" :href="route('v2.staff-loans.export', { ...f })"><Icon name="download" :size="13" /><span>{{ t.export }}</span></a>
+                    <ImportButton type="staff-loans" />
                     <button v-if="can_manage" class="btn btn-primary" @click="openCreate"><Icon name="plus" :size="14" /><span>{{ t.new }}</span></button>
                 </div>
             </div>
@@ -344,12 +344,12 @@ function progressPct(row) {
                     </div>
                     <div>
                         <label class="label">{{ t.modal.principal }} <span class="req">*</span></label>
-                        <input v-model="form.principal_amount" type="number" step="0.001" min="0.001" required class="input" />
+                        <input v-model="form.principal_amount" type="number" step="any" min="0.001" required class="input" />
                         <div v-if="errors.principal_amount" class="err">{{ errors.principal_amount }}</div>
                     </div>
                     <div>
                         <label class="label">{{ t.modal.installment }}</label>
-                        <input v-model="form.installment_amount" type="number" step="0.001" min="0" class="input" />
+                        <input v-model="form.installment_amount" type="number" step="any" min="0" class="input" />
                         <div v-if="installmentTooHigh" class="err">{{ t.modal.installmentHint }}</div>
                         <div v-else-if="errors.installment_amount" class="err">{{ errors.installment_amount }}</div>
                     </div>

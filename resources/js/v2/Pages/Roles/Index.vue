@@ -4,6 +4,7 @@ import { Head, router, usePage } from '@inertiajs/vue3'
 import AppLayout from '../../Layouts/AppLayout.vue'
 defineOptions({ layout: AppLayout })
 import Icon from '../../Components/Icon.vue'
+import { confirm } from '../../Composables/useConfirm.js'
 
 const props = defineProps({
     filters: { type: Object, required: true },
@@ -132,8 +133,9 @@ function submit() {
     })
 }
 function destroy(role) {
-    if (!window.confirm(t.value.modal.deleteConfirm)) return
-    router.delete(route('v2.roles.destroy', { role: role.id }), { preserveScroll: true })
+    confirm({ body: t.value.modal.deleteConfirm, tone: 'destructive', onConfirm: () => {
+        router.delete(route('v2.roles.destroy', { role: role.id }), { preserveScroll: true })
+    } })
 }
 </script>
 

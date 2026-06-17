@@ -1,11 +1,14 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
 import { Head, Link, router, usePage } from '@inertiajs/vue3'
+import { confirm } from '../../../Composables/useConfirm.js'
 import AppLayout from '../../../Layouts/AppLayout.vue'
 defineOptions({ layout: AppLayout })
 import Icon from '../../../Components/Icon.vue'
+import ImportButton from '../../../Components/ImportButton.vue'
 import SearchableSelect from '../../../Components/SearchableSelect.vue'
 import DateTimePicker from '../../../Components/DateTimePicker.vue'
+import { formatMoney, formatMoney as fmtMoney } from '../../../lib/money.js'
 
 const props = defineProps({
     filters: { type: Object, required: true },
@@ -30,11 +33,8 @@ function fmtDate(d) {
 }
 
 // Money: always 3 decimals (KWD fils).
-function fmtMoney(n) {
-    return Number(n ?? 0).toFixed(3)
-}
 function fmtKwd(n) {
-    return `${Number(n ?? 0).toFixed(3)} KWD`
+    return `${formatMoney(n)} KWD`
 }
 
 const t = computed(() => isRtl.value
@@ -203,8 +203,7 @@ function submit() {
 
 function destroy(row) {
     if (!props.can_edit) return
-    if (!window.confirm(t.value.modal.deleteConfirm)) return
-    router.delete(route('v2.staff-compensation-profiles.destroy', { profile: row.id }), { preserveScroll: true })
+    confirm({ body: t.value.modal.deleteConfirm, tone: 'destructive', onConfirm: () => router.delete(route('v2.staff-compensation-profiles.destroy', { profile: row.id }), { preserveScroll: true }) })
 }
 </script>
 
@@ -220,6 +219,7 @@ function destroy(row) {
                 </div>
                 <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
                     <a class="btn btn-sm btn-outline" :href="route('v2.staff-compensation-profiles.export', { ...f })"><Icon name="download" :size="13" /><span>{{ t.exportExcel }}</span></a>
+                    <ImportButton type="salary-profiles" />
                     <button v-if="can_edit" class="btn btn-primary" @click="openCreate"><Icon name="plus" :size="14" /><span>{{ t.new }}</span></button>
                 </div>
             </div>
@@ -330,7 +330,7 @@ function destroy(row) {
 
                     <div style="grid-column:span 2;">
                         <label class="label">{{ t.modal.basic }} <span class="req">*</span></label>
-                        <input v-model.number="form.basic_salary" type="number" step="0.001" min="0" class="input" />
+                        <input v-model.number="form.basic_salary" type="number" step="any" min="0" class="input" />
                         <div v-if="errors.basic_salary" class="err">{{ errors.basic_salary }}</div>
                     </div>
 
@@ -342,7 +342,7 @@ function destroy(row) {
                         </div>
                         <div v-for="(a, i) in form.allowances" :key="'al' + i" class="rep-row">
                             <input v-model="a.label" type="text" class="input" :placeholder="t.modal.lineLabel" maxlength="120" />
-                            <input v-model.number="a.amount" type="number" step="0.001" min="0" class="input rep-amount" :placeholder="t.modal.lineAmount" />
+                            <input v-model.number="a.amount" type="number" step="any" min="0" class="input rep-amount" :placeholder="t.modal.lineAmount" />
                             <button type="button" class="btn btn-ghost btn-sm btn-icon" @click="removeAllowance(i)"><Icon name="trash-2" :size="13" /></button>
                         </div>
                         <div v-if="errors.allowances" class="err">{{ errors.allowances }}</div>
@@ -356,7 +356,7 @@ function destroy(row) {
                         </div>
                         <div v-for="(d, i) in form.deductions" :key="'de' + i" class="rep-row">
                             <input v-model="d.label" type="text" class="input" :placeholder="t.modal.lineLabel" maxlength="120" />
-                            <input v-model.number="d.amount" type="number" step="0.001" min="0" class="input rep-amount" :placeholder="t.modal.lineAmount" />
+                            <input v-model.number="d.amount" type="number" step="any" min="0" class="input rep-amount" :placeholder="t.modal.lineAmount" />
                             <button type="button" class="btn btn-ghost btn-sm btn-icon" @click="removeDeduction(i)"><Icon name="trash-2" :size="13" /></button>
                         </div>
                         <div v-if="errors.deductions" class="err">{{ errors.deductions }}</div>

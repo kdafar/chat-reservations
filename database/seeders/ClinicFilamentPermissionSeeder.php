@@ -69,6 +69,7 @@ class ClinicFilamentPermissionSeeder extends Seeder
             'insurance_decide_claim',
             'insurance_record_payment',
             'insurance_writeoff',
+            'insurance_void',
         ];
 
         foreach ($insurancePermissionNames as $name) {
@@ -109,6 +110,7 @@ class ClinicFilamentPermissionSeeder extends Seeder
                     'insurance_record_payment',
                     'insurance_writeoff',
                     'insurance_decide_claim',
+                    'insurance_void',
                 ])
                 ->get();
             $existing = $financeRole->permissions()->pluck('id')->all();
@@ -349,6 +351,67 @@ class ClinicFilamentPermissionSeeder extends Seeder
             'view_clinic_reports', 'view_clinic_closing_reports', 'view_executive-dashboard',
             'view_any_follow_up_plans',
         ]);
+
+        // Accountant: full reporting visibility. The accounting reports (trial
+        // balance, P&L, etc.) are already covered by the accounting wildcard
+        // above; this adds the clinic/closing/executive report pages. Granting
+        // view_clinic_reports also lets the accountant land on the v2 dashboard
+        // instead of being bounced to the patient queue. Inpatient reports are
+        // opened to the accountant via role checks (controller + navGate), not a
+        // permission, so they don't gain admissions CRUD.
+        $grant(['accountant'], [
+            'view_clinic_reports', 'view_clinic_closing_reports', 'view_executive-dashboard',
+        ]);
+
+        // Accountant: READ-ONLY operational visibility. Finance can't sign off on
+        // the books without seeing what produced them — visits + their charges /
+        // payments, patients, purchasing, doctors, stock and insurance. View
+        // verbs only (view_any_ + view_); no create/update/delete, so the
+        // accountant sees clinic operations but never edits them. Mirrors the
+        // branch manager's read-only finance access in the other direction.
+        $accountantViewResources = [
+            'visits', 'visit_items', 'visit_charges', 'visit_payments',
+            'patients', 'patient_files',
+            'purchase_orders',
+            'doctors',
+            'clinic_items', 'clinic_item_stocks', 'clinic_stock_movement',
+            'stock_transfers', 'visit_stock_request', 'clinic_packages',
+            'insurers', 'insurance_plans', 'patient_insurance_policies',
+            'insurance_preauthorizations', 'insurance_claims',
+        ];
+        $accountantViewPerms = [];
+        foreach ($accountantViewResources as $r) {
+            $accountantViewPerms[] = "view_any_{$r}";
+            $accountantViewPerms[] = "view_{$r}";
+        }
+        // patient_files uses a bespoke perm name (no view_any_ variant).
+        $accountantViewPerms[] = 'patient_files_view';
+        $grant(['accountant'], $accountantViewPerms);
+
+        // WhatsApp module: a single gate permission for the whole wa-module
+        // section (WaModuleController::authorizeAccess + the wap-* navGates both
+        // check it). Clinic managers run it; admin gets it via the all-perms
+        // re-sync below; grant to any other role to open the module to them.
+        $this->perm('view_wa_module');
+        $grant(['clinic_admin'], ['view_wa_module']);
+
+        // ---- Permission-driven sidebar: bind the last role-gated v2 pages to a
+        // permission so access is assignable from the role layer alone (the
+        // controller + the navGate both check these). admin holds every perm via
+        // the re-sync below; super_admin passes via Gate::before. ----
+        // Coupons & promotions (discounts module): clinic managers; reception
+        // also runs promotions.
+        $this->perm('view_any_coupons');
+        $this->perm('view_any_promotions');
+        $grant(['clinic_admin'], ['view_any_coupons', 'view_any_promotions']);
+        $grant(['clinic_reception'], ['view_any_promotions']);
+        // Daily cash reconciliation report: managers + finance.
+        $this->perm('view_daily_reconciliation');
+        $grant(['clinic_admin', 'branch_manager', 'accountant'], ['view_daily_reconciliation']);
+        // Doctor schedule (management view): managers. Doctors reach their OWN
+        // schedule via the is_doctor flag (sidebar) + an OR in the controller.
+        $this->perm('view_doctor_schedule');
+        $grant(['clinic_admin', 'branch_manager'], ['view_doctor_schedule']);
 
         // Reception looks up insurers + plans (already manages policies/preauth/claims).
         $grant(['clinic_reception'], ['view_any_insurers', 'view_any_insurance_plans']);

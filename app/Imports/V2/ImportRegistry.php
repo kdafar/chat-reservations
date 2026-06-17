@@ -11,8 +11,11 @@ use App\Imports\V2\Tables\ExpenseImport;
 use App\Imports\V2\Tables\InsurancePlanImport;
 use App\Imports\V2\Tables\InsurerImport;
 use App\Imports\V2\Tables\LabTestImport;
+use App\Imports\V2\Tables\LeaveEntitlementImport;
 use App\Imports\V2\Tables\PatientImport;
 use App\Imports\V2\Tables\PatientPolicyImport;
+use App\Imports\V2\Tables\SalaryProfileImport;
+use App\Imports\V2\Tables\StaffLoanImport;
 use App\Imports\V2\Tables\UserImport;
 use App\Imports\V2\Tables\VendorImport;
 
@@ -37,6 +40,9 @@ class ImportRegistry
         'expenses' => ExpenseImport::class,
         'users' => UserImport::class,
         'doctor-comp-profiles' => DoctorCompProfileImport::class,
+        'salary-profiles' => SalaryProfileImport::class,
+        'staff-loans' => StaffLoanImport::class,
+        'leave-entitlements' => LeaveEntitlementImport::class,
     ];
 
     public static function resolve(string $type): ?AbstractImport

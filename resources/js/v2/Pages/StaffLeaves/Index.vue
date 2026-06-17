@@ -1,6 +1,7 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
 import { Head, router, usePage } from '@inertiajs/vue3'
+import { confirm } from '../../Composables/useConfirm.js'
 import AppLayout from '../../Layouts/AppLayout.vue'
 defineOptions({ layout: AppLayout })
 import Icon from '../../Components/Icon.vue'
@@ -179,8 +180,7 @@ function submitDecide() {
 }
 
 function archive(row) {
-    if (!window.confirm(t.value.decide.deleteConfirm)) return
-    router.delete(route('v2.staff-leaves.destroy', { staffLeave: row.id }), { preserveScroll: true })
+    confirm({ body: t.value.decide.deleteConfirm, tone: 'destructive', onConfirm: () => router.delete(route('v2.staff-leaves.destroy', { staffLeave: row.id }), { preserveScroll: true }) })
 }
 
 function statusColor(s) {

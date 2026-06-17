@@ -281,7 +281,7 @@ class PayrollRunsController extends Controller
     protected function paymentAccountOptions(): array
     {
         return Account::query()
-            ->where(fn ($q) => $q->where('code', 'like', '101%')->orWhere('code', 'like', '102%'))
+            ->where(fn ($q) => $q->where('code', 'like', '111%')->orWhere('code', 'like', '112%')->orWhere('code', 'like', '113%'))
             ->where('is_active', true)
             ->orderBy('code')
             ->get(['id', 'code', 'name'])

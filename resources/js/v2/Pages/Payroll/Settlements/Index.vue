@@ -1,7 +1,8 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
-import { Head, router, usePage } from '@inertiajs/vue3'
+import { Head, Link, router, usePage } from '@inertiajs/vue3'
 import axios from 'axios'
+import { confirm } from '../../../Composables/useConfirm.js'
 import AppLayout from '../../../Layouts/AppLayout.vue'
 defineOptions({ layout: AppLayout })
 import Icon from '../../../Components/Icon.vue'
@@ -149,12 +150,10 @@ function submit() {
 }
 
 function approve(row) {
-    if (!window.confirm(t.value.confirmApprove)) return
-    router.post(route('v2.staff-settlements.approve', { staffSettlement: row.id }), {}, { preserveScroll: true })
+    confirm({ body: t.value.confirmApprove, tone: 'primary', onConfirm: () => router.post(route('v2.staff-settlements.approve', { staffSettlement: row.id }), {}, { preserveScroll: true }) })
 }
 function destroy(row) {
-    if (!window.confirm(t.value.confirmDelete)) return
-    router.delete(route('v2.staff-settlements.destroy', { staffSettlement: row.id }), { preserveScroll: true })
+    confirm({ body: t.value.confirmDelete, tone: 'destructive', onConfirm: () => router.delete(route('v2.staff-settlements.destroy', { staffSettlement: row.id }), { preserveScroll: true }) })
 }
 
 // Pay modal
@@ -236,8 +235,8 @@ const candidateItems = computed(() => props.candidates.map(c => ({ value: c.id, 
         <div v-if="page.last_page > 1" style="display:flex; justify-content:space-between; align-items:center; margin-top:12px; padding:0 4px; font-size:12px; color:var(--fg-subtle);">
             <span>{{ t.showing }} {{ page.from }}–{{ page.to }} {{ t.of }} {{ page.total }}</span>
             <div style="display:flex; gap:4px;">
-                <a v-for="link in page.links" :key="link.label" :href="link.url || undefined" v-html="link.label"
-                   :class="['btn','btn-sm', link.active ? 'btn-primary' : 'btn-ghost', !link.url ? 'is-disabled' : '']" style="min-width:32px;" />
+                <component :is="link.url ? Link : 'span'" v-for="link in page.links" :key="link.label" :href="link.url || undefined" v-html="link.label"
+                   :class="['btn','btn-sm', link.active ? 'btn-primary' : 'btn-ghost', !link.url ? 'is-disabled' : '']" style="min-width:32px;" preserve-scroll preserve-state />
             </div>
         </div>
     </div>
@@ -282,23 +281,23 @@ const candidateItems = computed(() => props.candidates.map(c => ({ value: c.id, 
 
                 <div>
                     <label class="label">{{ t.modal.gratuity }}</label>
-                    <input v-model.number="form.gratuity_amount" type="number" step="0.001" min="0" class="input" />
+                    <input v-model.number="form.gratuity_amount" type="number" step="any" min="0" class="input" />
                 </div>
                 <div>
                     <label class="label">{{ t.modal.leave }}</label>
-                    <input v-model.number="form.leave_encashment" type="number" step="0.001" min="0" class="input" />
+                    <input v-model.number="form.leave_encashment" type="number" step="any" min="0" class="input" />
                 </div>
                 <div>
                     <label class="label">{{ t.modal.additions }}</label>
-                    <input v-model.number="form.other_additions" type="number" step="0.001" min="0" class="input" />
+                    <input v-model.number="form.other_additions" type="number" step="any" min="0" class="input" />
                 </div>
                 <div>
                     <label class="label">{{ t.modal.clawback }}</label>
-                    <input v-model.number="form.loan_clawback" type="number" step="0.001" min="0" class="input" />
+                    <input v-model.number="form.loan_clawback" type="number" step="any" min="0" class="input" />
                 </div>
                 <div>
                     <label class="label">{{ t.modal.deductions }}</label>
-                    <input v-model.number="form.other_deductions" type="number" step="0.001" min="0" class="input" />
+                    <input v-model.number="form.other_deductions" type="number" step="any" min="0" class="input" />
                 </div>
                 <div style="display:flex; flex-direction:column; justify-content:flex-end;">
                     <label class="label">{{ t.modal.net }}</label>
