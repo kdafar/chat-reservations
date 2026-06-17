@@ -40,8 +40,12 @@ class WaModuleController extends Controller
 {
     protected function authorizeAccess(Request $request): void
     {
-        if (! $request->user() || ! $request->user()->hasRole(['admin', 'super_admin', 'clinic_admin'])) {
-            abort(403, 'Admin access required.');
+        // Permission-gated (not role-gated) so access is assignable from the
+        // role/permission layer alone — grant `view_wa_module` to any role and
+        // both this controller and the v2 sidebar honour it, no code change.
+        // admin holds every permission; super_admin passes via Gate::before.
+        if (! $request->user() || ! $request->user()->can('view_wa_module')) {
+            abort(403, 'Not authorized to access the WhatsApp module.');
         }
     }
 

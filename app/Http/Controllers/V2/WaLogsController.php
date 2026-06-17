@@ -16,9 +16,9 @@ use Inertia\Response;
  */
 class WaLogsController extends Controller
 {
-    protected function authorizeAccess(Request $request): void
+    protected function authorizeAccess(Request $request, string $permission = 'view_any_wa_message_logs'): void
     {
-        if (! $request->user() || ! $request->user()->hasRole(['admin', 'super_admin'])) {
+        if (! $request->user() || ! $request->user()->can($permission)) {
             abort(403, 'Admin access required.');
         }
     }
@@ -73,7 +73,7 @@ class WaLogsController extends Controller
 
     public function sessions(Request $request): Response
     {
-        $this->authorizeAccess($request);
+        $this->authorizeAccess($request, 'view_any_whatsapp_session');
         $filters = ['q' => trim((string) $request->input('q', '')), 'status' => trim((string) $request->input('status', ''))];
 
         $query = WhatsappSession::query()->with(['provider:id,name', 'serviceType:id,name_en']);

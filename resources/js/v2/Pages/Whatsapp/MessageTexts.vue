@@ -1,6 +1,7 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
 import { Head, router, usePage } from '@inertiajs/vue3'
+import { confirm } from '../../Composables/useConfirm.js'
 import AppLayout from '../../Layouts/AppLayout.vue'
 defineOptions({ layout: AppLayout })
 import Icon from '../../Components/Icon.vue'
@@ -41,7 +42,7 @@ function submit() {
     const url = modalMode.value === 'create' ? route('v2.whatsapp.message-texts.store') : route('v2.whatsapp.message-texts.update', { messageText: editing.value.id })
     router[modalMode.value === 'create' ? 'post' : 'put'](url, { ...form }, { preserveScroll: true, onSuccess: closeModal, onError: e => { errors.value = e; saving.value = false }, onFinish: () => { saving.value = false } })
 }
-function destroy(r) { if (window.confirm(t.value.modal.del)) router.delete(route('v2.whatsapp.message-texts.destroy', { messageText: r.id }), { preserveScroll: true }) }
+function destroy(r) { confirm({ body: t.value.modal.del, tone: 'destructive', onConfirm: () => router.delete(route('v2.whatsapp.message-texts.destroy', { messageText: r.id }), { preserveScroll: true }) }) }
 </script>
 
 <template>

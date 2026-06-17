@@ -64,7 +64,7 @@ const zero = computed(() => (props.balance ?? 0) <= 0)
             <div style="font-size:14px; font-weight:700; color:var(--fg); margin-bottom:12px;">{{ t.topup }}</div>
             <div style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap;">
                 <div style="flex:0 0 140px;"><label class="lbl">{{ t.points }}</label><input v-model.number="form.points" type="number" min="1" class="input" /></div>
-                <div style="flex:0 0 130px;"><label class="lbl">{{ t.amount }}</label><input v-model.number="form.amount_paid" type="number" min="0" step="0.001" class="input" placeholder="0" /></div>
+                <div style="flex:0 0 130px;"><label class="lbl">{{ t.amount }}</label><input v-model.number="form.amount_paid" type="number" min="0" step="any" class="input" placeholder="0" /></div>
                 <div style="flex:0 0 90px;"><label class="lbl">{{ t.currency }}</label><input v-model="form.currency" class="input" maxlength="8" /></div>
                 <div style="flex:1; min-width:160px;"><label class="lbl">{{ t.note }}</label><input v-model="form.note" class="input" maxlength="191" /></div>
                 <button class="btn btn-primary" :disabled="form.processing || !form.points" @click="addPoints"><Icon name="plus" :size="14" /> {{ t.add }}</button>

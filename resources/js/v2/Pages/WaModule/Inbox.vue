@@ -4,6 +4,7 @@ import { Head, router, useForm, usePage } from '@inertiajs/vue3'
 import AppLayout from '../../Layouts/AppLayout.vue'
 defineOptions({ layout: AppLayout })
 import Icon from '../../Components/Icon.vue'
+import SearchableSelect from '../../Components/SearchableSelect.vue'
 
 const props = defineProps({ filters: Object, conversations: Array, active: Object, messages: Array, templates: Array, configured: Boolean })
 const pageProps = usePage()
@@ -69,8 +70,9 @@ function startChat() {
 const showTpl = ref(false)
 const tplForm = useForm({ template: '', language: 'en', vars: {} })
 const pickedTpl = computed(() => (props.templates || []).find(x => x.name === tplForm.template))
-function pickTpl(e) {
-    const tp = (props.templates || []).find(x => x.name === e.target.value)
+const templateItems = computed(() => (props.templates || []).map(tp => ({ value: tp.name, label: `${tp.name} (${tp.language})` })))
+function pickTpl(name) {
+    const tp = (props.templates || []).find(x => x.name === name)
     tplForm.template = tp?.name || ''
     tplForm.language = tp?.language || 'en'
     tplForm.vars = {}
@@ -184,10 +186,7 @@ function sendTpl() {
             <div class="wa-modal">
                 <h3>{{ t.tpl }}</h3>
                 <label>{{ t.pickTpl }}</label>
-                <select class="input" @change="pickTpl">
-                    <option value="">—</option>
-                    <option v-for="tp in templates" :key="tp.name" :value="tp.name">{{ tp.name }} ({{ tp.language }})</option>
-                </select>
+                <SearchableSelect :model-value="tplForm.template || null" :items="templateItems" :nullable="false" :placeholder="t.pickTpl" search-placeholder="Search…" @update:model-value="pickTpl" />
                 <div v-if="pickedTpl" style="margin:10px 0; padding:10px; border-radius:8px; background:#efeae2;">
                     <div style="background:#fff; border-radius:8px; padding:8px 10px; font-size:12.5px; white-space:pre-wrap;">{{ pickedTpl.body }}</div>
                 </div>

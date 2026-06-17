@@ -1,6 +1,7 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
 import { Head, router, usePage } from '@inertiajs/vue3'
+import { confirm } from '../../Composables/useConfirm.js'
 import AppLayout from '../../Layouts/AppLayout.vue'
 defineOptions({ layout: AppLayout })
 import Icon from '../../Components/Icon.vue'
@@ -145,7 +146,7 @@ function submit() {
         onFinish: () => { saving.value = false },
     })
 }
-function destroy(r) { if (window.confirm(t.value.m.del)) router.delete(route('v2.whatsapp.triggers.destroy', { whatsappTrigger: r.id }), { preserveScroll: true }) }
+function destroy(r) { confirm({ body: t.value.m.del, tone: 'destructive', onConfirm: () => router.delete(route('v2.whatsapp.triggers.destroy', { whatsappTrigger: r.id }), { preserveScroll: true }) }) }
 function onMedia(e) { mediaFile.value = e.target.files[0] || null }
 </script>
 
