@@ -136,8 +136,8 @@ class AccountingService
                 return null; // free items / services don't move the GL
             }
 
-            $cogsAccount = $this->coa->resolve('5010'); // Cost of Items Sold
-            $inventoryAccount = $this->coa->resolve('1200'); // Inventory
+            $cogsAccount = $this->coa->resolve('5120'); // Cost of Items Sold
+            $inventoryAccount = $this->coa->resolve('1150'); // Inventory
 
             if (! $cogsAccount || ! $inventoryAccount) {
                 return null;
@@ -201,9 +201,9 @@ class AccountingService
                 return null;
             }
 
-            $inventoryAccount = $this->coa->resolve('1200');
+            $inventoryAccount = $this->coa->resolve('1150');
             // Assume paid in cash from main till by default. Real bills will use AP.
-            $cashAccount = $this->coa->resolve('1010');
+            $cashAccount = $this->coa->resolve('1110');
 
             if (! $inventoryAccount || ! $cashAccount) {
                 return null;
@@ -268,8 +268,8 @@ class AccountingService
                 return $existing;
             }
 
-            $expenseAccount = $this->coa->resolve('6010'); // Doctor Compensation Expense
-            $payableAccount = $this->coa->resolve('2020'); // Doctor Payable
+            $expenseAccount = $this->coa->resolve('5130'); // Doctor Compensation Expense
+            $payableAccount = $this->coa->resolve('2130'); // Doctor Payable
 
             if (! $expenseAccount || ! $payableAccount) {
                 return null;
@@ -330,7 +330,7 @@ class AccountingService
             // If payment_account_id is set the expense is paid (Dr Expense / Cr Cash or Bank).
             // If null it accrues to Accounts Payable 2010 (Dr Expense / Cr AP).
             $creditAccount = $expense->paymentAccount
-                ?? $this->coa->resolve('2010');
+                ?? $this->coa->resolve('2110');
 
             if (! $expenseAccount || ! $creditAccount) {
                 Log::warning('[AccountingService] missing accounts for Expense', [
@@ -424,7 +424,7 @@ class AccountingService
                 $debitAccount = $this->coa->cashAccountFor('transfer', (int) $claim->branch_id);
             }
 
-            $arAccount = $this->coa->resolve('1110'); // AR - Insurance
+            $arAccount = $this->coa->resolve('1140'); // AR - Patients / Insurance
 
             if (! $debitAccount || ! $arAccount) {
                 Log::warning('[AccountingService] missing accounts for InsuranceClaimPayment', [
@@ -508,8 +508,8 @@ class AccountingService
                 return null;
             }
 
-            $expenseAccount = $this->coa->resolve('6020'); // Bad Debt Expense
-            $arAccount = $this->coa->resolve('1110');      // AR - Insurance
+            $expenseAccount = $this->coa->resolve('6530'); // Misc Expenses (bad debt / write-off)
+            $arAccount = $this->coa->resolve('1140');      // AR - Patients / Insurance
 
             if (! $expenseAccount || ! $arAccount) {
                 Log::warning('[AccountingService] missing accounts for claim write-off', [
@@ -606,9 +606,9 @@ class AccountingService
                 return null;
             }
 
-            $inventory = $this->coa->resolve('1200');
-            $payable = $this->coa->resolve('2010');
-            $importPayable = $landed > 0 ? $this->coa->resolve('2015') : null;
+            $inventory = $this->coa->resolve('1150');
+            $payable = $this->coa->resolve('2110');
+            $importPayable = $landed > 0 ? $this->coa->resolve('2190') : null;
             if (! $inventory || ! $payable || ($landed > 0 && ! $importPayable)) {
                 Log::warning('[AccountingService] missing accounts for PurchaseReceipt', [
                     'receipt_id' => $receipt->id,
@@ -686,7 +686,7 @@ class AccountingService
                 return null;
             }
 
-            $payable = $this->coa->resolve('2010');
+            $payable = $this->coa->resolve('2110');
             $credit = $payment->paymentAccount
                 ?? $this->coa->cashAccountFor($payment->method, (int) $payment->branch_id);
             if (! $payable || ! $credit) {
@@ -781,8 +781,8 @@ class AccountingService
                 return null; // pure-commission run — nothing new to accrue
             }
 
-            $expense = $this->coa->resolve('6015'); // Staff Salaries
-            $payable = $this->coa->resolve('2030'); // Staff Salaries Payable
+            $expense = $this->coa->resolve('6110'); // Staff Salaries
+            $payable = $this->coa->resolve('2130'); // Staff Salaries Payable
             if (! $expense || ! $payable) {
                 Log::warning('[AccountingService] missing accounts for payroll accrual', ['run_id' => $run->id]);
 
@@ -839,9 +839,9 @@ class AccountingService
             $cashAccount = $run->payment_account_id
                 ? \App\Models\Accounting\Account::find($run->payment_account_id)
                 : $this->coa->cashAccountFor('cash', (int) ($run->branch_id ?? 0));
-            $salaryPayable = $this->coa->resolve('2030');
-            $doctorPayable = $this->coa->resolve('2020');
-            $loanRecv = $this->coa->resolve('1130');
+            $salaryPayable = $this->coa->resolve('2130');
+            $doctorPayable = $this->coa->resolve('2130');
+            $loanRecv = $this->coa->resolve('1180');
             if (! $cashAccount || ! $salaryPayable || ! $doctorPayable || ! $loanRecv) {
                 Log::warning('[AccountingService] missing accounts for payroll payment', ['run_id' => $run->id]);
 
@@ -894,7 +894,7 @@ class AccountingService
                 return null;
             }
 
-            $loanRecv = $this->coa->resolve('1130');
+            $loanRecv = $this->coa->resolve('1180');
             $cashAccount = $loan->payment_account_id
                 ? \App\Models\Accounting\Account::find($loan->payment_account_id)
                 : $this->coa->cashAccountFor('cash', (int) ($loan->branch_id ?? 0));
@@ -949,11 +949,11 @@ class AccountingService
                 return null;
             }
 
-            $eosExpense = $this->coa->resolve('6016');
-            $salaryExpense = $this->coa->resolve('6015');
-            $loanRecv = $this->coa->resolve('1130');
-            $otherIncome = $this->coa->resolve('4040');
-            $payable = $this->coa->resolve('2030');
+            $eosExpense = $this->coa->resolve('6120');
+            $salaryExpense = $this->coa->resolve('6110');
+            $loanRecv = $this->coa->resolve('1180');
+            $otherIncome = $this->coa->resolve('4290');
+            $payable = $this->coa->resolve('2130');
             if (! $eosExpense || ! $salaryExpense || ! $loanRecv || ! $otherIncome || ! $payable) {
                 Log::warning('[AccountingService] missing accounts for settlement accrual', ['settlement_id' => $s->id]);
 
@@ -1009,7 +1009,7 @@ class AccountingService
                 return null;
             }
 
-            $payable = $this->coa->resolve('2030');
+            $payable = $this->coa->resolve('2130');
             $cashAccount = $s->payment_account_id
                 ? \App\Models\Accounting\Account::find($s->payment_account_id)
                 : $this->coa->cashAccountFor('cash', (int) ($s->branch_id ?? 0));

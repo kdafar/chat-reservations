@@ -218,10 +218,12 @@ class CashFlowReport extends Page implements HasForms
         return $this->deltaForIds($ids, $from, $to);
     }
 
-    /** Cash @ a date = sum of all 1010* and 1020* accounts (Cash on Hand + Bank). */
+    /** Cash @ a date = petty cash (1110) + bank (1120) + card settlement clearing (1130). */
     protected function cashAt(string $asOf): float
     {
-        return $this->balanceAtByCodes(['1010', '1020'], $asOf);
+        $codes = app(\App\Services\Accounting\ChartOfAccounts::class)->effectiveCodes(['1110', '1120', '1130']);
+
+        return $this->balanceAtByCodes($codes, $asOf);
     }
 
     public function getViewData(): array
@@ -231,11 +233,12 @@ class CashFlowReport extends Page implements HasForms
 
         $netIncome = $this->netIncome($from, $to);
 
-        // Working-capital deltas.
-        $deltaAP = $this->deltaForCodes(['2010'], $from, $to);              // Accounts Payable
-        $deltaDoctorPayable = $this->deltaForCodes(['2020'], $from, $to);   // Doctor Payable
-        $deltaAR = $this->deltaForCodes(['1100', '1110', '1120'], $from, $to); // AR (parent + children)
-        $deltaInventory = $this->deltaForCodes(['1200'], $from, $to);        // Inventory
+        // Working-capital deltas — follow the accountant's posting map.
+        $coa = app(\App\Services\Accounting\ChartOfAccounts::class);
+        $deltaAP = $this->deltaForCodes($coa->effectiveCodes(['2110']), $from, $to);              // Accounts Payable — Suppliers
+        $deltaDoctorPayable = $this->deltaForCodes($coa->effectiveCodes(['2130']), $from, $to);   // Accrued Salaries & Wages
+        $deltaAR = $this->deltaForCodes($coa->effectiveCodes(['1140']), $from, $to);              // AR — Patients / Insurance
+        $deltaInventory = $this->deltaForCodes($coa->effectiveCodes(['1150']), $from, $to);        // Inventory
 
         // Operating: add liability increases, subtract asset increases.
         $cashFromOps = $netIncome
@@ -246,11 +249,11 @@ class CashFlowReport extends Page implements HasForms
 
         // Investing: Fixed Assets purchases (asset increase) reduce cash.
         // Accumulated depreciation is contra-asset; not a cash item.
-        $deltaFixedAssets = $this->deltaForCodes(['1400'], $from, $to);
+        $deltaFixedAssets = $this->deltaForCodes(['1210', '1220', '1230', '1240'], $from, $to);
         $cashFromInvesting = -$deltaFixedAssets;
 
-        // Financing: Owner Capital increases add cash.
-        $deltaOwnerCapital = $this->deltaForCodes(['3010'], $from, $to);
+        // Financing: Partner Capital increases add cash.
+        $deltaOwnerCapital = $this->deltaForCodes(['3100', '3110'], $from, $to);
         $cashFromFinancing = $deltaOwnerCapital;
 
         $netChange = $cashFromOps + $cashFromInvesting + $cashFromFinancing;

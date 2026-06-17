@@ -96,10 +96,10 @@ class PeriodCloseService
                 throw new \RuntimeException("Period {$period->code} has no P&L activity to close.");
             }
 
-            // Counter-line into Retained Earnings (3020).
-            $retained = $this->coa->resolve('3020');
+            // Counter-line into Retained Earnings (3400).
+            $retained = $this->coa->resolve('3400');
             if (! $retained) {
-                throw new \RuntimeException('Retained Earnings account (3020) missing — seed CoA first.');
+                throw new \RuntimeException('Retained Earnings account (3400) missing — seed CoA first.');
             }
 
             // RE is credit-normal. If netToRetainedEarnings > 0 we made profit (credit RE);

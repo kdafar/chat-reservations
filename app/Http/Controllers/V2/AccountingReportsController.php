@@ -105,6 +105,7 @@ class AccountingReportsController extends Controller
         return Inertia::render('Reports/Accounting/CashFlow', [
             'filters' => $this->fmtRange($from, $to),
             'report' => Inertia::defer(fn () => $this->svc->cashFlow($from, $to)),
+            'can_view_posting' => (bool) $request->user()?->can('view_any_accounting_accounts'),
         ]);
     }
 }

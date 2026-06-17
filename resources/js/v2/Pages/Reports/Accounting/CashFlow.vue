@@ -1,6 +1,6 @@
 <script setup>
 import { computed, reactive } from 'vue'
-import { Deferred, Head, router, usePage } from '@inertiajs/vue3'
+import { Deferred, Head, Link, router, usePage } from '@inertiajs/vue3'
 import AppLayout from '../../../Layouts/AppLayout.vue'
 defineOptions({ layout: AppLayout })
 import Icon from '../../../Components/Icon.vue'
@@ -8,7 +8,7 @@ import PrintHeader from '../../../Components/PrintHeader.vue'
 import Skeleton from '../../../Components/Skeleton.vue'
 import DateTimePicker from '../../../Components/DateTimePicker.vue'
 
-const props = defineProps({ filters: Object, report: Object })
+const props = defineProps({ filters: Object, report: Object, can_view_posting: Boolean })
 const pageProps = usePage()
 const locale = computed(() => pageProps.props.locale ?? 'en')
 const isRtl = computed(() => locale.value === 'ar')
@@ -21,6 +21,7 @@ const t = computed(() => isRtl.value ? {
     financing: 'التدفقات التمويلية', deltaCap: 'التغير في رأس المال', cashFin: 'صافي النقد من التمويل',
     netChange: 'صافي التغير في النقد', cashStart: 'النقد أول المدة', cashEnd: 'النقد آخر المدة',
     reconciles: 'مطابق', notReconcile: 'غير مطابق',
+    posting: 'حسابات الترحيل', postingHint: 'تتبع هذه الأرقام (النقد، المدينون، المخزون…) حسابات الترحيل التلقائي.',
 } : {
     title: 'Cash Flow', eyebrow: 'Accounting Reports', desc: 'Operating, investing, and financing cash flows for the period.', from: 'From', to: 'To', print: 'Print',
     ops: 'Operating activities', netIncome: 'Net income',
@@ -29,13 +30,14 @@ const t = computed(() => isRtl.value ? {
     financing: 'Financing activities', deltaCap: 'Change in owner capital', cashFin: 'Net cash from financing',
     netChange: 'Net change in cash', cashStart: 'Cash, beginning', cashEnd: 'Cash, ending',
     reconciles: 'Reconciles', notReconcile: "Doesn't reconcile",
+    posting: 'Posting accounts', postingHint: 'These figures (cash, receivables, inventory…) follow the auto-posting account mapping.',
 })
 
 const f = reactive({ from: props.filters.from, to: props.filters.to })
 function apply() {
     router.get(route('v2.reports.accounting.cash-flow'), { from: f.from, to: f.to }, { preserveState: true, preserveScroll: true, replace: true })
 }
-const fmt = (n) => Number(n ?? 0).toFixed(3)
+const fmt = (n) => Number(n ?? 0).toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 })
 // signed display: positive adds cash (green), negative uses cash (red).
 const signed = (n) => (Number(n) < 0 ? '−' : '') + fmt(Math.abs(Number(n ?? 0)))
 </script>
@@ -50,7 +52,10 @@ const signed = (n) => (Number(n) < 0 ? '−' : '') + fmt(Math.abs(Number(n ?? 0)
                 <h1 style="margin:6px 0 4px; font-size:26px; font-weight:500; letter-spacing:-0.02em;">{{ t.title }}</h1>
                 <p style="margin:0; font-size:13.5px; color:var(--fg-muted);">{{ t.desc }}</p>
             </div>
-            <button class="btn btn-ghost no-print" onclick="window.print()"><Icon name="printer" :size="14" /><span>{{ t.print }}</span></button>
+            <div class="no-print" style="display:flex; gap:8px;">
+                <Link v-if="can_view_posting" class="btn btn-ghost" :href="route('v2.accounting.posting.index')" :title="t.postingHint"><Icon name="settings" :size="14" /><span>{{ t.posting }}</span></Link>
+                <button class="btn btn-ghost" onclick="window.print()"><Icon name="printer" :size="14" /><span>{{ t.print }}</span></button>
+            </div>
         </div>
 
         <div class="card no-print" style="padding:12px; margin-bottom:16px; display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;">
@@ -93,6 +98,13 @@ const signed = (n) => (Number(n) < 0 ? '−' : '') + fmt(Math.abs(Number(n ?? 0)
                     {{ report.reconciles ? t.reconciles : (t.notReconcile + ' (Δ ' + fmt(report.verification_delta) + ')') }}
                 </span>
             </div>
+
+            <p v-if="can_view_posting" class="no-print" style="margin-top:14px; font-size:12px; color:var(--fg-faint); display:flex; align-items:center; gap:6px;">
+                <Icon name="info" :size="13" />
+                <span>{{ t.postingHint }}
+                    <Link :href="route('v2.accounting.posting.index')" style="color:var(--primary); font-weight:600;">{{ t.posting }} →</Link>
+                </span>
+            </p>
         </Deferred>
     </div>
 </template>

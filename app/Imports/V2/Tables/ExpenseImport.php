@@ -19,7 +19,7 @@ class ExpenseImport extends AbstractImport
         return [
             ImportColumn::make('expense_date', 'Date')->required()->note('YYYY-MM-DD')->example('2026-05-01'),
             ImportColumn::make('amount', 'Amount')->required()->rules(['numeric', 'min:0.001'])->example('45.000'),
-            ImportColumn::make('account', 'Expense account code')->required()->note('Chart-of-accounts code')->example('5100'),
+            ImportColumn::make('account', 'Expense account code')->required()->note('Chart-of-accounts code')->example('6530'),
             ImportColumn::make('vendor', 'Vendor')->note('Existing vendor name or code'),
             ImportColumn::make('branch', 'Branch')->note('Branch name; blank = all branches'),
             ImportColumn::make('payment_account', 'Paid-from account code')->note('Chart-of-accounts code'),
@@ -35,7 +35,7 @@ class ExpenseImport extends AbstractImport
 
     public function exampleRows(): array
     {
-        return [['expense_date' => '2026-05-01', 'amount' => '45.000', 'account' => '5100', 'vendor' => 'Gulf Medical Supplies', 'reference_no' => 'INV-7781', 'description' => 'Gloves']];
+        return [['expense_date' => '2026-05-01', 'amount' => '45.000', 'account' => '6530', 'vendor' => 'Gulf Medical Supplies', 'reference_no' => 'INV-7781', 'description' => 'Gloves']];
     }
 
     public function mapRow(array $row): array

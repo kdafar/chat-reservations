@@ -70,6 +70,7 @@ class AccountingReportService
         $empty = [
             'account' => null, 'rows' => [], 'opening_balance' => 0.0,
             'closing_balance' => 0.0, 'period_activity' => 0.0, 'branch' => null,
+            'total_debit' => 0.0, 'total_credit' => 0.0, 'entry_count' => 0, 'line_count' => 0, 'currency' => 'KWD',
         ];
 
         if (! $accountId) {
@@ -109,10 +110,14 @@ class AccountingReportService
 
         $isDebitNormal = $account->isDebitNormal();
         $balance = $openingBalance;
+        $totalDebit = 0.0;
+        $totalCredit = 0.0;
         $rows = [];
         foreach ($raw as $r) {
             $debit = (float) $r->debit;
             $credit = (float) $r->credit;
+            $totalDebit += $debit;
+            $totalCredit += $credit;
             $balance += $isDebitNormal ? ($debit - $credit) : ($credit - $debit);
 
             $rows[] = [
@@ -137,6 +142,11 @@ class AccountingReportService
             'closing_balance' => $balance,
             'period_activity' => $balance - $openingBalance,
             'branch' => $branchId ? (Branch::find($branchId)?->localized_name) : null,
+            'total_debit' => round($totalDebit, 3),
+            'total_credit' => round($totalCredit, 3),
+            'entry_count' => $raw->pluck('je_id')->unique()->count(),
+            'line_count' => count($rows),
+            'currency' => $account->currency ?: 'KWD',
         ];
     }
 
@@ -213,23 +223,30 @@ class AccountingReportService
     {
         $netIncome = $this->netIncome($from, $to);
 
-        $deltaAP = $this->deltaForCodes(['2010'], $from, $to);
-        $deltaDoctorPayable = $this->deltaForCodes(['2020'], $from, $to);
-        $deltaAR = $this->deltaForCodes(['1100', '1110', '1120'], $from, $to);
-        $deltaInventory = $this->deltaForCodes(['1200'], $from, $to);
+        // Follow the accountant's posting map: each built-in code also covers
+        // any account the matching role has been remapped to (and vice-versa,
+        // so history under the old code is still counted).
+        $coa = app(ChartOfAccounts::class);
+
+        $deltaAP = $this->deltaForCodes($coa->effectiveCodes(['2110']), $from, $to);
+        $deltaDoctorPayable = $this->deltaForCodes($coa->effectiveCodes(['2130']), $from, $to);
+        $deltaAR = $this->deltaForCodes($coa->effectiveCodes(['1140']), $from, $to);
+        $deltaInventory = $this->deltaForCodes($coa->effectiveCodes(['1150']), $from, $to);
 
         $cashFromOps = $netIncome + $deltaAP + $deltaDoctorPayable - $deltaAR - $deltaInventory;
 
-        $deltaFixedAssets = $this->deltaForCodes(['1400'], $from, $to);
+        $deltaFixedAssets = $this->deltaForCodes(['1210', '1220', '1230', '1240'], $from, $to);
         $cashFromInvesting = -$deltaFixedAssets;
 
-        $deltaOwnerCapital = $this->deltaForCodes(['3010'], $from, $to);
+        $deltaOwnerCapital = $this->deltaForCodes(['3100', '3110'], $from, $to);
         $cashFromFinancing = $deltaOwnerCapital;
 
         $netChange = $cashFromOps + $cashFromInvesting + $cashFromFinancing;
 
-        $cashStart = $this->balanceAtByCodes(['1010', '1020'], Carbon::parse($from)->subDay()->toDateString());
-        $cashEnd = $this->balanceAtByCodes(['1010', '1020'], $to);
+        // Cash & cash-equivalents = petty cash + bank + card settlement clearing.
+        $cashCodes = $coa->effectiveCodes(['1110', '1120', '1130']);
+        $cashStart = $this->balanceAtByCodes($cashCodes, Carbon::parse($from)->subDay()->toDateString());
+        $cashEnd = $this->balanceAtByCodes($cashCodes, $to);
         $cashEndComputed = $cashStart + $netChange;
         $verificationDelta = $cashEnd - $cashEndComputed;
 

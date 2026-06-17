@@ -70,9 +70,9 @@ class ExpenseResource extends Resource
             ->where('type', Account::TYPE_ASSET)
             ->where('is_active', true)
             ->where(function ($q) {
-                $q->whereIn('code', ['1010', '1020', '1021', '1022'])
-                    ->orWhere('code', 'like', '1010-%')
-                    ->orWhere('code', 'like', '1020-%');
+                $q->whereIn('code', ['1110', '1120', '1130'])
+                    ->orWhere('code', 'like', '1110-%')
+                    ->orWhere('code', 'like', '1120-%');
             })
             ->orderBy('code')
             ->get()

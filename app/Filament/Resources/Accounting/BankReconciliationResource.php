@@ -327,15 +327,17 @@ class BankReconciliationResource extends Resource
 
     /**
      * Eligible bank/cash accounts for reconciliation: type=asset with code
-     * starting "1010" or "1020". Returned as id => "code — name".
+     * starting "1110" (cash), "1120" (bank) or "1130" (card clearing).
+     * Returned as id => "code — name".
      */
     protected static function bankAccountOptions(): array
     {
         return Account::query()
             ->where('type', Account::TYPE_ASSET)
             ->where(function (Builder $q) {
-                $q->where('code', 'like', '1010%')
-                    ->orWhere('code', 'like', '1020%');
+                $q->where('code', 'like', '1110%')
+                    ->orWhere('code', 'like', '1120%')
+                    ->orWhere('code', 'like', '1130%');
             })
             ->where('is_active', true)
             ->orderBy('code')

@@ -7,92 +7,172 @@ use App\Models\Branch;
 use Illuminate\Database\Seeder;
 
 /**
- * Seeds the standard Kuwait medical-clinic Chart of Accounts.
+ * Seeds the real EVA Medical bilingual Chart of Accounts.
  *
- * Conventions:
- *   1xxx Assets       Cash, Bank, AR, Inventory, Equipment
- *   2xxx Liabilities  AP, Doctor Payable, Salaries Payable, Customer Deposits
- *   3xxx Equity       Owner Capital, Retained Earnings
- *   4xxx Revenue      Consultation, Packages, Items, Other, Discount (contra)
- *   5xxx COGS         Cost of Items Sold
- *   6xxx Expenses     Doctor Comp, Staff Salaries, Rent, Utilities, Insurance,
- *                     Marketing, Office Supplies, Bank Fees, Other
+ * Source: storage/EVA_ChartOfAccounts_Bilingual_v1_15Jun2026.xlsx
  *
- * Idempotent — re-run upgrades but won't duplicate.
+ * Numbering (EVA convention):
+ *   1xxx Assets        1100 current · 1200 fixed · 1300 intangible
+ *   2xxx Liabilities   2100 current · 2200 non-current
+ *   3xxx Equity        partner capital / current accounts / drawings / retained
+ *   4xxx Revenue       4100 clinical · 4200 other · 4300 contra (discounts/refunds)
+ *   5xxx COGS          consumables, doctor fees, commissions
+ *   6xxx Operating     6100 payroll · 6200 occupancy · 6300 marketing · 6400 admin · 6600 dep/amort
+ *   7xxx Other income & expense
+ *
+ * 'Group' rows are headers/totals — not posted to (is_system = true). Detail
+ * 'Account' rows are postable. The posting engine + reports resolve these codes
+ * directly (see App\Services\Accounting\ChartOfAccounts), so the codes here are a
+ * contract — keep them in sync with that resolver.
+ *
+ * English name -> `name`, Arabic name -> `description`. Idempotent.
  */
 class AccountingChartOfAccountsSeeder extends Seeder
 {
     public function run(): void
     {
-        $this->command->info('Seeding Chart of Accounts...');
+        $this->command?->info('Seeding EVA Chart of Accounts...');
 
-        // The flat top-level Chart of Accounts. parent_code refers to another
-        // entry in this same list; resolved into FK after the first pass.
+        $A = Account::TYPE_ASSET;
+        $CA = Account::TYPE_CONTRA_ASSET;
+        $L = Account::TYPE_LIABILITY;
+        $E = Account::TYPE_EQUITY;
+        $R = Account::TYPE_REVENUE;
+        $CR = Account::TYPE_CONTRA_REVENUE;
+        $C = Account::TYPE_COGS;
+        $X = Account::TYPE_EXPENSE;
+
+        // [code, en, ar, type, parent_code, is_group_or_system]
         $accounts = [
-            // ===== ASSETS (1xxx) =====
-            ['1000', 'Assets',                                Account::TYPE_ASSET, null, true],
-            ['1010', 'Cash on Hand',                          Account::TYPE_ASSET, '1000', true],
-            ['1020', 'Bank Accounts',                         Account::TYPE_ASSET, '1000', true],
-            ['1021', 'Bank - KFH (Kuwait Finance House)',     Account::TYPE_ASSET, '1020', false],
-            ['1022', 'Bank - NBK (National Bank of Kuwait)',  Account::TYPE_ASSET, '1020', false],
-            ['1100', 'Accounts Receivable',                   Account::TYPE_ASSET, '1000', true],
-            ['1110', 'Patient Receivables',                   Account::TYPE_ASSET, '1100', true],
-            ['1120', 'Insurance Receivables',                 Account::TYPE_ASSET, '1100', false],
-            ['1130', 'Staff Loans & Advances Receivable',     Account::TYPE_ASSET, '1100', false],
-            ['1200', 'Inventory - Medical Supplies',          Account::TYPE_ASSET, '1000', true],
-            ['1300', 'Prepaid Expenses',                      Account::TYPE_ASSET, '1000', false],
-            ['1400', 'Fixed Assets - Equipment',              Account::TYPE_ASSET, '1000', false],
-            ['1410', 'Accumulated Depreciation',              Account::TYPE_CONTRA_ASSET, '1400', false],
+            // ===================== ASSETS =====================
+            ['1000', 'Assets', 'الأصول', $A, null, true],
+            ['1100', 'Current Assets', 'الأصول المتداولة', $A, '1000', true],
+            ['1110', 'Cash on Hand / Petty Cash', 'النقدية بالصندوق / المصروف النثري', $A, '1100', true],
+            ['1120', 'Bank — CBK Current Account', 'البنك — الحساب الجاري (التجاري)', $A, '1100', true],
+            ['1130', 'KNET / Card Settlement Clearing', 'تحصيلات كي نت / البطاقات تحت التسوية', $A, '1100', true],
+            ['1140', 'Accounts Receivable — Patients / Insurance', 'ذمم مدينة — مرضى / تأمين', $A, '1100', true],
+            ['1150', 'Inventory — Injectables & Consumables', 'المخزون — الحقن والمستهلكات', $A, '1100', true],
+            ['1160', 'Prepaid Rent', 'إيجار مدفوع مقدماً', $A, '1100', false],
+            ['1170', 'Prepaid Expenses & Refundable Deposits', 'مصاريف مدفوعة مقدماً وتأمينات قابلة للاسترداد', $A, '1100', false],
+            ['1180', 'Staff Advances', 'سلف الموظفين', $A, '1100', true],
+            ['1200', 'Fixed Assets (Non-Current)', 'الأصول الثابتة (غير المتداولة)', $A, '1000', true],
+            ['1210', 'Medical Equipment & Devices', 'المعدات والأجهزة الطبية', $A, '1200', true],
+            ['1215', 'Accum. Depreciation — Medical Equipment', 'مجمع إهلاك المعدات الطبية', $CA, '1200', false],
+            ['1220', 'Furniture, Fixtures & Decoration', 'الأثاث والتجهيزات والديكور', $A, '1200', false],
+            ['1225', 'Accum. Depreciation — Furniture & Fixtures', 'مجمع إهلاك الأثاث والتجهيزات', $CA, '1200', false],
+            ['1230', 'Computers & IT Hardware', 'أجهزة الحاسب وتقنية المعلومات', $A, '1200', false],
+            ['1235', 'Accum. Depreciation — Computers & IT', 'مجمع إهلاك أجهزة الحاسب', $CA, '1200', false],
+            ['1240', 'Leasehold Improvements / Fit-Out', 'تحسينات على المأجور / التجهيز الداخلي', $A, '1200', false],
+            ['1245', 'Accum. Depreciation — Leasehold Improvements', 'مجمع إهلاك تحسينات المأجور', $CA, '1200', false],
+            ['1300', 'Intangible Assets', 'الأصول غير الملموسة', $A, '1000', true],
+            ['1310', 'Clinic App & ERP System (Software)', 'تطبيق العيادة ونظام ERP (برمجيات)', $A, '1300', false],
+            ['1315', 'Accum. Amortization — Software', 'مجمع إطفاء البرمجيات', $CA, '1300', false],
+            ['1320', 'Branding & Website', 'العلامة التجارية والموقع الإلكتروني', $A, '1300', false],
+            ['1325', 'Accum. Amortization — Branding & Website', 'مجمع إطفاء العلامة التجارية والموقع', $CA, '1300', false],
+            ['1330', 'Licenses & Registration (Capitalized)', 'التراخيص والتسجيل (مرسملة)', $A, '1300', false],
 
-            // ===== LIABILITIES (2xxx) =====
-            ['2000', 'Liabilities',                           Account::TYPE_LIABILITY, null, true],
-            ['2010', 'Accounts Payable',                      Account::TYPE_LIABILITY, '2000', true],
-            ['2020', 'Doctor Payable',                        Account::TYPE_LIABILITY, '2000', true],
-            ['2030', 'Staff Salaries Payable',                Account::TYPE_LIABILITY, '2000', false],
-            ['2040', 'End-of-Service Provision',              Account::TYPE_LIABILITY, '2000', false],
-            ['2100', 'Customer Deposits',                     Account::TYPE_LIABILITY, '2000', false],
+            // ===================== LIABILITIES =====================
+            ['2000', 'Liabilities', 'الالتزامات', $L, null, true],
+            ['2100', 'Current Liabilities', 'الالتزامات المتداولة', $L, '2000', true],
+            ['2110', 'Accounts Payable — Suppliers', 'ذمم دائنة — موردون', $L, '2100', true],
+            ['2120', 'Equipment Installments Payable — Current', 'أقساط معدات مستحقة — جزء متداول', $L, '2100', false],
+            ['2130', 'Accrued Salaries & Wages', 'رواتب وأجور مستحقة', $L, '2100', true],
+            ['2140', 'Accrued Expenses', 'مصاريف مستحقة', $L, '2100', false],
+            ['2150', 'Rent Payable', 'إيجار مستحق', $L, '2100', false],
+            ['2160', 'Staff Leave Provision', 'مخصص إجازات الموظفين', $L, '2100', false],
+            ['2170', 'Patient Deposits & Package Liability (Unearned)', 'دفعات المرضى المقدمة / التزام الباقات (غير مكتسبة)', $L, '2100', true],
+            ['2180', 'Loyalty Points Liability', 'التزام نقاط الولاء', $L, '2100', false],
+            ['2190', 'Other Payables', 'ذمم دائنة أخرى', $L, '2100', true],
+            ['2200', 'Non-Current Liabilities', 'الالتزامات غير المتداولة', $L, '2000', true],
+            ['2210', 'Equipment Installments Payable — Long Term', 'أقساط معدات مستحقة — طويلة الأجل', $L, '2200', false],
+            ['2220', 'End-of-Service Indemnity Provision', 'مخصص مكافأة نهاية الخدمة', $L, '2200', true],
 
-            // ===== EQUITY (3xxx) =====
-            ['3000', 'Equity',                                Account::TYPE_EQUITY, null, true],
-            ['3010', 'Owner Capital',                         Account::TYPE_EQUITY, '3000', true],
-            ['3020', 'Retained Earnings',                     Account::TYPE_EQUITY, '3000', true],
+            // ===================== EQUITY =====================
+            ['3000', 'Equity', 'حقوق الملكية', $E, null, true],
+            ['3100', 'Partner Capital — Eng. Ali Mubarak', 'رأس مال الشريك — م. علي مبارك', $E, '3000', true],
+            ['3110', 'Partner Capital — Ahmad Al-Qenaei', 'رأس مال الشريك — أحمد القناعي', $E, '3000', true],
+            ['3200', 'Partner Current Account — Ali', 'الحساب الجاري للشريك — علي', $E, '3000', false],
+            ['3210', 'Partner Current Account — Ahmad', 'الحساب الجاري للشريك — أحمد', $E, '3000', false],
+            ['3300', 'Partner Drawings', 'مسحوبات الشركاء', $E, '3000', false],
+            ['3400', 'Retained Earnings', 'الأرباح المُحتجزة', $E, '3000', true],
+            ['3500', 'Current Year Profit / (Loss)', 'أرباح / (خسائر) السنة الحالية', $E, '3000', true],
 
-            // ===== REVENUE (4xxx) =====
-            ['4000', 'Revenue',                               Account::TYPE_REVENUE, null, true],
-            ['4010', 'Consultation Revenue',                  Account::TYPE_REVENUE, '4000', true],
-            ['4020', 'Package & Services Revenue',            Account::TYPE_REVENUE, '4000', true],
-            ['4030', 'Pharmacy / Items Revenue',              Account::TYPE_REVENUE, '4000', true],
-            ['4040', 'Other Income',                          Account::TYPE_REVENUE, '4000', false],
-            ['4900', 'Discounts Given',                       Account::TYPE_CONTRA_REVENUE, '4000', true],
+            // ===================== REVENUE =====================
+            ['4000', 'Revenue', 'الإيرادات', $R, null, true],
+            ['4100', 'Clinical Services Revenue', 'إيرادات الخدمات الإكلينيكية', $R, '4000', true],
+            ['4110', 'Dermatology & Aesthetics — Dr. Kareem', 'إيرادات الجلدية والتجميل — د. كريم', $R, '4100', true],
+            ['4120', 'Injectables (Botox & Fillers)', 'إيرادات الحقن (بوتوكس وفيلر)', $R, '4100', false],
+            ['4130', 'Laser & Device Treatments', 'إيرادات الليزر والأجهزة', $R, '4100', false],
+            ['4140', 'Skincare / Facials (Aesthetician)', 'إيرادات العناية بالبشرة / الفيشل', $R, '4100', false],
+            ['4150', 'Plastic Surgery — Visiting Doctors', 'إيرادات جراحة التجميل — الأطباء الزائرون', $R, '4100', false],
+            ['4160', 'Laser Hair Removal', 'إيرادات إزالة الشعر بالليزر', $R, '4100', false],
+            ['4200', 'Other Operating Revenue', 'إيرادات تشغيلية أخرى', $R, '4000', true],
+            ['4210', 'Product / Retail Sales', 'مبيعات المنتجات / التجزئة', $R, '4200', true],
+            ['4290', 'Other Income', 'إيرادات أخرى', $R, '4200', true],
+            ['4300', 'Contra-Revenue (Discounts & Refunds)', 'إيرادات مقابلة (خصومات ومردودات)', $CR, '4000', true],
+            ['4310', 'Discounts & Promotions', 'الخصومات والعروض', $CR, '4300', true],
+            ['4320', 'Refunds to Patients', 'مبالغ مردودة للمرضى', $CR, '4300', true],
 
-            // ===== COGS (5xxx) =====
-            ['5000', 'Cost of Sales',                         Account::TYPE_COGS, null, true],
-            ['5010', 'Cost of Items Sold',                    Account::TYPE_COGS, '5000', true],
+            // ===================== COST OF SERVICES (COGS) =====================
+            ['5000', 'Cost of Services (COGS)', 'تكلفة الخدمات (المبيعات)', $C, null, true],
+            ['5110', 'Injectables & Fillers Consumed', 'تكلفة الحقن والفيلر المستهلكة', $C, '5000', true],
+            ['5120', 'Medical Consumables & Disposables', 'تكلفة المستهلكات والمواد الطبية', $C, '5000', true],
+            ['5130', 'Doctor Fees & Commissions — Visiting', 'أتعاب وعمولات الأطباء الزائرين', $C, '5000', true],
+            ['5140', 'Dr. Kareem Cost (Direct)', 'تكلفة د. كريم (مباشرة)', $C, '5000', false],
+            ['5150', 'Skincare Products Consumed', 'تكلفة منتجات العناية المستهلكة', $C, '5000', false],
+            ['5160', 'Sales Commission — Dr. Kareem (10%)', 'عمولة مبيعات — د. كريم (10%)', $C, '5000', false],
+            ['5170', 'Lab / External Clinical Services', 'تكلفة المختبر / خدمات إكلينيكية خارجية', $C, '5000', true],
 
-            // ===== EXPENSES (6xxx) =====
-            ['6000', 'Operating Expenses',                    Account::TYPE_EXPENSE, null, true],
-            ['6010', 'Doctor Compensation Expense',           Account::TYPE_EXPENSE, '6000', true],
-            // 6020 was historically 'Staff Salaries'; repurposed to 'Bad Debt Expense'
-            // by migration 2026_05_24_100010 to back the insurance claims write-off
-            // auto-posting. Staff Salaries moved to 6015 to free the slot.
-            ['6015', 'Staff Salaries',                        Account::TYPE_EXPENSE, '6000', false],
-            ['6016', 'End-of-Service Expense',                Account::TYPE_EXPENSE, '6000', false],
-            ['6020', 'Bad Debt Expense',                      Account::TYPE_EXPENSE, '6000', true],
-            ['6030', 'Rent',                                  Account::TYPE_EXPENSE, '6000', false],
-            ['6040', 'Utilities',                             Account::TYPE_EXPENSE, '6000', false],
-            ['6050', 'Insurance',                             Account::TYPE_EXPENSE, '6000', false],
-            ['6060', 'Marketing & Advertising',               Account::TYPE_EXPENSE, '6000', false],
-            ['6070', 'Office & Medical Supplies',             Account::TYPE_EXPENSE, '6000', false],
-            ['6080', 'Bank & Gateway Fees',                   Account::TYPE_EXPENSE, '6000', false],
-            ['6090', 'Other Expenses',                        Account::TYPE_EXPENSE, '6000', false],
+            // ===================== OPERATING EXPENSES =====================
+            ['6000', 'Operating Expenses', 'المصاريف التشغيلية', $X, null, true],
+            ['6100', 'Payroll & Staff', 'الرواتب والموظفون', $X, '6000', true],
+            ['6110', 'Salaries & Wages — Administrative', 'الرواتب والأجور — الإدارية', $X, '6100', true],
+            ['6115', 'Nursing & Clinical Staff Salaries', 'رواتب التمريض والطاقم الإكلينيكي', $X, '6100', false],
+            ['6120', 'End-of-Service Indemnity Expense', 'مصروف مكافأة نهاية الخدمة', $X, '6100', true],
+            ['6130', 'Leave Pay Expense', 'مصروف بدل الإجازات', $X, '6100', false],
+            ['6140', 'Staff Visa & Residency', 'مصاريف الإقامات والتأشيرات', $X, '6100', false],
+            ['6150', 'Staff Accommodation', 'سكن الموظفين', $X, '6100', false],
+            ['6160', 'Staff Hospitality / Kitchen', 'مطبخ وضيافة الطاقم', $X, '6100', false],
+            ['6200', 'Occupancy', 'مصاريف الإشغال (العقارية)', $X, '6000', true],
+            ['6210', 'Rent — Clinic', 'إيجار العيادة', $X, '6200', true],
+            ['6220', 'Electricity & Water', 'كهرباء ومياه', $X, '6200', true],
+            ['6230', 'Building Maintenance', 'صيانة المبنى', $X, '6200', false],
+            ['6300', 'Marketing', 'التسويق', $X, '6000', true],
+            ['6310', 'Advertising & Social Media', 'الإعلان ووسائل التواصل', $X, '6300', true],
+            ['6320', 'Sponsored Ads & Google', 'حملات ممولة وجوجل', $X, '6300', false],
+            ['6330', 'Influencers', 'المؤثرون', $X, '6300', false],
+            ['6340', 'Marketing — Dr. Kareem', 'تسويق — د. كريم', $X, '6300', false],
+            ['6400', 'Administrative & General', 'عمومية وإدارية', $X, '6000', true],
+            ['6410', 'Telephone & Internet', 'هاتف وانترنت', $X, '6400', false],
+            ['6420', 'IT & Software Subscriptions (ERP)', 'اشتراكات تقنية وبرمجيات (ERP)', $X, '6400', false],
+            ['6430', 'Printing & Stationery', 'طباعة وقرطاسية', $X, '6400', true],
+            ['6440', 'Cleaning', 'النظافة', $X, '6400', false],
+            ['6450', 'Transportation — Visiting Medical Staff', 'نقل الطاقم الطبي الزائر', $X, '6400', false],
+            ['6460', 'Travel — Air Tickets (Visiting Doctors)', 'سفر — تذاكر طيران (الأطباء الزائرون)', $X, '6400', false],
+            ['6470', 'Hotel Accommodation — Visiting Staff', 'فنادق الطاقم الزائر', $X, '6400', false],
+            ['6480', 'Legal & Contract Consultation', 'استشارات قانونية وعقود', $X, '6400', false],
+            ['6490', 'Auditing & Accounting', 'تدقيق ومحاسبة', $X, '6400', false],
+            ['6500', 'Government Fees & Licenses', 'رسوم حكومية وتراخيص', $X, '6400', false],
+            ['6510', 'Clinic & Medical Malpractice Insurance', 'تأمين العيادة والمسؤولية الطبية', $X, '6400', true],
+            ['6520', 'Bank Charges & KNET Fees', 'رسوم بنكية ورسوم كي نت', $X, '6400', true],
+            ['6530', 'Miscellaneous Expenses', 'مصاريف متنوعة', $X, '6400', true],
+            ['6600', 'Depreciation & Amortization', 'الإهلاك والإطفاء', $X, '6000', true],
+            ['6610', 'Depreciation Expense', 'مصروف الإهلاك', $X, '6600', false],
+            ['6620', 'Amortization Expense', 'مصروف الإطفاء', $X, '6600', false],
+
+            // ===================== OTHER INCOME & EXPENSE =====================
+            ['7000', 'Other Income & Expense', 'إيرادات ومصاريف أخرى', $X, null, true],
+            ['7110', 'Interest / Finance Charges', 'أعباء تمويلية / فوائد', $X, '7000', false],
+            ['7190', 'Other Non-Operating Income / Expense', 'إيرادات / مصاريف أخرى غير تشغيلية', $X, '7000', false],
         ];
 
-        // Pass 1: upsert by code without parent FK
-        foreach ($accounts as [$code, $name, $type, $_, $isSystem]) {
+        // Pass 1: upsert by code (no parent yet)
+        foreach ($accounts as [$code, $en, $ar, $type, $_parent, $isSystem]) {
             Account::updateOrCreate(
                 ['code' => $code],
                 [
-                    'name' => $name,
+                    'name' => $en,
+                    'description' => $ar,
                     'type' => $type,
                     'currency' => 'KWD',
                     'is_active' => true,
@@ -103,7 +183,7 @@ class AccountingChartOfAccountsSeeder extends Seeder
 
         // Pass 2: wire parents
         $byCode = Account::query()->get()->keyBy('code');
-        foreach ($accounts as [$code, $_, $__, $parentCode, $___]) {
+        foreach ($accounts as [$code, $_e, $_a, $_t, $parentCode, $_s]) {
             if ($parentCode === null) {
                 continue;
             }
@@ -114,15 +194,15 @@ class AccountingChartOfAccountsSeeder extends Seeder
             }
         }
 
-        // Pass 3: per-branch cash sub-accounts ("Cash - Branch 4" with code 1010-4)
-        $cashParent = Account::where('code', '1010')->first();
+        // Pass 3: per-branch petty-cash sub-accounts ("1110-<branchId>") so
+        // branch-scoped cash postings resolve to their own account.
+        $cashParent = Account::where('code', '1110')->first();
         if ($cashParent) {
             foreach (Branch::query()->get() as $branch) {
-                $code = '1010-'.$branch->id;
                 Account::updateOrCreate(
-                    ['code' => $code],
+                    ['code' => '1110-'.$branch->id],
                     [
-                        'name' => 'Cash - '.($branch->localized_name ?? ('Branch '.$branch->id)),
+                        'name' => 'Cash on Hand — '.($branch->localized_name ?? ('Branch '.$branch->id)),
                         'type' => Account::TYPE_ASSET,
                         'parent_id' => $cashParent->id,
                         'branch_id' => $branch->id,
@@ -134,6 +214,6 @@ class AccountingChartOfAccountsSeeder extends Seeder
             }
         }
 
-        $this->command->info('Seeded '.Account::count().' accounts.');
+        $this->command?->info('Seeded '.Account::count().' accounts.');
     }
 }
