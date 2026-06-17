@@ -5,7 +5,8 @@ import {
   Phone, Search, Sparkles, User, Filter, Star, Clock, GraduationCap, Languages
 } from 'lucide-react'
 import { Api, getLocale, t } from '../api'
-import { PageShell, Container, Pill, StarRating } from '../components/Shared'
+import { PageShell, Container, Pill, StarRating, SearchableSelect } from '../components/Shared'
+import { S, tr } from '../brand'
 
 export function ClinicsPage() {
   const locale = useMemo(() => getLocale(), [])
@@ -40,35 +41,33 @@ export function ClinicsPage() {
   }, [filters.partner_id, filters.service_id, filters.q])
 
   return (
-    <PageShell title="Our Clinics" subtitle="Find a medical center near you.">
+    <PageShell title={tr(S.clinics.title)} subtitle={tr(S.clinics.subtitle)}>
       {/* Filter Bar */}
       <div className="bg-white border border-slate-100 shadow-sm rounded-3xl p-5 mb-10 sticky top-24 z-30">
         <div className="grid md:grid-cols-12 gap-4 items-end">
-          <div className="md:col-span-4 relative">
-             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 block pl-1">Partner</label>
-             <div className="relative">
-                 <select value={filters.partner_id} onChange={(e) => setFilters(p => ({ ...p, partner_id: e.target.value }))} className="w-full h-14 rounded-xl bg-slate-50 border border-slate-200 px-4 appearance-none font-semibold text-slate-700 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none transition-all">
-                    <option value="">All Partners</option>
-                    {partners.map(p => <option key={p.id} value={p.id}>{t(p.name, locale)}</option>)}
-                 </select>
-                 <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={18}/>
-             </div>
+          <div className="md:col-span-4">
+             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 block px-1">{tr(S.clinics.partner)}</label>
+             <SearchableSelect
+                value={filters.partner_id}
+                onChange={(v) => setFilters(p => ({ ...p, partner_id: v }))}
+                placeholder={tr(S.clinics.allPartners)}
+                options={[{ value: '', label: tr(S.clinics.allPartners) }, ...partners.map(p => ({ value: p.id, label: t(p.name, locale) }))]}
+             />
           </div>
-          <div className="md:col-span-4 relative">
-             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 block pl-1">Service</label>
-             <div className="relative">
-                 <select value={filters.service_id} onChange={(e) => setFilters(p => ({ ...p, service_id: e.target.value }))} className="w-full h-14 rounded-xl bg-slate-50 border border-slate-200 px-4 appearance-none font-semibold text-slate-700 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none transition-all">
-                    <option value="">All Services</option>
-                    {services.map(s => <option key={s.id} value={s.id}>{t(s.name, locale)}</option>)}
-                 </select>
-                 <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={18}/>
-             </div>
+          <div className="md:col-span-4">
+             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 block px-1">{tr(S.clinics.service)}</label>
+             <SearchableSelect
+                value={filters.service_id}
+                onChange={(v) => setFilters(p => ({ ...p, service_id: v }))}
+                placeholder={tr(S.clinics.allServices)}
+                options={[{ value: '', label: tr(S.clinics.allServices) }, ...services.map(s => ({ value: s.id, label: t(s.name, locale) }))]}
+             />
           </div>
-          <div className="md:col-span-4 relative">
-             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 block pl-1">Search</label>
+          <div className="md:col-span-4">
+             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 block px-1">{tr(S.clinics.searchLabel)}</label>
              <div className="relative">
-                 <input value={filters.q} onChange={(e) => setFilters(p => ({ ...p, q: e.target.value }))} className="w-full h-14 rounded-xl bg-slate-50 border border-slate-200 pl-11 pr-4 font-semibold text-slate-700 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none transition-all placeholder:font-normal" placeholder="Search clinics..." />
-                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={18}/>
+                 <input value={filters.q} onChange={(e) => setFilters(p => ({ ...p, q: e.target.value }))} className="w-full h-14 rounded-xl bg-slate-50 border border-slate-200 ps-11 pe-4 font-semibold text-slate-700 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none transition-all placeholder:font-normal" placeholder={tr(S.clinics.searchPlaceholder)} />
+                 <Search className="absolute start-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={18}/>
              </div>
           </div>
         </div>
@@ -78,21 +77,22 @@ export function ClinicsPage() {
       {loading ? (
           <div className="flex flex-col items-center justify-center py-20 text-slate-400">
              <Loader2 className="animate-spin mb-4 text-teal-600" size={40} />
-             <div className="font-medium animate-pulse">Locating clinics...</div>
+             <div className="font-medium animate-pulse">{tr({en:'Locating clinics…', ar:'جارٍ تحميل الفروع…'})}</div>
           </div>
       ) : branches.length === 0 ? (
           <div className="text-center py-20 bg-slate-50 rounded-3xl border border-slate-100">
              <Building2 className="mx-auto mb-4 text-slate-300" size={48} />
-             <h3 className="text-xl font-bold text-slate-900 mb-2">No clinics found</h3>
-             <p className="text-slate-500">Try adjusting your filters or search terms.</p>
+             <h3 className="text-xl font-bold text-slate-900 mb-2">{tr(S.clinics.noResults)}</h3>
           </div>
       ) : (
           <div className="grid gap-6">
              {branches.map(b => (
                 <Link key={b.id} to={`/clinic/clinics/${b.slug}`} className="group relative block bg-white border border-slate-100 rounded-[2rem] p-6 hover:shadow-xl hover:shadow-slate-200/50 hover:border-teal-200 transition-all duration-300">
                     <div className="flex flex-col md:flex-row gap-6 items-start md:items-center">
-                        <div className="w-20 h-20 rounded-2xl bg-teal-50 flex items-center justify-center text-teal-600 shrink-0 group-hover:scale-110 transition-transform duration-300">
-                           <Building2 size={32} />
+                        <div className="w-20 h-20 rounded-2xl bg-teal-50 flex items-center justify-center text-teal-600 shrink-0 overflow-hidden group-hover:scale-110 transition-transform duration-300">
+                           {(b.cover_image_url || b.logo_url)
+                             ? <img src={b.cover_image_url || b.logo_url} alt={t(b.name, locale)} className="w-full h-full object-cover" />
+                             : <Building2 size={32} />}
                         </div>
                         <div className="flex-1">
                             <h3 className="text-2xl font-bold text-slate-900 mb-2 group-hover:text-teal-700 transition-colors">{t(b.name, locale)}</h3>
@@ -100,8 +100,10 @@ export function ClinicsPage() {
                                <MapPin size={16} className="text-teal-500"/> {t(b.address, locale)}
                             </div>
                             <div className="flex items-center gap-4">
-                               <StarRating avg={b.rating} count={b.reviews} />
-                               <Pill>Open 24/7</Pill>
+                               {b.rating_count > 0 && <StarRating avg={b.rating_avg} count={b.rating_count} />}
+                               {b.open_now != null && (
+                                 <Pill>{b.open_now ? tr({en:'Open now', ar:'مفتوح الآن'}) : tr({en:'Closed', ar:'مغلق'})}</Pill>
+                               )}
                             </div>
                         </div>
                         <div className="self-end md:self-center">
@@ -143,20 +145,26 @@ export function ClinicDetailsPage() {
        <div className="bg-slate-50 border-b border-slate-100 pb-16 pt-10">
           <Container>
              <button onClick={()=>navigate(-1)} className="flex items-center gap-2 mb-8 font-bold text-slate-500 hover:text-slate-900 transition-colors group">
-                 <div className="w-8 h-8 rounded-full bg-white border border-slate-200 flex items-center justify-center group-hover:border-slate-400 transition-colors"><ArrowLeft size={16}/></div> 
-                 Back to Clinics
+                 <div className="w-8 h-8 rounded-full bg-white border border-slate-200 flex items-center justify-center group-hover:border-slate-400 transition-colors"><ArrowLeft size={16} className="rtl:rotate-180"/></div>
+                 {tr({en:'Back to Clinics', ar:'العودة للفروع'})}
              </button>
              
              <div className="flex flex-col md:flex-row gap-8 items-start">
-                 <div className="w-24 h-24 rounded-3xl bg-teal-600 text-white flex items-center justify-center shadow-lg shadow-teal-500/30">
-                     <Building2 size={40} />
+                 <div className="w-24 h-24 rounded-3xl bg-teal-600 text-white flex items-center justify-center shadow-lg shadow-teal-500/30 overflow-hidden shrink-0">
+                     {(branch.cover_image_url || branch.logo_url)
+                       ? <img src={branch.cover_image_url || branch.logo_url} alt={t(branch.name, locale)} className="w-full h-full object-cover" />
+                       : <Building2 size={40} />}
                  </div>
                  <div>
                      <h1 className="text-4xl md:text-5xl font-extrabold text-slate-900 mb-4">{t(branch.name, locale)}</h1>
                      <div className="flex flex-wrap items-center gap-6 text-slate-600 font-medium text-lg">
                         <span className="flex items-center gap-2"><MapPin size={20} className="text-teal-500"/> {t(branch.address, locale)}</span>
-                        <span className="flex items-center gap-2"><Clock size={20} className="text-teal-500"/> Open 24 Hours</span>
-                        <span className="flex items-center gap-2"><Star className="text-amber-500" fill="currentColor" size={20}/> 4.9 (210 reviews)</span>
+                        {branch.open_now != null && (
+                          <span className="flex items-center gap-2"><Clock size={20} className="text-teal-500"/> {branch.open_now ? tr({en:'Open now', ar:'مفتوح الآن'}) : tr({en:'Closed', ar:'مغلق'})}</span>
+                        )}
+                        {branch.rating_count > 0 && (
+                          <span className="flex items-center gap-2"><Star className="text-amber-500" fill="currentColor" size={20}/> {Number(branch.rating_avg).toFixed(1)} ({branch.rating_count})</span>
+                        )}
                      </div>
                  </div>
              </div>
@@ -164,8 +172,8 @@ export function ClinicDetailsPage() {
        </div>
        <Container className="py-16">
            <div className="flex items-center justify-between mb-8">
-               <h2 className="text-3xl font-bold text-slate-900">Available Doctors</h2>
-               <div className="text-slate-500 font-bold">{doctors.length} Specialist{doctors.length!==1?'s':''}</div>
+               <h2 className="text-3xl font-bold text-slate-900">{tr({en:'Our Doctors', ar:'أطباؤنا'})}</h2>
+               <div className="text-slate-500 font-bold">{doctors.length} {tr({en:'specialists', ar:'أخصائي'})}</div>
            </div>
            
            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -181,7 +189,7 @@ export function ClinicDetailsPage() {
                           </div>
                       </div>
                       <div className="flex items-center justify-between pt-6 border-t border-slate-50">
-                          <div className="text-slate-400 text-sm font-bold">View Profile</div>
+                          <div className="text-slate-400 text-sm font-bold">{tr({en:'View Profile', ar:'عرض الملف'})}</div>
                           <div className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 group-hover:bg-teal-600 group-hover:text-white transition-all">
                               <ArrowRight size={18} />
                           </div>
@@ -204,7 +212,7 @@ export function ServicesPage() {
   }, [])
   
   return (
-    <PageShell title="Medical Departments" subtitle="Comprehensive care across all specialties.">
+    <PageShell title={tr(S.servicesPage.title)} subtitle={tr(S.servicesPage.subtitle)}>
        {loading ? (
           <div className="grid md:grid-cols-3 gap-6">
               {[1,2,3,4,5,6].map(i => <div key={i} className="h-40 bg-slate-100 rounded-3xl animate-pulse"/>)}
@@ -213,13 +221,12 @@ export function ServicesPage() {
            <div className="grid md:grid-cols-3 gap-6">
               {services.map(s => (
                   <Link key={s.id} to={`/clinic/clinics?service_id=${s.id}`} className="group p-8 bg-white border border-slate-100 rounded-[2.5rem] hover:shadow-2xl hover:shadow-slate-200/50 hover:-translate-y-2 hover:border-teal-100 transition-all duration-300 flex flex-col items-center text-center">
-                      <div className="w-20 h-20 bg-teal-50 text-teal-600 rounded-3xl flex items-center justify-center mb-6 group-hover:bg-teal-500 group-hover:text-white group-hover:rotate-6 transition-all duration-300 shadow-sm">
-                          <Sparkles size={32} strokeWidth={1.5} />
+                      <div className="w-20 h-20 bg-teal-50 rounded-3xl flex items-center justify-center mb-6 text-4xl group-hover:scale-110 group-hover:rotate-6 transition-all duration-300 shadow-sm">
+                          {s.icon || <Sparkles size={32} strokeWidth={1.5} className="text-teal-600" />}
                       </div>
-                      <div className="font-bold text-2xl text-slate-900 mb-2">{t(s.name, locale)}</div>
-                      <div className="text-slate-500 font-medium mb-6">Expert care and advanced treatment options.</div>
+                      <div className="font-bold text-2xl text-slate-900 mb-6">{t(s.name, locale)}</div>
                       <div className="mt-auto font-bold text-teal-600 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-all transform translate-y-2 group-hover:translate-y-0">
-                          Find Doctors <ArrowRight size={16}/>
+                          {tr(S.servicesPage.cardCta)} <ArrowRight size={16} className="rtl:rotate-180"/>
                       </div>
                   </Link>
               ))}
@@ -241,14 +248,14 @@ export function DoctorDetailsPage() {
   }, [id])
   
   if(loading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-teal-600" size={40}/></div>
-  if(!doctor) return <div className="pt-32 text-center">Doctor not found</div>
+  if(!doctor) return <div className="pt-32 text-center font-bold text-slate-900">{tr({en:'Doctor not found', ar:'الطبيب غير موجود'})}</div>
 
   return (
     <div className="pt-28 pb-12 bg-white min-h-screen">
        <Container>
           <button onClick={()=>navigate(-1)} className="flex items-center gap-2 mb-8 font-bold text-slate-500 hover:text-slate-900 transition-colors group">
-             <div className="w-8 h-8 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center group-hover:border-slate-400 transition-colors"><ArrowLeft size={16}/></div> 
-             Back
+             <div className="w-8 h-8 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center group-hover:border-slate-400 transition-colors"><ArrowLeft size={16} className="rtl:rotate-180"/></div>
+             {tr({en:'Back', ar:'رجوع'})}
           </button>
           
           <div className="grid lg:grid-cols-12 gap-12">
@@ -263,17 +270,19 @@ export function DoctorDetailsPage() {
                     <div className="flex items-center gap-4">
                         <div className="w-10 h-10 rounded-full bg-white text-teal-600 flex items-center justify-center shadow-sm"><Languages size={20}/></div>
                         <div>
-                            <div className="text-xs font-bold text-slate-400 uppercase">Languages</div>
-                            <div className="font-bold text-slate-900">{doctor.languages ? doctor.languages.join(', ') : 'English'}</div>
+                            <div className="text-xs font-bold text-slate-400 uppercase">{tr({en:'Languages', ar:'اللغات'})}</div>
+                            <div className="font-bold text-slate-900">{doctor.languages ? doctor.languages.join(', ') : tr({en:'Arabic, English', ar:'العربية، الإنجليزية'})}</div>
                         </div>
                     </div>
-                    <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 rounded-full bg-white text-teal-600 flex items-center justify-center shadow-sm"><GraduationCap size={20}/></div>
-                        <div>
-                            <div className="text-xs font-bold text-slate-400 uppercase">Experience</div>
-                            <div className="font-bold text-slate-900">{doctor.experience || '10+ Years'}</div>
-                        </div>
-                    </div>
+                    {doctor.experience && (
+                      <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 rounded-full bg-white text-teal-600 flex items-center justify-center shadow-sm"><GraduationCap size={20}/></div>
+                          <div>
+                              <div className="text-xs font-bold text-slate-400 uppercase">{tr({en:'Experience', ar:'الخبرة'})}</div>
+                              <div className="font-bold text-slate-900">{doctor.experience}</div>
+                          </div>
+                      </div>
+                    )}
                  </div>
              </div>
 
@@ -284,24 +293,21 @@ export function DoctorDetailsPage() {
                         {doctor.specialty}
                      </span>
                      <h1 className="text-5xl font-extrabold text-slate-900 mb-6 leading-tight">{doctor.name}</h1>
-                     <div className="flex items-center gap-2 mb-8">
-                        <StarRating avg={4.9} count={120} />
-                     </div>
-                     
+
                      <div className="prose prose-lg text-slate-500 leading-relaxed mb-10">
-                        <h3 className="text-slate-900 font-bold text-xl mb-3">About</h3>
-                        <p>{doctor.bio || 'A dedicated specialist committed to providing the highest quality of patient care.'}</p>
+                        <h3 className="text-slate-900 font-bold text-xl mb-3">{tr({en:'About', ar:'نبذة'})}</h3>
+                        <p>{doctor.bio || tr({en:'A dedicated specialist committed to the highest quality of aesthetic and dermatology care.', ar:'أخصائي متمرّس ملتزم بتقديم أعلى مستويات الرعاية التجميلية والجلدية.'})}</p>
                      </div>
 
                      <div className="bg-slate-900 rounded-[2rem] p-8 text-white relative overflow-hidden">
                         <div className="absolute top-0 right-0 w-64 h-64 bg-teal-500 rounded-full blur-[100px] opacity-20 -mr-16 -mt-16 pointer-events-none"></div>
                         <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-8">
                             <div>
-                                <h3 className="text-2xl font-bold mb-2">Book an Appointment</h3>
-                                <p className="text-slate-400">Schedule your consultation with {doctor.name} today.</p>
+                                <h3 className="text-2xl font-bold mb-2">{tr({en:'Book an Appointment', ar:'احجزي موعدًا'})}</h3>
+                                <p className="text-slate-400">{tr({en:`Schedule your consultation with ${doctor.name} today.`, ar:`احجزي استشارتك مع ${doctor.name} اليوم.`})}</p>
                             </div>
                             <Link to="/clinic/book" className="bg-teal-500 text-white px-8 py-4 rounded-xl font-bold hover:bg-teal-400 transition-all shadow-lg shadow-teal-500/30 whitespace-nowrap active:scale-95">
-                                Book Now
+                                {tr(S.nav.bookNow)}
                             </Link>
                         </div>
                      </div>

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Front;
 use App\Http\Controllers\Controller;
 use App\Models\Booking;
 use App\Models\Branch;
+use App\Models\ClinicItem;
 use App\Models\Doctor;
 use App\Models\Partner;
 use App\Models\Service;
@@ -432,6 +433,19 @@ class ClinicBookingController extends Controller
             ->get();
 
         return response()->json($services);
+    }
+
+    /**
+     * Public headline counts for the marketing site — real data, no fake stats.
+     */
+    public function stats(): JsonResponse
+    {
+        return response()->json([
+            'treatments' => ClinicItem::query()->where('type', 'service')->where('is_active', true)->count(),
+            'categories' => Service::query()->where('is_active', true)->count(),
+            'doctors' => Doctor::query()->where('is_active', true)->count(),
+            'branches' => Branch::query()->count(),
+        ]);
     }
 
     public function branchShow(Branch $branch): JsonResponse

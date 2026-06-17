@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { Api, getLocale, t, formatDateDisplay, formatTimeDisplay } from '../api'
 import { PhoneInput } from './Shared'
+import { S, tr } from '../brand'
 
 export default function ClinicBookingWidget() {
   const locale = useMemo(() => getLocale(), [])
@@ -129,12 +130,12 @@ export default function ClinicBookingWidget() {
       setStep(5)
       return true
     }
-    throw new Error(response?.message || 'Unable to complete booking. Please try again.')
+    throw new Error(response?.message || tr(S.booking.errUnable))
   }
 
   const handleSubmit = async () => {
     if (phoneState.number.length < 5) {
-      setError("Please enter a valid mobile number.")
+      setError(tr(S.booking.errMobile))
       return
     }
     setLoading(true)
@@ -157,7 +158,7 @@ export default function ClinicBookingWidget() {
         cooldown: 60,
       })
     } catch (e) {
-      setError(e.message || 'An unexpected error occurred. Please try again.')
+      setError(e.message || tr(S.booking.errUnexpected))
     } finally {
       setLoading(false)
     }
@@ -165,7 +166,7 @@ export default function ClinicBookingWidget() {
 
   const handleVerifyOtp = async () => {
     if ((otp.code || '').length !== 6) {
-      setOtp(p => ({ ...p, error: 'Enter the full 6-digit code we sent on WhatsApp.' }))
+      setOtp(p => ({ ...p, error: tr(S.booking.errOtpIncomplete) }))
       return
     }
     setOtp(p => ({ ...p, verifying: true, error: null }))
@@ -174,8 +175,8 @@ export default function ClinicBookingWidget() {
       setOtp(p => ({ ...p, open: false, verifying: false, code: '' }))
     } catch (e) {
       const msg = e.code === 'otp_invalid'
-        ? 'That code is invalid or expired. Try again or resend.'
-        : (e.message || 'Verification failed. Please try again.')
+        ? tr(S.booking.errOtpInvalid)
+        : (e.message || tr(S.booking.errVerify))
       setOtp(p => ({ ...p, verifying: false, error: msg }))
     }
   }
@@ -188,15 +189,15 @@ export default function ClinicBookingWidget() {
       setOtp(p => ({ ...p, sending: false, cooldown: 60, code: '' }))
     } catch (e) {
       const msg = e.status === 429
-        ? (e.message || 'Please wait before requesting another code.')
-        : 'Could not resend the code. Please try again in a moment.'
+        ? (e.message || tr(S.booking.errResendWait))
+        : tr(S.booking.errResend)
       setOtp(p => ({ ...p, sending: false, error: msg }))
     }
   }
 
   const handleCancelBooking = async () => {
     if (phoneState.number.length < 5 || bookingRef.length < 3) {
-      setError("Please enter your Mobile Number and Booking Reference.")
+      setError(tr(S.booking.errMobileRef))
       return
     }
     setLoading(true)
@@ -208,9 +209,9 @@ export default function ClinicBookingWidget() {
       }
       const response = await Api.cancelBooking(payload)
       if (response?.ok) setManageSuccess(true)
-      else setError(response?.message || "Could not verify booking details.")
+      else setError(response?.message || tr(S.booking.errCancelVerify))
     } catch (e) {
-      setError("We couldn't find a booking matching those details. Please check your Booking Reference and try again.")
+      setError(tr(S.booking.errCantFind))
     } finally {
       setLoading(false)
     }
@@ -236,9 +237,9 @@ export default function ClinicBookingWidget() {
         <div className="bg-white rounded-3xl p-6 shadow-2xl w-full max-w-sm border border-slate-100 animate-in zoom-in-95 duration-200 relative">
           <button
             onClick={() => setOtp(p => ({ ...p, open: false }))}
-            className="absolute top-4 right-4 text-slate-400 hover:text-slate-700 transition-colors"
+            className="absolute top-4 end-4 text-slate-400 hover:text-slate-700 transition-colors"
             disabled={otp.verifying}
-            aria-label="Close"
+            aria-label={tr(S.booking.close)}
           >
             <X size={20} />
           </button>
@@ -246,9 +247,9 @@ export default function ClinicBookingWidget() {
           <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mb-4 mx-auto ring-4 ring-emerald-50/50">
             <MessageCircle size={24} />
           </div>
-          <h3 className="text-xl font-bold text-slate-900 text-center mb-1">Verify on WhatsApp</h3>
+          <h3 className="text-xl font-bold text-slate-900 text-center mb-1">{tr(S.booking.verifyWa)}</h3>
           <p className="text-slate-500 text-center mb-6 leading-relaxed text-sm">
-            We sent a 6-digit code to <span className="font-semibold text-slate-700">{masked}</span>.
+            {tr(S.booking.sentCodeA)} <span className="font-semibold text-slate-700" dir="ltr">{masked}</span>.
           </p>
 
           <input
@@ -259,8 +260,9 @@ export default function ClinicBookingWidget() {
             value={otp.code}
             onChange={e => setOtp(p => ({ ...p, code: e.target.value.replace(/\D/g, '').slice(0, 6), error: null }))}
             className="w-full h-14 px-4 rounded-xl bg-white border-2 border-slate-200 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 font-bold text-center text-2xl tracking-[0.5em] text-slate-900 outline-none transition-all placeholder:text-slate-300 placeholder:tracking-normal placeholder:font-normal placeholder:text-base"
-            placeholder="Enter 6-digit code"
+            placeholder={tr(S.booking.enterCode)}
             maxLength={6}
+            dir="ltr"
           />
 
           {otp.error && (
@@ -272,19 +274,19 @@ export default function ClinicBookingWidget() {
             disabled={otp.verifying || otp.code.length !== 6}
             className="w-full mt-5 py-3.5 rounded-xl bg-teal-600 text-white font-bold hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg shadow-teal-200 active:scale-95 duration-150 flex items-center justify-center gap-2"
           >
-            {otp.verifying ? <Loader2 className="animate-spin" size={20} /> : 'Verify & Confirm Booking'}
+            {otp.verifying ? <Loader2 className="animate-spin" size={20} /> : tr(S.booking.verifyConfirm)}
           </button>
 
           <div className="text-center mt-4">
             {otp.cooldown > 0 ? (
-              <span className="text-slate-400 text-xs">Resend code in {otp.cooldown}s</span>
+              <span className="text-slate-400 text-xs">{tr(S.booking.resendIn)} {otp.cooldown}s</span>
             ) : (
               <button
                 onClick={handleResendOtp}
                 disabled={otp.sending}
                 className="text-teal-600 text-xs font-semibold hover:text-teal-700 disabled:opacity-50"
               >
-                {otp.sending ? 'Sending…' : 'Resend code'}
+                {otp.sending ? tr(S.booking.sending) : tr(S.booking.resend)}
               </button>
             )}
           </div>
@@ -301,10 +303,10 @@ export default function ClinicBookingWidget() {
           <div className="w-12 h-12 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center mb-4 mx-auto ring-4 ring-red-50/50">
             <AlertCircle size={24} />
           </div>
-          <h3 className="text-xl font-bold text-slate-900 text-center mb-2">Attention</h3>
+          <h3 className="text-xl font-bold text-slate-900 text-center mb-2">{tr(S.booking.attention)}</h3>
           <p className="text-slate-500 text-center mb-6 leading-relaxed text-sm">{error}</p>
           <button onClick={() => setError(null)} className="w-full py-3.5 rounded-xl bg-slate-900 text-white font-bold hover:bg-slate-800 transition-colors shadow-lg active:scale-95 duration-150">
-            Dismiss
+            {tr(S.booking.dismiss)}
           </button>
         </div>
       </div>
@@ -313,80 +315,80 @@ export default function ClinicBookingWidget() {
 
   const renderHeader = () => {
     const progress = (step / 4) * 100;
-    
+
     return (
       <div className="px-8 pt-8 pb-6 bg-white flex flex-col gap-5 border-b border-slate-50">
         {step === 1 && (
           <div className="flex bg-slate-100 p-1.5 rounded-2xl mb-2 relative">
-            <button 
-              onClick={() => setView('book')} 
+            <button
+              onClick={() => setView('book')}
               className={`relative z-10 flex-1 py-2.5 text-sm font-bold rounded-xl transition-all duration-300 ${view === 'book' ? 'bg-white text-teal-700 shadow-sm ring-1 ring-black/5' : 'text-slate-500 hover:text-slate-700'}`}
             >
-              New Booking
+              {tr(S.booking.tabNew)}
             </button>
-            <button 
-              onClick={() => setView('manage')} 
+            <button
+              onClick={() => setView('manage')}
               className={`relative z-10 flex-1 py-2.5 text-sm font-bold rounded-xl transition-all duration-300 ${view === 'manage' ? 'bg-white text-teal-700 shadow-sm ring-1 ring-black/5' : 'text-slate-500 hover:text-slate-700'}`}
             >
-              Manage Booking
+              {tr(S.booking.tabManage)}
             </button>
           </div>
         )}
-        
+
         {view === 'book' ? (
           <div>
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-bold tracking-wider text-teal-600 uppercase bg-teal-50 px-2 py-1 rounded-md">
-                Step {step} of 4
+                {tr(S.booking.stepOf)} {step} {tr(S.booking.of)} 4
               </span>
             </div>
             <h3 className="text-3xl font-bold text-slate-900 leading-tight">
-              {step === 1 && 'Find a Clinic'}
-              {step === 2 && 'Select Specialist'}
-              {step === 3 && 'Choose Time'}
-              {step === 4 && 'Confirm Details'}
+              {step === 1 && tr(S.booking.t1)}
+              {step === 2 && tr(S.booking.t2)}
+              {step === 3 && tr(S.booking.t3)}
+              {step === 4 && tr(S.booking.t4)}
             </h3>
             <p className="text-slate-400 text-sm font-medium mt-2">
-              {step === 1 && 'Where would you like to visit?'}
-              {step === 2 && 'Who would you like to see?'}
-              {step === 3 && 'Select a date and available slot.'}
-              {step === 4 && 'Please review your booking info.'}
+              {step === 1 && tr(S.booking.s1)}
+              {step === 2 && tr(S.booking.s2)}
+              {step === 3 && tr(S.booking.s3)}
+              {step === 4 && tr(S.booking.s4)}
             </p>
             {/* Progress Bar */}
             <div className="h-1.5 w-full bg-slate-100 rounded-full mt-6 overflow-hidden">
-              <div 
-                className="h-full bg-teal-500 transition-all duration-500 ease-out rounded-full" 
-                style={{ width: `${progress}%` }} 
+              <div
+                className="h-full bg-teal-500 transition-all duration-500 ease-out rounded-full"
+                style={{ width: `${progress}%` }}
               />
             </div>
           </div>
         ) : (
           <div>
-            <h3 className="text-3xl font-bold text-slate-900 leading-tight">Manage Booking</h3>
-            <p className="text-slate-400 text-sm font-medium mt-2">Cancel or view details of your visit.</p>
+            <h3 className="text-3xl font-bold text-slate-900 leading-tight">{tr(S.booking.manageTitle)}</h3>
+            <p className="text-slate-400 text-sm font-medium mt-2">{tr(S.booking.manageSub)}</p>
           </div>
         )}
       </div>
     )
   }
 
-  const renderFooterNav = (disabled = false, primaryAction = handleNext, primaryLabel = 'Next') => (
+  const renderFooterNav = (disabled = false, primaryAction = handleNext, primaryLabel = tr(S.booking.next)) => (
     <div className="flex items-center gap-3 pt-6 mt-auto border-t border-slate-50 bg-white/50 backdrop-blur-sm sticky bottom-0 z-10">
       {step > 1 && (
-        <button 
-          onClick={handleBack} 
+        <button
+          onClick={handleBack}
           className="w-14 h-14 flex items-center justify-center rounded-2xl font-bold text-slate-400 border border-slate-200 hover:border-slate-300 hover:text-slate-700 hover:bg-slate-50 transition-all active:scale-95"
-          title="Go Back"
+          title={tr(S.booking.goBack)}
         >
-          <ArrowLeft size={20} />
+          <ArrowLeft size={20} className="rtl:rotate-180" />
         </button>
       )}
-      <button 
-        onClick={primaryAction} 
-        disabled={disabled} 
+      <button
+        onClick={primaryAction}
+        disabled={disabled}
         className="flex-1 h-14 bg-teal-600 text-white rounded-2xl font-bold hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-teal-200 hover:shadow-xl hover:shadow-teal-600/20 flex items-center justify-center gap-3 text-lg active:scale-[0.98]"
       >
-        {loading ? <Loader2 className="animate-spin" /> : (<>{primaryLabel} <ArrowRight size={20} /></>)}
+        {loading ? <Loader2 className="animate-spin" /> : (<>{primaryLabel} <ArrowRight size={20} className="rtl:rotate-180" /></>)}
       </button>
     </div>
   )
@@ -394,27 +396,27 @@ export default function ClinicBookingWidget() {
   // Step 1: Branches
   const renderStep1 = () => (
     <div className="p-8 h-full flex flex-col animate-in fade-in slide-in-from-right-8 duration-300">
-      <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 -mr-2">
+      <div className="flex-1 overflow-y-auto custom-scrollbar pe-2 -me-2">
         {branchesLoading ? (
           <div className="flex flex-col items-center justify-center py-20 text-slate-400">
             <Loader2 className="animate-spin mb-2" size={32} />
-            <span className="text-sm font-medium">Loading clinics...</span>
+            <span className="text-sm font-medium">{tr(S.booking.loadingClinics)}</span>
           </div>
         ) : branches.length === 0 ? (
-          <div className="text-center py-20 text-slate-400">No clinics available at the moment.</div>
+          <div className="text-center py-20 text-slate-400">{tr(S.booking.noClinics)}</div>
         ) : (
           <div className="grid gap-4">
             {branches.map(branch => (
-              <button 
-                key={branch.id} 
-                onClick={() => setFormData(p => ({ ...p, branch_id: branch.id }))} 
-                className={`group relative flex items-start p-5 rounded-2xl border-2 transition-all text-left w-full hover:shadow-lg hover:scale-[1.01] duration-200 ${
-                  formData.branch_id === branch.id 
-                    ? 'border-teal-500 bg-teal-50/60 ring-1 ring-teal-500 shadow-teal-100' 
+              <button
+                key={branch.id}
+                onClick={() => setFormData(p => ({ ...p, branch_id: branch.id }))}
+                className={`group relative flex items-start p-5 rounded-2xl border-2 transition-all text-start w-full hover:shadow-lg hover:scale-[1.01] duration-200 ${
+                  formData.branch_id === branch.id
+                    ? 'border-teal-500 bg-teal-50/60 ring-1 ring-teal-500 shadow-teal-100'
                     : 'border-slate-100 bg-white hover:border-teal-200'
                 }`}
               >
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center mr-4 shrink-0 transition-colors ${
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center me-4 shrink-0 transition-colors ${
                   formData.branch_id === branch.id ? 'bg-teal-100 text-teal-600' : 'bg-slate-100 text-slate-400 group-hover:bg-teal-50 group-hover:text-teal-500'
                 }`}>
                   <MapPin size={20} />
@@ -426,7 +428,7 @@ export default function ClinicBookingWidget() {
                   <div className="text-sm text-slate-500 leading-relaxed">{t(branch.address, locale)}</div>
                 </div>
                 {formData.branch_id === branch.id && (
-                  <div className="absolute top-5 right-5 text-teal-600 bg-white rounded-full p-1 shadow-sm">
+                  <div className="absolute top-5 end-5 text-teal-600 bg-white rounded-full p-1 shadow-sm">
                     <Check size={16} strokeWidth={3} />
                   </div>
                 )}
@@ -442,32 +444,32 @@ export default function ClinicBookingWidget() {
   // Step 2: Doctors
   const renderStep2 = () => (
     <div className="p-8 h-full flex flex-col animate-in fade-in slide-in-from-right-8 duration-300">
-      <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 -mr-2">
+      <div className="flex-1 overflow-y-auto custom-scrollbar pe-2 -me-2">
         {doctorsLoading ? (
            <div className="flex flex-col items-center justify-center py-20 text-slate-400">
              <Loader2 className="animate-spin mb-2" size={32} />
-             <span className="text-sm font-medium">Finding specialists...</span>
+             <span className="text-sm font-medium">{tr(S.booking.findingSpecialists)}</span>
            </div>
         ) : doctors.length === 0 ? (
-          <div className="text-center py-20 text-slate-400">No doctors found for this location.</div>
+          <div className="text-center py-20 text-slate-400">{tr(S.booking.noDoctors)}</div>
         ) : (
           <div className="grid gap-3">
             {doctors.map(doc => (
-              <button 
-                key={doc.id} 
-                onClick={() => setFormData(p => ({ ...p, doctor_id: doc.id }))} 
-                className={`flex items-center p-4 rounded-2xl border transition-all text-left w-full hover:shadow-md duration-200 ${
-                  formData.doctor_id === doc.id 
-                    ? 'border-teal-500 bg-teal-50/50 ring-1 ring-teal-500' 
+              <button
+                key={doc.id}
+                onClick={() => setFormData(p => ({ ...p, doctor_id: doc.id }))}
+                className={`group flex items-center p-4 rounded-2xl border transition-all text-start w-full hover:shadow-md duration-200 ${
+                  formData.doctor_id === doc.id
+                    ? 'border-teal-500 bg-teal-50/50 ring-1 ring-teal-500'
                     : 'border-slate-100 bg-white hover:border-teal-200'
                 }`}
               >
-                <div className={`w-14 h-14 rounded-full mr-4 overflow-hidden border-2 shrink-0 ${formData.doctor_id === doc.id ? 'border-teal-500' : 'border-slate-100'}`}>
+                <div className={`w-14 h-14 rounded-full me-4 overflow-hidden border-2 shrink-0 ${formData.doctor_id === doc.id ? 'border-teal-500' : 'border-slate-100'}`}>
                   {doc.avatar_path ? (
-                    <img 
-                      src={doc.avatar_path.startsWith('http') ? doc.avatar_path : `/storage/${doc.avatar_path}`} 
-                      className="w-full h-full object-cover" 
-                      onError={e => e.target.style.display='none'} 
+                    <img
+                      src={doc.avatar_path.startsWith('http') ? doc.avatar_path : `/storage/${doc.avatar_path}`}
+                      className="w-full h-full object-cover"
+                      onError={e => e.target.style.display='none'}
                       alt={doc.name}
                     />
                   ) : (
@@ -484,9 +486,9 @@ export default function ClinicBookingWidget() {
                   </div>
                 </div>
                 {formData.doctor_id === doc.id ? (
-                   <Check className="text-teal-600 ml-2" strokeWidth={3} size={20} />
+                   <Check className="text-teal-600 ms-2" strokeWidth={3} size={20} />
                 ) : (
-                   <ChevronRight className="text-slate-300 ml-2 group-hover:text-teal-400" size={20} />
+                   <ChevronRight className="text-slate-300 ms-2 group-hover:text-teal-400 rtl:rotate-180" size={20} />
                 )}
               </button>
             ))}
@@ -500,20 +502,20 @@ export default function ClinicBookingWidget() {
   // Step 3: Slots
   const renderStep3 = () => (
     <div className="p-8 h-full flex flex-col animate-in fade-in slide-in-from-right-8 duration-300">
-      <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 -mr-2 space-y-6">
-        
+      <div className="flex-1 overflow-y-auto custom-scrollbar pe-2 -me-2 space-y-6">
+
         {/* Date Picker Container */}
         <div className="bg-white p-1 rounded-2xl border border-slate-200 shadow-sm">
            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
+              <div className="absolute inset-y-0 start-0 ps-4 flex items-center pointer-events-none text-slate-400">
                  <CalendarDays size={20} />
               </div>
-              <input 
-                type="date" 
-                min={new Date().toISOString().split('T')[0]} 
-                value={formData.res_date} 
-                onChange={e => setFormData(p => ({ ...p, res_date: e.target.value, res_time: '' }))} 
-                className="w-full pl-12 pr-4 py-4 rounded-xl bg-transparent font-bold text-lg text-slate-700 focus:outline-none cursor-pointer" 
+              <input
+                type="date"
+                min={new Date().toISOString().split('T')[0]}
+                value={formData.res_date}
+                onChange={e => setFormData(p => ({ ...p, res_date: e.target.value, res_time: '' }))}
+                className="w-full ps-12 pe-4 py-4 rounded-xl bg-transparent font-bold text-lg text-slate-700 focus:outline-none cursor-pointer"
               />
            </div>
         </div>
@@ -523,7 +525,7 @@ export default function ClinicBookingWidget() {
           {slotsLoading ? (
             <div className="flex flex-col items-center justify-center py-10 text-slate-400 opacity-70">
               <Loader2 className="animate-spin mb-3" size={28} />
-              <span className="text-sm">Checking availability...</span>
+              <span className="text-sm">{tr(S.booking.checkingAvail)}</span>
             </div>
           ) : availableSlots.length > 0 ? (
             <div className="grid grid-cols-3 gap-3">
@@ -532,12 +534,12 @@ export default function ClinicBookingWidget() {
                   const lbl = s.label || s;
                   const isSelected = formData.res_time === val;
                   return (
-                    <button 
-                      key={val} 
-                      onClick={() => setFormData(p => ({ ...p, res_time: val }))} 
+                    <button
+                      key={val}
+                      onClick={() => setFormData(p => ({ ...p, res_time: val }))}
                       className={`py-3 px-2 rounded-xl font-bold text-sm transition-all duration-200 ${
-                        isSelected 
-                          ? 'bg-teal-600 text-white shadow-md shadow-teal-200 scale-105' 
+                        isSelected
+                          ? 'bg-teal-600 text-white shadow-md shadow-teal-200 scale-105'
                           : 'bg-white border border-slate-200 text-slate-600 hover:border-teal-400 hover:text-teal-600 hover:bg-teal-50'
                       }`}
                     >
@@ -549,13 +551,13 @@ export default function ClinicBookingWidget() {
           ) : formData.res_date ? (
             <div className="flex flex-col items-center justify-center py-10 bg-amber-50 rounded-2xl border border-amber-100 text-amber-800">
               <Clock className="mb-2 opacity-50" size={24} />
-              <span className="font-semibold">No slots available</span>
-              <span className="text-xs mt-1 opacity-70">Please try another date</span>
+              <span className="font-semibold">{tr(S.booking.noSlots)}</span>
+              <span className="text-xs mt-1 opacity-70">{tr(S.booking.noSlotsHint)}</span>
             </div>
           ) : (
             <div className="text-center py-10 text-slate-400 flex flex-col items-center">
               <Calendar size={32} className="mb-2 opacity-20" />
-              <span className="text-sm">Select a date above to view times</span>
+              <span className="text-sm">{tr(S.booking.pickDate)}</span>
             </div>
           )}
         </div>
@@ -567,28 +569,28 @@ export default function ClinicBookingWidget() {
   // Step 4: Details & Summary
   const renderStep4 = () => (
     <div className="p-8 h-full flex flex-col animate-in fade-in slide-in-from-right-8 duration-300">
-      <div className="flex-1 space-y-6 overflow-y-auto custom-scrollbar pr-2 -mr-2">
-        
+      <div className="flex-1 space-y-6 overflow-y-auto custom-scrollbar pe-2 -me-2">
+
         {/* Booking Recap Card */}
         <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100 relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-24 h-24 bg-teal-100 rounded-full -mr-10 -mt-10 opacity-50 blur-xl"></div>
+          <div className="absolute top-0 end-0 w-24 h-24 bg-teal-100 rounded-full -me-10 -mt-10 opacity-50 blur-xl"></div>
           <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4 flex items-center gap-2">
-            <Info size={14} /> Booking Summary
+            <Info size={14} /> {tr(S.booking.summary)}
           </h4>
-          
+
           <div className="space-y-4">
              <div className="flex items-start gap-3">
                 <MapPin className="text-teal-500 mt-1" size={16} />
                 <div>
                    <div className="font-bold text-slate-900 text-sm">{getSelectedBranchName()}</div>
-                   <div className="text-xs text-slate-500">Selected Clinic</div>
+                   <div className="text-xs text-slate-500">{tr(S.booking.selectedClinic)}</div>
                 </div>
              </div>
              <div className="flex items-start gap-3">
                 <User className="text-teal-500 mt-1" size={16} />
                 <div>
                    <div className="font-bold text-slate-900 text-sm">{getSelectedDoctorName()}</div>
-                   <div className="text-xs text-slate-500">Specialist</div>
+                   <div className="text-xs text-slate-500">{tr(S.booking.specialist)}</div>
                 </div>
              </div>
              <div className="flex items-start gap-3">
@@ -597,7 +599,7 @@ export default function ClinicBookingWidget() {
                    <div className="font-bold text-slate-900 text-sm">
                       {formatDateDisplay(formData.res_date)} • {formatTimeDisplay(formData.res_time)}
                    </div>
-                   <div className="text-xs text-slate-500">Appointment Time</div>
+                   <div className="text-xs text-slate-500">{tr(S.booking.apptTime)}</div>
                 </div>
              </div>
           </div>
@@ -606,27 +608,27 @@ export default function ClinicBookingWidget() {
         {/* Input Fields */}
         <div className="space-y-4 pt-2">
           <div>
-            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 ml-1">Patient Name</label>
-            <input 
-              type="text" 
-              value={formData.name} 
-              onChange={e => setFormData(p => ({ ...p, name: e.target.value }))} 
-              className="w-full h-14 px-4 rounded-xl bg-white border-2 border-slate-100 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 font-semibold transition-all outline-none text-slate-900 placeholder:text-slate-300" 
-              placeholder="e.g. Ali Ahmed" 
+            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 ms-1">{tr(S.booking.patientName)}</label>
+            <input
+              type="text"
+              value={formData.name}
+              onChange={e => setFormData(p => ({ ...p, name: e.target.value }))}
+              className="w-full h-14 px-4 rounded-xl bg-white border-2 border-slate-100 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 font-semibold transition-all outline-none text-slate-900 placeholder:text-slate-300"
+              placeholder={tr(S.booking.patientNamePh)}
             />
           </div>
           <div>
-            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 ml-1">Mobile Number</label>
-            <PhoneInput 
-              value={phoneState.number} 
-              onChange={e => setPhoneState(p => ({ ...p, number: e.target.value.replace(/\D/g, '') }))} 
-              code={phoneState.code} 
-              onCodeChange={c => setPhoneState(p => ({ ...p, code: c }))} 
+            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 ms-1">{tr(S.booking.mobile)}</label>
+            <PhoneInput
+              value={phoneState.number}
+              onChange={e => setPhoneState(p => ({ ...p, number: e.target.value.replace(/\D/g, '') }))}
+              code={phoneState.code}
+              onCodeChange={c => setPhoneState(p => ({ ...p, code: c }))}
             />
           </div>
         </div>
       </div>
-      {renderFooterNav(!formData.name || !phoneState.number || loading, handleSubmit, 'Confirm Booking')}
+      {renderFooterNav(!formData.name || !phoneState.number || loading, handleSubmit, tr(S.booking.confirm))}
     </div>
   )
 
@@ -636,19 +638,19 @@ export default function ClinicBookingWidget() {
            <Check size={48} strokeWidth={3} />
            <div className="absolute inset-0 rounded-full border-4 border-teal-50 animate-ping opacity-20"></div>
         </div>
-        <h3 className="text-3xl font-bold mb-2 text-slate-900">Booking Confirmed!</h3>
-        <p className="text-slate-500 mb-8 max-w-[250px]">Your appointment has been successfully scheduled.</p>
-        
+        <h3 className="text-3xl font-bold mb-2 text-slate-900">{tr(S.booking.confirmedTitle)}</h3>
+        <p className="text-slate-500 mb-8 max-w-[250px]">{tr(S.booking.confirmedSub)}</p>
+
         <div className="bg-slate-50 p-6 rounded-3xl w-full border border-slate-100 mb-8">
-           <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Booking Reference</div>
-           <div className="font-mono text-3xl font-bold text-slate-900 tracking-wider select-all">{completedBooking?.booking_code}</div>
+           <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">{tr(S.booking.bookingRef)}</div>
+           <div className="font-mono text-3xl font-bold text-slate-900 tracking-wider select-all" dir="ltr">{completedBooking?.booking_code}</div>
         </div>
 
-        <button 
-          onClick={() => window.location.reload()} 
+        <button
+          onClick={() => window.location.reload()}
           className="text-teal-700 font-bold hover:bg-teal-50 px-6 py-3 rounded-xl transition-colors"
         >
-          Book Another Appointment
+          {tr(S.booking.bookAnother)}
         </button>
     </div>
   )
@@ -658,13 +660,13 @@ export default function ClinicBookingWidget() {
         <div className="w-20 h-20 bg-red-50 text-red-500 rounded-full flex items-center justify-center mb-6">
           <Trash2 size={32} />
         </div>
-        <h3 className="text-2xl font-bold text-slate-900 mb-2">Booking Cancelled</h3>
-        <p className="text-slate-500 mb-8">Your appointment has been removed from our system.</p>
-        <button 
-          onClick={() => { setView('book'); setManageSuccess(false); }} 
+        <h3 className="text-2xl font-bold text-slate-900 mb-2">{tr(S.booking.cancelledTitle)}</h3>
+        <p className="text-slate-500 mb-8">{tr(S.booking.cancelledSub)}</p>
+        <button
+          onClick={() => { setView('book'); setManageSuccess(false); }}
           className="mt-4 text-white bg-teal-600 hover:bg-teal-700 px-8 py-3.5 rounded-xl font-bold transition-all shadow-lg shadow-teal-200"
         >
-          New Booking
+          {tr(S.booking.tabNew)}
         </button>
     </div>
   ) : (
@@ -672,35 +674,36 @@ export default function ClinicBookingWidget() {
         <div className="space-y-6 flex-1">
             <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 mb-6">
                <p className="text-sm text-slate-600 leading-relaxed">
-                  To cancel or reschedule, please enter the mobile number used during booking and your reference code.
+                  {tr(S.booking.manageIntro)}
                </p>
             </div>
             <div>
-               <label className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 ml-1 block">Mobile Number</label>
-               <PhoneInput 
-                 value={phoneState.number} 
-                 onChange={e => setPhoneState(p => ({ ...p, number: e.target.value.replace(/\D/g, '') }))} 
-                 code={phoneState.code} 
-                 onCodeChange={c => setPhoneState(p => ({ ...p, code: c }))} 
+               <label className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 ms-1 block">{tr(S.booking.mobile)}</label>
+               <PhoneInput
+                 value={phoneState.number}
+                 onChange={e => setPhoneState(p => ({ ...p, number: e.target.value.replace(/\D/g, '') }))}
+                 code={phoneState.code}
+                 onCodeChange={c => setPhoneState(p => ({ ...p, code: c }))}
                />
             </div>
             <div>
-               <label className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 ml-1 block">Reference Code</label>
-               <input 
-                 type="text" 
-                 value={bookingRef} 
-                 onChange={e => setBookingRef(e.target.value.toUpperCase())} 
-                 className="w-full h-14 px-4 rounded-xl bg-white border-2 border-slate-100 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 font-bold tracking-widest text-slate-900 outline-none transition-all placeholder:font-normal placeholder:tracking-normal placeholder:text-slate-300" 
-                 placeholder="e.g. A1B2C"
+               <label className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 ms-1 block">{tr(S.booking.refCode)}</label>
+               <input
+                 type="text"
+                 value={bookingRef}
+                 onChange={e => setBookingRef(e.target.value.toUpperCase())}
+                 className="w-full h-14 px-4 rounded-xl bg-white border-2 border-slate-100 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 font-bold tracking-widest text-slate-900 outline-none transition-all placeholder:font-normal placeholder:tracking-normal placeholder:text-slate-300"
+                 placeholder={tr(S.booking.refPh)}
+                 dir="ltr"
                />
             </div>
         </div>
-        <button 
-          onClick={handleCancelBooking} 
-          disabled={loading} 
+        <button
+          onClick={handleCancelBooking}
+          disabled={loading}
           className="w-full bg-slate-900 text-white h-14 rounded-2xl font-bold mt-6 hover:bg-slate-800 transition-all shadow-lg shadow-slate-300 active:scale-[0.98] flex items-center justify-center gap-2"
         >
-          {loading ? <Loader2 className="animate-spin" /> : <>Cancel Booking <ArrowRight size={18} /></>}
+          {loading ? <Loader2 className="animate-spin" /> : <>{tr(S.booking.cancelBooking)} <ArrowRight size={18} className="rtl:rotate-180" /></>}
         </button>
     </div>
   )

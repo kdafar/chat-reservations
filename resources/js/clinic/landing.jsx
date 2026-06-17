@@ -1,15 +1,18 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { Navbar, Footer } from './components/Shared'
 import { Hero, StatsSection, LandingServicesSection, InfoSection } from './components/Landing'
 import { ClinicsPage, ClinicDetailsPage, ServicesPage, DoctorDetailsPage } from './pages/Browse'
+import { Api } from './api'
 
 function BookLanding() {
+  const [stats, setStats] = useState(null)
+  useEffect(() => { Api.getStats().then(setStats).catch(() => {}) }, [])
   return (
     <div className="min-h-screen bg-white font-sans text-slate-900">
-      <Hero />
-      <StatsSection />
+      <Hero stats={stats} />
+      <StatsSection stats={stats} />
       <LandingServicesSection />
       <InfoSection />
     </div>
@@ -36,5 +39,6 @@ function App() {
   )
 }
 
-const root = createRoot(document.getElementById('root') || document.body)
+const mount = document.getElementById('clinic-root') || document.getElementById('root') || document.body
+const root = createRoot(mount)
 root.render(<App />)

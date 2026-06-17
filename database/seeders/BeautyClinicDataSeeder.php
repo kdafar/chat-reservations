@@ -98,6 +98,13 @@ class BeautyClinicDataSeeder extends Seeder
                 'updated_at' => now(),
             ]);
         }
+
+        // Retire the leftover restaurant-template "Food / مطاعم" category so it
+        // never surfaces on the aesthetic-clinic public site.
+        DB::table('services')->where('slug', 'food')->update(['is_active' => false, 'updated_at' => now()]);
+        DB::table('branch_service')
+            ->whereIn('service_id', DB::table('services')->where('slug', 'food')->pluck('id'))
+            ->delete();
     }
 
     /**

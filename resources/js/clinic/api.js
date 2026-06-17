@@ -163,6 +163,12 @@ export const Api = {
     return await res.json()
   },
 
+  getStats: async () => {
+    const res = await fetch('/clinic/api/stats', { headers: { 'Accept': 'application/json' } })
+    if (!res.ok) throw new Error('Failed to fetch stats')
+    return await res.json()
+  },
+
   getBranchesIndex: async (filters = {}) => {
     const res = await fetch(`/clinic/api/branches/index${qs(filters)}`, { headers: { 'Accept': 'application/json' } })
     if (!res.ok) throw new Error('Failed to fetch clinics')
