@@ -1,11 +1,12 @@
 <script setup>
 import { computed, reactive, ref } from 'vue'
-import { Head, router, usePage } from '@inertiajs/vue3'
+import { Head, Link, router, usePage } from '@inertiajs/vue3'
 import { confirm } from '../../Composables/useConfirm.js'
 import AppLayout from '../../Layouts/AppLayout.vue'
 defineOptions({ layout: AppLayout })
 import Icon from '../../Components/Icon.vue'
 import SearchableSelect from '../../Components/SearchableSelect.vue'
+import { formatMoney as fmt } from '../../lib/money.js'
 
 const props = defineProps({
     filters: Object,
@@ -26,6 +27,8 @@ const t = computed(() => isRtl.value ? {
     f: { name: 'الاسم', type: 'نوع الخصم', amount: 'مبلغ (د.ك)', percent: 'نسبة (%)', value: 'قيمة الخصم', scope: 'النطاق', scopeAll: 'كل الأصناف', scopeType: 'حسب النوع', scopeItems: 'أصناف محددة', scopeAllPackages: 'كل الباقات', scopePackages: 'باقات محددة', items: 'الأصناف', packages: 'الباقات', itemType: 'النوع', branch: 'الفرع', allBranches: '— كل الفروع —', starts: 'يبدأ في', ends: 'ينتهي في', prio: 'الأولوية', isActive: 'فعّال', pickItem: '— أضف صنفًا —', pickPackage: '— أضف باقة —' },
     types: { service: 'خدمة', consumable: 'مستهلك', product: 'منتج' },
     save: 'حفظ', cancel: 'إلغاء', editTitle: 'تحرير العرض', createTitle: 'عرض جديد', del: 'حذف هذا العرض؟',
+    showing: 'عرض', of: 'من', more: 'أخرى',
+    stats: { total: 'الكل', active: 'فعّال' },
 } : {
     eyebrow: 'Billing', title: 'Promotions', desc: 'Automatic time-bound discount on items/services — applied when added to a visit.',
     searchPh: 'Search name…', new: 'New promotion', all: 'All', active: 'Active', inactive: 'Inactive',
@@ -34,6 +37,8 @@ const t = computed(() => isRtl.value ? {
     f: { name: 'Name', type: 'Discount type', amount: 'Amount (KWD)', percent: 'Percent (%)', value: 'Discount value', scope: 'Applies to', scopeAll: 'All items', scopeType: 'By type', scopeItems: 'Specific items', scopeAllPackages: 'All packages', scopePackages: 'Specific packages', items: 'Items', packages: 'Packages', itemType: 'Type', branch: 'Branch', allBranches: '— All branches —', starts: 'Starts at', ends: 'Ends at', prio: 'Priority', isActive: 'Active', pickItem: '— Add an item —', pickPackage: '— Add a package —' },
     types: { service: 'Service', consumable: 'Consumable', product: 'Product' },
     save: 'Save', cancel: 'Cancel', editTitle: 'Edit promotion', createTitle: 'New promotion', del: 'Delete this promotion?',
+    showing: 'Showing', of: 'of', more: 'more',
+    stats: { total: 'Total', active: 'Active' },
 })
 
 const typeItems = computed(() => [{ value: 'amount', label: t.value.f.amount }, { value: 'percent', label: t.value.f.percent }])
@@ -94,13 +99,19 @@ function submit() {
 }
 function destroy(row) { confirm({ body: t.value.del, onConfirm: () => router.delete(route('v2.promotions.destroy', { clinicPromotion: row.id }), { preserveScroll: true }) }) }
 
-const fmt = (n) => Number(n ?? 0).toFixed(3)
 function discLabel(r) { return r.discount_type === 'percent' ? `${Number(r.discount_value)}%` : `${fmt(r.discount_value)} KWD` }
+// Truncate a list of target names to the first 3 with a " +N more" suffix so a
+// promotion covering many items/packages doesn't blow up the row height.
+function truncNames(names, fallback) {
+    if (!names || !names.length) return fallback
+    const head = names.slice(0, 3).join(', ')
+    return names.length > 3 ? `${head} +${names.length - 3} ${t.value.more}` : head
+}
 function targetLabel(r) {
     if (r.scope === 'item') return r.clinic_item_name || ('#' + r.clinic_item_id)
     if (r.scope === 'type') return t.value.types[r.item_type] ?? r.item_type
-    if (r.scope === 'items') return (r.item_names || []).join(', ') || t.value.f.scopeItems
-    if (r.scope === 'packages') return (r.package_names || []).join(', ') || t.value.f.scopePackages
+    if (r.scope === 'items') return truncNames(r.item_names, t.value.f.scopeItems)
+    if (r.scope === 'packages') return truncNames(r.package_names, t.value.f.scopePackages)
     if (r.scope === 'all_packages') return t.value.f.scopeAllPackages
     return t.value.f.scopeAll
 }
@@ -117,6 +128,11 @@ function validityLabel(r) { return (!r.starts_at && !r.ends_at) ? '—' : `${r.s
                 <div style="font-size:13px; color:var(--fg-muted);">{{ t.desc }}</div>
             </div>
             <button class="btn btn-primary" @click="openCreate"><Icon name="plus" :size="14" /><span>{{ t.new }}</span></button>
+        </div>
+
+        <div style="display:flex; gap:8px; margin-bottom:16px;">
+            <div class="stat-chip"><span class="stat-chip-num">{{ counts.total }}</span><span class="stat-chip-lbl">{{ t.stats.total }}</span></div>
+            <div class="stat-chip"><span class="stat-chip-num" style="color:var(--ok);">{{ counts.active }}</span><span class="stat-chip-lbl">{{ t.stats.active }}</span></div>
         </div>
 
         <div class="card" style="padding:12px; margin-bottom:12px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
@@ -159,6 +175,13 @@ function validityLabel(r) { return (!r.starts_at && !r.ends_at) ? '—' : `${r.s
                 </tbody>
             </table>
         </div>
+
+        <div v-if="page.last_page > 1" style="display:flex; justify-content:space-between; align-items:center; margin-top:12px; padding:0 4px; font-size:12px; color:var(--fg-subtle);">
+            <span>{{ t.showing }} {{ page.from }}–{{ page.to }} {{ t.of }} {{ page.total }}</span>
+            <div style="display:flex; gap:4px;">
+                <component :is="link.url ? Link : 'span'" v-for="link in page.links" :key="link.label" :href="link.url || undefined" v-html="link.label" :class="['btn', 'btn-sm', link.active ? 'btn-primary' : 'btn-ghost', !link.url ? 'is-disabled' : '']" style="min-width:32px;" preserve-scroll preserve-state prefetch="click" />
+            </div>
+        </div>
     </div>
 
     <Teleport to="body">
@@ -181,7 +204,7 @@ function validityLabel(r) { return (!r.starts_at && !r.ends_at) ? '—' : `${r.s
                         </div>
                         <div>
                             <label class="label">{{ t.f.value }} <span class="req">*</span></label>
-                            <input v-model.number="form.discount_value" type="number" step="0.001" min="0" class="input" required />
+                            <input v-model.number="form.discount_value" type="number" step="any" min="0" class="input" required />
                             <div v-if="errors.discount_value" class="err">{{ errors.discount_value }}</div>
                         </div>
                         <div>
@@ -242,3 +265,12 @@ function validityLabel(r) { return (!r.starts_at && !r.ends_at) ? '—' : `${r.s
         </Transition>
     </Teleport>
 </template>
+
+<style scoped>
+.table thead th {
+    position: sticky;
+    top: 0;
+    background: var(--card, var(--bg));
+    z-index: 1;
+}
+</style>

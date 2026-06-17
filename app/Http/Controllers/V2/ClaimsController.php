@@ -71,6 +71,7 @@ class ClaimsController extends Controller
                 'patientPolicy.patient:id,name',
                 'patientPolicy.insurer:id,name',
                 'visit:id',
+                'submittedBy:id,name',
             ])
             ->tap($scope);
 
@@ -99,6 +100,18 @@ class ClaimsController extends Controller
             default => $query->orderByDesc('id'),
         };
 
+        // Filtered totals over the FULL query (not just the visible page). Clone
+        // BEFORE paginate so the aggregate sees the same scope/filters as the list.
+        $summaryRow = (clone $query)
+            ->selectRaw('COALESCE(SUM(total_charged), 0) as total_billed')
+            ->selectRaw('COALESCE(SUM('.self::BALANCE_SQL.'), 0) as total_outstanding')
+            ->reorder()
+            ->first();
+        $summary = [
+            'total_billed' => round((float) ($summaryRow->total_billed ?? 0), 3),
+            'total_outstanding' => round((float) ($summaryRow->total_outstanding ?? 0), 3),
+        ];
+
         $page = $query->paginate(25)->withQueryString();
         $page->getCollection()->transform(function (InsuranceClaim $c) {
             $c->setAttribute('balance_due', $c->balanceDue());
@@ -115,6 +128,7 @@ class ClaimsController extends Controller
         return Inertia::render('Claims/Index', [
             'filters' => $filters,
             'page' => $page,
+            'summary' => $summary,
             'statuses' => self::STATUSES,
             'insurers' => $this->insurerOptions(),
             'branches' => $this->branchOptions(),
@@ -492,7 +506,7 @@ class ClaimsController extends Controller
     public function void(Request $request, InsuranceClaim $claim): RedirectResponse
     {
         $this->authorizeAccess($request);
-        if (! $request->user()->hasRole(['admin', 'super_admin'])) abort(403);
+        if (! $request->user()->can('insurance_void')) abort(403);
         $data = $request->validate(['reason' => ['required', 'string', 'max:2000']]);
         return $this->transition($request, $claim, InsuranceClaim::STATUS_VOID, null, $data['reason'], []);
     }
@@ -590,7 +604,7 @@ class ClaimsController extends Controller
             'decide' => (bool) $u?->can('insurance_decide_claim'),
             'pay' => (bool) $u?->can('insurance_record_payment'),
             'writeoff' => (bool) $u?->can('insurance_writeoff'),
-            'void' => (bool) $u?->hasRole(['admin', 'super_admin']),
+            'void' => (bool) $u?->can('insurance_void'),
         ];
     }
 
@@ -601,9 +615,9 @@ class ClaimsController extends Controller
             ->where('type', Account::TYPE_ASSET)
             ->where('is_active', true)
             ->where(function ($q) {
-                $q->whereIn('code', ['1010', '1020', '1021', '1022'])
-                    ->orWhere('code', 'like', '1010-%')
-                    ->orWhere('code', 'like', '1020-%');
+                $q->whereIn('code', ['1110', '1120', '1130'])
+                    ->orWhere('code', 'like', '1110-%')
+                    ->orWhere('code', 'like', '1120-%');
             })
             ->orderBy('code')
             ->get(['id', 'code', 'name'])

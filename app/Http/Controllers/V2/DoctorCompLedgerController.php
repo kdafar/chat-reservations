@@ -91,6 +91,8 @@ class DoctorCompLedgerController extends Controller
             'counts' => [
                 'total' => (clone $totalQuery)->count(),
                 'doctor_cut_sum' => round((float) (clone $totalQuery)->sum('doctor_cut_amount'), 3),
+                'fees_sum' => round((float) (clone $totalQuery)->sum('fees_snapshot'), 3),
+                'profit_sum' => round((float) (clone $totalQuery)->sum('profit_snapshot'), 3),
             ],
         ]);
     }

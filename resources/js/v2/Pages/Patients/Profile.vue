@@ -11,6 +11,7 @@ import NewBookingSheet from '../../Components/NewBookingSheet.vue'
 import VisitSheet from '../../Components/VisitSheet.vue'
 import PatientFormModal from '../../Components/PatientFormModal.vue'
 import { pushToast } from '../../Composables/useNotificationState.js'
+import { formatMoney as fmtMoney } from '../../lib/money.js'
 
 const props = defineProps({
     patient: { type: Object, required: true },
@@ -138,7 +139,6 @@ function fmtDateTime(iso) {
     try { return new Date(iso).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) }
     catch { return iso }
 }
-function fmtMoney(n) { return (Number(n) || 0).toFixed(3) }
 function relativeAge(iso) {
     if (!iso) return t.value.labels.never
     const ms = Date.now() - new Date(iso).getTime()
@@ -379,6 +379,12 @@ async function loadLogs(fileId) {
     }
 }
 
+// Sum of the payments shown in the Payments tab. The profile loads all payments
+// (not paginated), so a client-side sum of the rendered rows is the true total.
+const paymentsTotal = computed(() =>
+    props.payments.reduce((s, p) => s + (Number(p.amount) || 0), 0)
+)
+
 const visitsByMonth = computed(() => {
     const map = new Map()
     for (const v of props.visits) {
@@ -594,6 +600,16 @@ const visitsByMonth = computed(() => {
                                     </td>
                                 </tr>
                             </tbody>
+                            <tfoot>
+                                <tr style="border-top: 2px solid var(--line);">
+                                    <td class="td" :colspan="5" style="font-weight: 500; color: var(--fg-muted);">
+                                        {{ isRtl ? 'الإجمالي' : 'Total' }}
+                                    </td>
+                                    <td class="td tnum" style="text-align: end; font-weight: 600;">
+                                        {{ fmtMoney(paymentsTotal) }} <span style="font-size: 10.5px; color: var(--fg-subtle);">KWD</span>
+                                    </td>
+                                </tr>
+                            </tfoot>
                         </table>
                     </div>
 

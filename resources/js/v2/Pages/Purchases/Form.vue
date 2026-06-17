@@ -264,7 +264,7 @@ function save() {
                         </div>
                         <div>
                             <label class="lbl">{{ t.exRate }}</label>
-                            <input v-model.number="form.exchange_rate" type="number" min="0" step="0.000001" class="input tnum" :disabled="isKwd" />
+                            <input v-model.number="form.exchange_rate" type="number" min="0" step="any" class="input tnum" :disabled="isKwd" />
                             <div class="hint">{{ t.exRateHint }} {{ form.currency }}</div>
                         </div>
                         <div>
@@ -303,16 +303,16 @@ function save() {
                             </div>
                             <div style="width:90px;">
                                 <label class="lbl">{{ t.qty }}</label>
-                                <input v-model.number="draft.qty_ordered" type="number" min="0.001" step="0.001" class="input tnum" />
+                                <input v-model.number="draft.qty_ordered" type="number" min="0.001" step="any" class="input tnum" />
                             </div>
                             <div style="width:120px;">
                                 <label class="lbl">{{ t.unitCost }}</label>
-                                <input v-model.number="draft.unit_cost" type="number" min="0" step="0.001" class="input tnum" />
+                                <input v-model.number="draft.unit_cost" type="number" min="0" step="any" class="input tnum" />
                             </div>
                             <div style="width:140px;">
                                 <label class="lbl">{{ t.discount }}</label>
                                 <div style="display:flex; gap:0;">
-                                    <input v-model.number="draft.discount_value" type="number" min="0" step="0.001" class="input tnum" style="border-start-end-radius:0; border-end-end-radius:0;" />
+                                    <input v-model.number="draft.discount_value" type="number" min="0" step="any" class="input tnum" style="border-start-end-radius:0; border-end-end-radius:0;" />
                                     <button type="button" class="btn btn-outline" style="border-start-start-radius:0; border-end-start-radius:0; border-inline-start:0; width:46px; padding:0; font-weight:600;"
                                         :title="draft.discount_type === 'amount' ? form.currency : '%'"
                                         @click="draft.discount_type = draft.discount_type === 'amount' ? 'percent' : 'amount'">
@@ -363,11 +363,11 @@ function save() {
                     <div class="sec-h">{{ t.secLanded }}</div>
                     <div class="sec-b">
                         <div class="landed-grid">
-                            <div><label class="lbl">{{ t.freight }}</label><input v-model.number="form.freight_amount" type="number" min="0" step="0.001" class="input tnum" /></div>
-                            <div><label class="lbl">{{ t.customs }}</label><input v-model.number="form.customs_amount" type="number" min="0" step="0.001" class="input tnum" /></div>
-                            <div><label class="lbl">{{ t.clearance }}</label><input v-model.number="form.clearance_amount" type="number" min="0" step="0.001" class="input tnum" /></div>
-                            <div><label class="lbl">{{ t.insurance }}</label><input v-model.number="form.insurance_amount" type="number" min="0" step="0.001" class="input tnum" /></div>
-                            <div><label class="lbl">{{ t.other }}</label><input v-model.number="form.other_charges_amount" type="number" min="0" step="0.001" class="input tnum" /></div>
+                            <div><label class="lbl">{{ t.freight }}</label><input v-model.number="form.freight_amount" type="number" min="0" step="any" class="input tnum" /></div>
+                            <div><label class="lbl">{{ t.customs }}</label><input v-model.number="form.customs_amount" type="number" min="0" step="any" class="input tnum" /></div>
+                            <div><label class="lbl">{{ t.clearance }}</label><input v-model.number="form.clearance_amount" type="number" min="0" step="any" class="input tnum" /></div>
+                            <div><label class="lbl">{{ t.insurance }}</label><input v-model.number="form.insurance_amount" type="number" min="0" step="any" class="input tnum" /></div>
+                            <div><label class="lbl">{{ t.other }}</label><input v-model.number="form.other_charges_amount" type="number" min="0" step="any" class="input tnum" /></div>
                         </div>
                         <div class="hint">{{ t.landedNote }}</div>
                     </div>

@@ -26,7 +26,7 @@ class DailyReconciliationController extends Controller
     protected function authorizeAccess(Request $request): void
     {
         $u = $request->user();
-        if (! $u || ! $u->hasRole(['admin', 'super_admin', 'clinic_admin', 'accountant'])) {
+        if (! $u || ! $u->can('view_daily_reconciliation')) {
             abort(403, 'Not authorized to view the reconciliation report.');
         }
     }

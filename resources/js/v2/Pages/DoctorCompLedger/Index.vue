@@ -1,11 +1,12 @@
 <script setup>
-import { computed, reactive } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { Head, Link, router, usePage } from '@inertiajs/vue3'
 import AppLayout from '../../Layouts/AppLayout.vue'
 defineOptions({ layout: AppLayout })
 import Icon from '../../Components/Icon.vue'
 import SearchableSelect from '../../Components/SearchableSelect.vue'
 import DateTimePicker from '../../Components/DateTimePicker.vue'
+import { formatMoney as fmt } from '../../lib/money.js'
 
 const props = defineProps({
     filters: Object,
@@ -24,14 +25,16 @@ const t = computed(() => isRtl.value ? {
     doctorAll: 'كل الأطباء', clear: 'مسح', from: 'من', until: 'إلى',
     col: { id: '#', visit: 'الزيارة', doctor: 'الطبيب', type: 'النوع', basis: 'الأساس', fees: 'الأتعاب', profit: 'الربح', cut: 'حصة الطبيب', when: 'التاريخ' },
     empty: 'لا توجد سجلات', showing: 'عرض', of: 'من',
-    stats: { total: 'السجلات', cut: 'إجمالي حصص الأطباء' },
+    stats: { total: 'السجلات', cut: 'إجمالي حصص الأطباء', fees: 'إجمالي الأتعاب', profit: 'إجمالي الربح' },
+    searchPh: 'بحث في الطبيب أو الزيارة أو النوع…', noMatch: 'لا توجد نتائج مطابقة', filteredTotal: 'الإجمالي المُصفّى',
 } : {
     title: 'Doctor Earnings', eyebrow: 'HR',
     desc: 'Per-visit doctor earnings snapshots — captured when each visit completes.',
     doctorAll: 'All doctors', clear: 'Clear', from: 'From', until: 'Until',
     col: { id: '#', visit: 'Visit', doctor: 'Doctor', type: 'Type', basis: 'Basis', fees: 'Fees', profit: 'Profit', cut: 'Doctor cut', when: 'Date' },
     empty: 'No records', showing: 'Showing', of: 'of',
-    stats: { total: 'Records', cut: 'Total doctor cut' },
+    stats: { total: 'Records', cut: 'Total doctor cut', fees: 'Total fees', profit: 'Total profit' },
+    searchPh: 'Search doctor, visit, or type…', noMatch: 'No matching rows', filteredTotal: 'Filtered total',
 })
 
 const f = reactive({ doctor_id: props.filters.doctor_id || '', from: props.filters.from || '', until: props.filters.until || '' })
@@ -42,8 +45,16 @@ function apply() {
 }
 function clearFilters() { f.doctor_id = ''; f.from = ''; f.until = ''; apply() }
 
-const fmt = (n) => Number(n ?? 0).toFixed(3)
 const badge = (v) => v ? 'badge' : 'badge-muted'
+
+// Client-side row search across the visible page (doctor / visit / type).
+const rowSearch = ref('')
+const visibleRows = computed(() => {
+    const q = rowSearch.value.trim().toLowerCase()
+    if (!q) return props.page.data
+    return props.page.data.filter((r) => [r.doctor_name, r.visit_label, r.type_snapshot, r.basis_snapshot]
+        .some((v) => v && String(v).toLowerCase().includes(q)))
+})
 </script>
 
 <template>
@@ -60,6 +71,8 @@ const badge = (v) => v ? 'badge' : 'badge-muted'
 
             <div style="display:flex; gap:8px; margin-bottom:16px;">
                 <div class="stat-chip"><span class="stat-chip-num">{{ counts.total }}</span><span class="stat-chip-lbl">{{ t.stats.total }}</span></div>
+                <div class="stat-chip"><span class="stat-chip-num kwd">{{ fmt(counts.fees_sum) }}</span><span class="stat-chip-lbl">{{ t.stats.fees }}</span></div>
+                <div class="stat-chip"><span class="stat-chip-num kwd">{{ fmt(counts.profit_sum) }}</span><span class="stat-chip-lbl">{{ t.stats.profit }}</span></div>
                 <div class="stat-chip"><span class="stat-chip-num kwd" style="color:var(--ok);">{{ fmt(counts.doctor_cut_sum) }}</span><span class="stat-chip-lbl">{{ t.stats.cut }}</span></div>
             </div>
 
@@ -70,6 +83,10 @@ const badge = (v) => v ? 'badge' : 'badge-muted'
                 <label style="font-size:12px; color:var(--fg-faint);">{{ t.until }}</label>
                 <DateTimePicker v-model="f.until" :with-time="false" :width="160" :locale="locale" @update:model-value="apply" />
                 <button v-if="f.doctor_id || f.from || f.until" class="btn btn-ghost btn-sm" @click="clearFilters">{{ t.clear }}</button>
+                <div style="position:relative; flex:1; min-width:200px;">
+                    <Icon name="search" :size="14" style="position:absolute; inset-inline-start:10px; top:50%; transform:translateY(-50%); color:var(--fg-faint);" />
+                    <input v-model="rowSearch" type="search" :placeholder="t.searchPh" class="input" style="padding-inline-start:32px;" />
+                </div>
             </div>
 
             <div class="card" style="overflow:hidden;">
@@ -94,7 +111,7 @@ const badge = (v) => v ? 'badge' : 'badge-muted'
                                 <div style="font-weight:600;">{{ t.empty }}</div>
                             </td>
                         </tr>
-                        <tr v-for="row in page.data" :key="row.id">
+                        <tr v-for="row in visibleRows" :key="row.id">
                             <td class="mono">{{ row.id }}</td>
                             <td class="mono">{{ row.visit_label }}</td>
                             <td style="font-weight:600;">{{ row.doctor_name }}</td>
@@ -105,7 +122,19 @@ const badge = (v) => v ? 'badge' : 'badge-muted'
                             <td class="mono" style="text-align:end; font-weight:700;">{{ fmt(row.doctor_cut_amount) }}</td>
                             <td style="font-size:12px; color:var(--fg-subtle); white-space:nowrap;">{{ row.created_at ? String(row.created_at).slice(0, 10) : '—' }}</td>
                         </tr>
+                        <tr v-if="page.data.length && !visibleRows.length">
+                            <td colspan="9" style="text-align:center; padding:32px; color:var(--fg-faint);">{{ t.noMatch }}</td>
+                        </tr>
                     </tbody>
+                    <tfoot v-if="page.data.length">
+                        <tr class="total-row">
+                            <td colspan="5" style="text-transform:uppercase; font-size:11px; letter-spacing:0.04em; color:var(--fg-subtle); font-weight:700;">{{ t.filteredTotal }}</td>
+                            <td class="mono" style="text-align:end; font-weight:700;">{{ fmt(counts.fees_sum) }}</td>
+                            <td class="mono" style="text-align:end; font-weight:700;">{{ fmt(counts.profit_sum) }}</td>
+                            <td class="mono" style="text-align:end; font-weight:700; color:var(--ok);">{{ fmt(counts.doctor_cut_sum) }}</td>
+                            <td></td>
+                        </tr>
+                    </tfoot>
                 </table>
             </div>
 
@@ -117,3 +146,8 @@ const badge = (v) => v ? 'badge' : 'badge-muted'
             </div>
         </div>
 </template>
+
+<style scoped>
+.table th { position: sticky; top: 0; background: var(--card, var(--bg)); z-index: 1; }
+.total-row td { padding:12px; border-top:2px solid var(--line); border-bottom:none; background:var(--bg-hover); }
+</style>

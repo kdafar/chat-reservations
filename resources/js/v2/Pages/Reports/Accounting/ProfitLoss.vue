@@ -29,7 +29,7 @@ const f = reactive({ from: props.filters.from, to: props.filters.to })
 function apply() {
     router.get(route('v2.reports.accounting.profit-loss'), { from: f.from, to: f.to }, { preserveState: true, preserveScroll: true, replace: true })
 }
-const fmt = (n) => Number(n ?? 0).toFixed(3)
+const fmt = (n) => Number(n ?? 0).toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 })
 const amount = (r) => r.is_parent ? r.rollup : r.own
 </script>
 

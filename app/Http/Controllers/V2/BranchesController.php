@@ -26,7 +26,7 @@ class BranchesController extends Controller
     protected function authorizeAccess(Request $request): void
     {
         $u = $request->user();
-        if (! $u || ! $u->hasRole(['admin', 'super_admin'])) {
+        if (! $u || ! $u->can('view_any_branch')) {
             abort(403, 'Only admins can manage branches.');
         }
     }

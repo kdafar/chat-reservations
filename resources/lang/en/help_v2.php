@@ -938,6 +938,101 @@ return [
         ['q' => 'How do I export a target list?', 'a' => 'Apply the filters you want (min bookings, date range), then click "Export Excel" to get the matching contacts as a spreadsheet.'],
     ]],
 ],
+'stock-transfers' => [
+    'what' => ['heading' => 'What is this?', 'body' => 'Move stock between your clinic\'s branches. The central hub branch dispatches items to a branch that is short — each transfer reduces the hub\'s on-hand and increases the receiving branch\'s, with a stock movement recorded at both ends. Transfers are inventory moves only; they do not post to the accounting books.'],
+    'how' => ['heading' => 'How to use it', 'items' => [
+        'Click "New transfer", choose the source branch (defaults to the hub) and the destination branch, then use "Add" to add each item with the quantity to move.',
+        'Click "Create transfer" to save it as Pending — nothing has moved yet.',
+        'A user with dispatch rights clicks "Dispatch" on a pending row to commit the move: stock leaves the source and arrives at the destination.',
+        'Click "Cancel" to drop a pending transfer you no longer need.',
+        'Use the "All / Pending / Dispatched / Cancelled" tabs to filter the list.',
+    ]],
+    'faq' => ['heading' => 'Common questions', 'items' => [
+        ['q' => 'Why does it say "No hub set for this clinic"?', 'a' => 'A transfer needs a designated hub branch to dispatch from. Open a branch in its settings and mark it as the hub; until then the "New transfer" button is limited.'],
+        ['q' => 'When does stock actually move?', 'a' => 'Only on "Dispatch". Creating a transfer leaves it Pending and does not change any on-hand quantity; dispatching writes the stock movements that decrement the source and increment the destination.'],
+        ['q' => 'Does a transfer affect the accounting books?', 'a' => 'No. Moving stock between your own branches does not change the total inventory value, so transfers are GL-neutral — no journal entry is posted.'],
+        ['q' => 'Can I send more than a branch has on hand?', 'a' => 'No — the quantity available at the source limits what you can dispatch; the item picker shows the hub on-hand for each item.'],
+    ]],
+],
+'payroll-runs' => [
+    'what' => ['heading' => 'What is this?', 'body' => 'Monthly payroll. A run gathers every active staff member into one batch of payslips — basic salary, allowances, doctor commission, and deductions for loans and unpaid leave — then posts the salary cost to the accounting books and disburses the net pay.'],
+    'how' => ['heading' => 'How to use it', 'items' => [
+        'Click "New payroll run", pick the year, month and (optionally) a branch and pay date, then "Create". Payslips are generated automatically from the active salary profiles.',
+        'Open the run to review each payslip. Click "Regenerate" to rebuild them after changing a salary profile, loan or leave record while the run is still a draft.',
+        'Click "Approve & post" to lock the run and post the salary accrual to the ledger (Dr Payroll expense / Cr Payables).',
+        'Click "Mark paid", choose the bank or cash account to pay from, and confirm — this posts the disbursement (Dr Payables / Cr Cash) and settles doctor commission and withheld loan installments.',
+        'Use "Delete draft" to remove a run that has not been approved, or "Export Excel" to download the payslips.',
+    ]],
+    'faq' => ['heading' => 'Common questions', 'items' => [
+        ['q' => 'Where do the payslip amounts come from?', 'a' => 'From each staff member\'s salary profile (basic + allowances − recurring deductions), plus any doctor commission earned, minus the loan installment due and any unpaid-leave deduction for the period.'],
+        ['q' => 'Can I edit a payslip after approving?', 'a' => 'No — approving locks the run and posts it to the books. Make corrections while it is still a draft, regenerate, then approve.'],
+        ['q' => 'How are doctor commissions handled?', 'a' => 'Commission a doctor has already earned is included in their payslip and settled against the doctor compensation ledger when the run is marked paid, so it is not expensed twice.'],
+        ['q' => 'What does marking paid actually do?', 'a' => 'It posts the cash disbursement, records the loan repayments withheld this run against each staff loan, and stamps the run as paid on the chosen date.'],
+    ]],
+],
+'salary-profiles' => [
+    'what' => ['heading' => 'What is this?', 'body' => 'Each staff member\'s monthly salary structure — basic salary, recurring allowances and deductions, annual leave entitlement, and the hire/termination dates that drive payroll and end-of-service gratuity. Payroll runs read these profiles to build payslips.'],
+    'how' => ['heading' => 'How to use it', 'items' => [
+        'Click "Add profile", pick the staff member, set the "Basic salary" and "Annual leave days", and add any "Allowances" and "Deductions" as labelled lines; the gross monthly total updates live.',
+        'Optionally set the "Hire date" (used for gratuity) and a branch; tick "Active" for staff currently on payroll.',
+        'Click a row\'s edit icon to amend a profile, or the trash icon to remove it.',
+        'Use the search box and the "All / Active / Inactive" filter to find profiles.',
+        'Use "Export Excel" to download the list, or "Import" to bulk-load profiles from a spreadsheet during onboarding.',
+    ]],
+    'faq' => ['heading' => 'Common questions', 'items' => [
+        ['q' => 'Can one staff member have two profiles?', 'a' => 'No — there is one salary profile per person. Importing again updates the existing profile rather than creating a duplicate.'],
+        ['q' => 'How do allowances and deductions work?', 'a' => 'Each is a labelled recurring amount (e.g. Housing, Transport). The gross monthly figure is basic + allowances; recurring deductions are taken in each payroll run.'],
+        ['q' => 'How do I bulk-load salaries when setting up?', 'a' => 'Click "Import", download the template, fill the Data sheet (staff by email, basic salary, allowances as "Label:amount" pairs), then upload and Preview before confirming.'],
+        ['q' => 'What is the hire date used for?', 'a' => 'It sets the start of service, which the End of Service page uses to compute Kuwait-law gratuity.'],
+    ]],
+],
+'staff-loans' => [
+    'what' => ['heading' => 'What is this?', 'body' => 'Staff loans and salary advances, repaid by withholding an installment from each payroll run. Approving a loan disburses it and posts to the accounting books; the outstanding balance falls as payroll withholds repayments until it is settled.'],
+    'how' => ['heading' => 'How to use it', 'items' => [
+        'Click "New loan", pick the staff member, choose "Loan" or "Advance", and enter the "Principal amount", the "Installment amount" to withhold each run, and the issue date. It is saved as Pending.',
+        'Click "Approve" to disburse the loan — this pays it out and posts Dr Loans Receivable / Cr Cash. Only pending loans can be edited.',
+        'Each payroll run automatically withholds the installment and reduces the outstanding balance; the loan auto-settles when it reaches zero.',
+        'Use "Cancel" for a loan that should not proceed, or "Export Excel" / "Import" to download or bulk-load loans.',
+        'Filter with the search box and the type and status selectors.',
+    ]],
+    'faq' => ['heading' => 'Common questions', 'items' => [
+        ['q' => 'When is the loan actually paid out and booked?', 'a' => 'On "Approve" — that posts the disbursement (Dr Loans Receivable / Cr Cash or Bank) and activates the loan. A pending loan has not been paid out.'],
+        ['q' => 'How is a loan repaid?', 'a' => 'Each payroll run withholds the installment from the staff member\'s net pay and records it against the loan, lowering the outstanding balance until it is fully settled.'],
+        ['q' => 'Can I delete a disbursed loan?', 'a' => 'No — once it has posted to the books it is kept for the audit trail. Cancel it instead, or let it settle through repayments.'],
+        ['q' => 'How do I load existing loans from another system?', 'a' => 'Use "Import" — imported loans come in as opening balances with their current outstanding amount and do not post a disbursement entry, so they don\'t double-count the ledger.'],
+    ]],
+],
+'leave-balances' => [
+    'what' => ['heading' => 'What is this?', 'body' => 'Annual leave balances per staff member per year. The balance is entitled days + days carried over from last year − days already used (approved leave), so it always reflects what each person has left. "Used" is computed live from approved leave and is never entered here.'],
+    'how' => ['heading' => 'How to use it', 'items' => [
+        'Pick the year at the top; the table shows each staff member\'s entitled, carried-over, used, pending and remaining days.',
+        'Click the edit action on a row to set that person\'s "Entitled days" and any "Carried-over days" for the year.',
+        'Click "Seed year from profiles" to create default entitlements for everyone who does not yet have one, using the annual-leave days from their salary profile.',
+        'Use the search box to find a staff member, and "Import" to bulk-load entitlements for a year.',
+    ]],
+    'faq' => ['heading' => 'Common questions', 'items' => [
+        ['q' => 'Why can\'t I edit the "Used" days?', 'a' => 'Used days are calculated live from approved leave requests on the Leaves page, so the balance can never drift out of sync — you only set the entitlement.'],
+        ['q' => 'What does "Seed year from profiles" do?', 'a' => 'For every active staff member without an entitlement for the chosen year, it creates one using the annual-leave days set on their salary profile. It never overwrites an entitlement you have already set.'],
+        ['q' => 'What are carried-over days?', 'a' => 'Unused balance brought forward from the previous year; it is added to this year\'s entitlement when computing the remaining days.'],
+        ['q' => 'How do "pending" days differ from "used"?', 'a' => 'Pending days are requested but not yet approved leave; they are shown for awareness but only approved leave counts as used against the balance.'],
+    ]],
+],
+'settlements' => [
+    'what' => ['heading' => 'What is this?', 'body' => 'End-of-service settlements. When a staff member leaves, this computes their Kuwait-law gratuity from years of service, adds any leave encashment, subtracts outstanding loans, and posts the final settlement to the accounting books.'],
+    'how' => ['heading' => 'How to use it', 'items' => [
+        'Click "New settlement", pick the staff member and their "Last working day", and choose the reason for leaving — "Termination / non-renewal" (full gratuity) or "Resignation" (reduced).',
+        'The form shows a live preview: years of service, gratuity, leave encashment, outstanding-loan clawback and the net settlement. Adjust "Other additions" or "Other deductions" if needed, then "Save draft".',
+        'Click "Approve" to post the settlement to the ledger and clear the staff member\'s outstanding loans.',
+        'Click "Pay" to disburse the net amount; use "Edit" or "Delete" on drafts.',
+        'Filter with the "All / Draft / Approved / Paid" tabs.',
+    ]],
+    'faq' => ['heading' => 'Common questions', 'items' => [
+        ['q' => 'How is the gratuity calculated?', 'a' => 'From the staff member\'s years of service (hire date to last working day) and basic salary, following Kuwait labour-law rates. Resignation applies the reduced scale; termination or non-renewal gives the full entitlement.'],
+        ['q' => 'Why does it say the staff member has no salary profile?', 'a' => 'Gratuity needs a basic salary and hire date. Add a salary profile for the person first, then create the settlement.'],
+        ['q' => 'What is the loan clawback?', 'a' => 'Any outstanding staff loan balance is deducted from the settlement, and approving the settlement clears those loans so nothing is left owing.'],
+        ['q' => 'What does approving post to the books?', 'a' => 'It accrues the end-of-service expense and settles the staff member\'s loans; marking it paid then disburses the net amount from the chosen account.'],
+    ]],
+],
 'visit-console' => [
     'what' => ['heading' => 'What is this?', 'body' => 'The visit console is where a single patient visit is worked end to end — clinical notes, the services and items billed, payments, and moving the visit through its lifecycle to completion. It is the screen the doctor and reception share for one visit.'],
     'how' => ['heading' => 'How to use it', 'items' => [

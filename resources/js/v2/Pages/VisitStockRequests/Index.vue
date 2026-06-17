@@ -20,6 +20,7 @@ const isRtl = computed(() => locale.value === 'ar')
 const t = computed(() => isRtl.value ? {
     title: 'طلبات صرف المخزون', eyebrow: 'الصيدلية والمخزون',
     desc: 'طلبات الأصناف المرفوعة من شاشة الزيارة، مقارنةً بالمخزون الحالي للفرع.',
+    searchPh: 'ابحث باسم المريض أو رقم الزيارة أو الصنف…', allItems: 'كل الأصناف', itemPh: 'تصفية حسب الصنف…', clear: 'مسح', noMatch: 'لا نتائج مطابقة للبحث.',
     status: { pending: 'معلّقة', fulfilled: 'بانتظار الاستلام', received: 'تم الاستلام', cancelled: 'ملغاة' },
     visit: 'الزيارة', branch: 'الفرع', by: 'بواسطة', items: 'الأصناف',
     available: 'متوفر', short: 'ناقص!', ok: 'متوفر', recv: 'مستلم',
@@ -37,6 +38,7 @@ const t = computed(() => isRtl.value ? {
 } : {
     title: 'Visit Stock Requests', eyebrow: 'Pharmacy & Stock',
     desc: 'Item requests raised from the visit console, checked against live branch stock.',
+    searchPh: 'Search patient, visit code or item…', allItems: 'All items', itemPh: 'Filter by item…', clear: 'Clear', noMatch: 'No requests match your search.',
     status: { pending: 'Pending', fulfilled: 'Awaiting receipt', received: 'Received', cancelled: 'Cancelled' },
     visit: 'Visit', branch: 'Branch', by: 'by', items: 'Items',
     available: 'avail', short: 'short!', ok: 'ok', recv: 'recv',
@@ -58,6 +60,28 @@ function setStatus(s) {
     status.value = s
     router.get(route('v2.visit-stock-requests.index'), { status: s }, { preserveState: true, preserveScroll: true, replace: true })
 }
+
+// Client-side quick filters over the rows already loaded for this status —
+// instant, no round-trip. Search matches patient / visit code / branch / item;
+// the dropdown narrows to requests that include a chosen item.
+const q = ref('')
+const itemFilter = ref(null)
+const itemOptions = computed(() => {
+    const names = new Set()
+    props.rows.forEach((r) => (r.lines || []).forEach((l) => l.name && names.add(l.name)))
+    return [...names].sort((a, b) => a.localeCompare(b)).map((n) => ({ value: n, label: n }))
+})
+const filteredRows = computed(() => {
+    const term = q.value.trim().toLowerCase()
+    return props.rows.filter((r) => {
+        if (itemFilter.value && !(r.lines || []).some((l) => l.name === itemFilter.value)) return false
+        if (!term) return true
+        const hay = [r.patient_name, r.visit_code, r.branch, r.requested_by, ...(r.lines || []).map((l) => l.name)]
+            .filter(Boolean).join(' ').toLowerCase()
+        return hay.includes(term)
+    })
+})
+function clearFilters() { q.value = ''; itemFilter.value = null }
 
 // Fulfil modal
 const fulfilOpen = ref(false)
@@ -139,16 +163,22 @@ const isPackageRemoved = (row) => row.status === 'cancelled'
             <h1 style="margin:4px 0 0; font-size:22px; font-weight:700; color:var(--fg);">{{ t.title }}</h1>
             <p style="margin:6px 0 0; font-size:13px; color:var(--fg-subtle); max-width:640px;">{{ t.desc }}</p>
         </div>
-            <a class="btn btn-sm btn-outline" :href="route('v2.visit-stock-requests.export', { ...f })"><Icon name="download" :size="13" /><span>{{ isRtl ? 'تصدير Excel' : 'Export Excel' }}</span></a>
+            <a class="btn btn-sm btn-outline" :href="route('v2.visit-stock-requests.export', { status })"><Icon name="download" :size="13" /><span>{{ isRtl ? 'تصدير Excel' : 'Export Excel' }}</span></a>
         </div>
 
-        <div class="card" style="padding:12px; margin-bottom:16px; display:flex; gap:8px; align-items:center;">
+        <div class="card" style="padding:12px; margin-bottom:16px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
             <div class="seg seg-sm">
                 <button :class="status === 'pending' ? 'is-active' : ''" @click="setStatus('pending')">{{ t.status.pending }} · {{ counts.pending }}</button>
                 <button :class="status === 'fulfilled' ? 'is-active' : ''" @click="setStatus('fulfilled')">{{ t.status.fulfilled }} · {{ counts.fulfilled }}</button>
                 <button :class="status === 'received' ? 'is-active' : ''" @click="setStatus('received')">{{ t.status.received }} · {{ counts.received }}</button>
                 <button :class="status === 'cancelled' ? 'is-active' : ''" @click="setStatus('cancelled')">{{ t.status.cancelled }} · {{ counts.cancelled }}</button>
             </div>
+            <div style="position:relative; flex:1; min-width:200px;">
+                <Icon name="search" :size="14" style="position:absolute; inset-inline-start:10px; top:50%; transform:translateY(-50%); color:var(--fg-faint);" />
+                <input v-model="q" type="search" :placeholder="t.searchPh" class="input" style="padding-inline-start:32px;" />
+            </div>
+            <SearchableSelect v-if="itemOptions.length" v-model="itemFilter" :items="itemOptions" :nullable="true" :null-label="t.allItems" :placeholder="t.allItems" :search-placeholder="t.itemPh" :width="220" />
+            <button v-if="q || itemFilter" class="btn btn-ghost btn-sm" @click="clearFilters">{{ t.clear }}</button>
         </div>
 
         <div v-if="!rows.length" class="card" style="padding:48px 12px; text-align:center; color:var(--fg-faint);">
@@ -156,8 +186,12 @@ const isPackageRemoved = (row) => row.status === 'cancelled'
             <div style="font-weight:600;">{{ t.empty }}</div>
             <div style="font-size:12px; margin-top:4px;">{{ t.emptyDesc }}</div>
         </div>
+        <div v-else-if="!filteredRows.length" class="card" style="padding:48px 12px; text-align:center; color:var(--fg-faint);">
+            <Icon name="search" :size="32" style="margin-bottom:8px; opacity:0.4;" />
+            <div style="font-weight:600;">{{ t.noMatch }}</div>
+        </div>
 
-        <div v-for="row in rows" :key="row.id" class="card" style="padding:14px 16px; margin-bottom:12px;">
+        <div v-for="row in filteredRows" :key="row.id" class="card" style="padding:14px 16px; margin-bottom:12px;">
             <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin-bottom:10px;">
                 <div>
                     <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
@@ -210,7 +244,7 @@ const isPackageRemoved = (row) => row.status === 'cancelled'
                     <div v-for="l in receiveLines" :key="l.line_id" style="display:flex; align-items:center; gap:10px;">
                         <span style="flex:1; font-size:13px;">{{ l.name }}</span>
                         <span class="mono" style="font-size:11.5px; color:var(--fg-faint);">{{ fmt(l.issued) }} {{ t.receiveModal.issued }}</span>
-                        <input v-model.number="l.qty" type="number" step="0.0001" min="0" :max="l.issued" class="input mono" style="width:96px; text-align:right;" />
+                        <input v-model.number="l.qty" type="number" step="any" min="0" :max="l.issued" class="input mono" style="width:96px; text-align:right;" />
                     </div>
                 </div>
                 <div>

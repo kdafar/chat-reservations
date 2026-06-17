@@ -9,7 +9,6 @@ use App\Models\Accounting\BankStatementLine;
 use App\Models\Accounting\JournalEntry;
 use App\Models\Accounting\JournalEntryLine;
 use App\Services\Accounting\BankReconciliationService;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -35,11 +34,6 @@ class BankReconciliationController extends Controller
     protected function canEdit(Request $request): bool
     {
         return (bool) $request->user()?->can('update_accounting_bank_reconciliations');
-    }
-
-    protected function isAdmin(Request $request): bool
-    {
-        return (bool) $request->user()?->hasRole(['admin', 'super_admin']);
     }
 
     public function index(Request $request): Response
@@ -68,22 +62,33 @@ class BankReconciliationController extends Controller
                 'in_progress' => BankReconciliation::query()->where('status', 'in_progress')->count(),
             ],
             'can_edit' => $this->canEdit($request),
-            'is_admin' => $this->isAdmin($request),
         ]);
     }
 
-    public function show(Request $request, BankReconciliation $bankReconciliation): JsonResponse
+    /** Dedicated "new reconciliation" page (replaces the old create modal). */
+    public function create(Request $request): Response
+    {
+        $this->authorizeAccess($request);
+        abort_unless((bool) $request->user()->can('create_accounting_bank_reconciliations'), 403);
+
+        return Inertia::render('BankReconciliation/Form', [
+            'accounts' => $this->bankAccountOptions(),
+        ]);
+    }
+
+    /** Dedicated reconciliation workspace page (replaces the old slide-over drawer). */
+    public function show(Request $request, BankReconciliation $bankReconciliation): Response
     {
         $this->authorizeAccess($request);
         $rec = $bankReconciliation;
         $rec->load(['account:id,code,name', 'statementLines.matchedLine.entry:id,code', 'completedBy:id,name']);
 
-        return response()->json([
+        return Inertia::render('BankReconciliation/Show', [
             'rec' => $rec,
             'diff' => round((float) $rec->closing_balance - (float) $rec->book_closing_balance, 3),
             'matchable' => $this->matchableJournalLines($rec),
             'editable' => $rec->status === BankReconciliation::STATUS_IN_PROGRESS,
-            'can' => ['edit' => $this->canEdit($request), 'admin' => $this->isAdmin($request)],
+            'can' => ['edit' => $this->canEdit($request)],
         ]);
     }
 
@@ -104,7 +109,8 @@ class BankReconciliationController extends Controller
             (int) $data['account_id'], $data['period_start'], $data['period_end'],
             (float) $data['opening_balance'], (float) $data['closing_balance'],
         );
-        return back()->with('flash', ['type' => 'success', 'message' => 'Reconciliation created.']);
+        return redirect()->route('v2.accounting.bank-rec.index')
+            ->with('flash', ['type' => 'success', 'message' => 'Reconciliation created.']);
     }
 
     public function update(Request $request, BankReconciliation $bankReconciliation): RedirectResponse
@@ -139,7 +145,7 @@ class BankReconciliationController extends Controller
     public function complete(Request $request, BankReconciliation $bankReconciliation): RedirectResponse
     {
         $this->authorizeAccess($request);
-        if (! $this->isAdmin($request)) abort(403);
+        if (! $this->canEdit($request)) abort(403);
         if ($bankReconciliation->status !== BankReconciliation::STATUS_IN_PROGRESS) {
             return back()->with('flash', ['type' => 'error', 'message' => 'Already completed.']);
         }
@@ -154,7 +160,7 @@ class BankReconciliationController extends Controller
     public function reopen(Request $request, BankReconciliation $bankReconciliation): RedirectResponse
     {
         $this->authorizeAccess($request);
-        if (! $this->isAdmin($request)) abort(403);
+        if (! $this->canEdit($request)) abort(403);
         if ($bankReconciliation->status !== BankReconciliation::STATUS_COMPLETED) {
             return back()->with('flash', ['type' => 'error', 'message' => 'Only completed reconciliations can be reopened.']);
         }
@@ -253,7 +259,7 @@ class BankReconciliationController extends Controller
     {
         return Account::query()
             ->where('type', Account::TYPE_ASSET)
-            ->where(fn ($q) => $q->where('code', 'like', '1010%')->orWhere('code', 'like', '1020%'))
+            ->where(fn ($q) => $q->where('code', 'like', '1110%')->orWhere('code', 'like', '1120%')->orWhere('code', 'like', '1130%'))
             ->where('is_active', true)->orderBy('code')->get(['id', 'code', 'name'])
             ->map(fn ($a) => ['id' => $a->id, 'label' => "{$a->code} — {$a->name}"])->all();
     }

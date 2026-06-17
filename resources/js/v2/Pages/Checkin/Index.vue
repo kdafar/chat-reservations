@@ -5,6 +5,7 @@ import AppLayout from '../../Layouts/AppLayout.vue'
 defineOptions({ layout: AppLayout })
 import Icon from '../../Components/Icon.vue'
 import { pushToast } from '../../Composables/useNotificationState.js'
+import { formatMoney as fmtMoney } from '../../lib/money.js'
 
 const page = usePage()
 const locale = computed(() => page.props.locale ?? 'en')
@@ -110,6 +111,10 @@ const step = ref(1) // 1 = find, 2 = fee, 3 = room
 const q = ref('')
 const matches = ref([])
 const searching = ref(false)
+// Distinguishes "haven't searched yet / first request in flight" from a
+// genuinely empty result. Without this the page flashes the "no matching
+// bookings" empty state on mount before runSearch resolves.
+const hasSearched = ref(false)
 let searchDebounce
 
 const booking = ref(null)
@@ -229,6 +234,7 @@ async function runSearch() {
         }
     } finally {
         searching.value = false
+        hasSearched.value = true
     }
 }
 
@@ -350,6 +356,7 @@ function startOver() {
     onlineAvailable.value = false
     resetLink()
     success.value = null
+    hasSearched.value = false
     nextTick(runSearch)
 }
 
@@ -357,7 +364,6 @@ function fmtTime(timeStr) {
     if (!timeStr) return ''
     return timeStr.substring(0, 5)
 }
-function fmtMoney(n) { return (Number(n) || 0).toFixed(3) }
 </script>
 
 <template>
@@ -433,12 +439,20 @@ function fmtMoney(n) { return (Number(n) || 0).toFixed(3) }
                     <Icon v-if="searching" name="loader" :size="14" :style="{ color: 'var(--fg-subtle)' }" />
                 </div>
 
-                <div v-if="matches.length === 0 && !searching" style="padding: 40px 24px; text-align: center;">
+                <!-- (a) initial / not-yet-searched or first request in flight -->
+                <div v-if="!hasSearched || (searching && matches.length === 0)" style="padding: 40px 24px; text-align: center; color: var(--fg-subtle);">
+                    <Icon name="loader" :size="22" />
+                    <div style="font-size: 13px; margin-top: 8px;">{{ t.loading }}</div>
+                </div>
+
+                <!-- (c) searched and genuinely empty -->
+                <div v-else-if="hasSearched && !searching && matches.length === 0" style="padding: 40px 24px; text-align: center;">
                     <div class="empty-illo" style="margin-bottom: 12px;"><Icon name="calendar-x" :size="24" /></div>
                     <div style="font-weight: 500; font-size: 14px;">{{ t.emptyMatchTitle }}</div>
                     <div style="font-size: 12.5px; color: var(--fg-muted); max-width: 360px; margin: 4px auto 0;">{{ t.emptyMatchDesc }}</div>
                 </div>
 
+                <!-- (b) searched with results -->
                 <div v-else>
                     <button
                         v-for="b in matches"

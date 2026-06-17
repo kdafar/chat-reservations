@@ -7,6 +7,7 @@ defineOptions({ layout: AppLayout })
 import Icon from '../../Components/Icon.vue'
 import ImportButton from '../../Components/ImportButton.vue'
 import SearchableSelect from '../../Components/SearchableSelect.vue'
+import { formatMoney as fmt } from '../../lib/money.js'
 
 const props = defineProps({
     filters: Object,
@@ -31,7 +32,7 @@ const t = computed(() => isRtl.value ? {
     activeAll: 'الكل', active: 'فعّال', inactive: 'غير فعّال',
     col: { name: 'الاسم', branch: 'الفرع', type: 'النوع', stockable: 'قابل للتخزين', cost: 'التكلفة', price: 'السعر', status: 'الحالة' },
     empty: 'لا توجد أصناف', showing: 'عرض', of: 'من',
-    modal: { createTitle: 'صنف جديد', editTitle: 'تحرير الصنف', save: 'حفظ', cancel: 'إلغاء', deleteConfirm: 'حذف هذا الصنف؟', inventory: 'إعدادات المخزون' },
+    modal: { createTitle: 'صنف جديد', editTitle: 'تحرير الصنف', save: 'حفظ', cancel: 'إلغاء', deleteConfirm: 'حذف هذا الصنف؟', inventory: 'إعدادات المخزون', delete: 'حذف' },
     fields: { branch: 'الفرع', type: 'النوع', name_en: 'الاسم (إنجليزي)', name_ar: 'الاسم (عربي)', is_active: 'فعّال', is_stockable: 'قابل للتخزين', stock_unit: 'وحدة التخزين', usage_unit: 'وحدة الاستهلاك', conversion_factor: 'معامل التحويل', consume_step: 'خطوة الاستهلاك', is_billable: 'قابل للفوترة', default_cost: 'التكلفة الافتراضية', default_price: 'السعر الافتراضي', global: '— عام (كل الفروع) —' },
     bom: { title: 'المستهلكات المستخدمة لكل خدمة', hint: 'أصناف تُخصم من المخزون في كل مرة تُؤدّى فيها هذه الخدمة.', add: 'إضافة مستهلك', item: 'الصنف', qty: 'الكمية (أساس)', optional: 'اختياري (لا يُخصم تلقائيًا)', empty: 'لا توجد مستهلكات بعد.', selectItem: '— اختر صنفًا —' },
     stats: { total: 'الكل', active: 'فعّال' },
@@ -43,7 +44,7 @@ const t = computed(() => isRtl.value ? {
     activeAll: 'All', active: 'Active', inactive: 'Inactive',
     col: { name: 'Name', branch: 'Branch', type: 'Type', stockable: 'Stockable', cost: 'Cost', price: 'Price', status: 'Status' },
     empty: 'No items', showing: 'Showing', of: 'of',
-    modal: { createTitle: 'New item', editTitle: 'Edit item', save: 'Save', cancel: 'Cancel', deleteConfirm: 'Delete this item?', inventory: 'Inventory settings' },
+    modal: { createTitle: 'New item', editTitle: 'Edit item', save: 'Save', cancel: 'Cancel', deleteConfirm: 'Delete this item?', inventory: 'Inventory settings', delete: 'Delete' },
     bom: { title: 'Consumables used per service', hint: 'Items deducted from stock each time this service is performed.', add: 'Add consumable', item: 'Item', qty: 'Qty (base)', optional: 'Optional (not auto-deducted)', empty: 'No consumables yet.', selectItem: '— Select an item —' },
     fields: { branch: 'Branch', type: 'Type', name_en: 'Name (English)', name_ar: 'Name (Arabic)', is_active: 'Active', is_stockable: 'Stockable', stock_unit: 'Stock unit', usage_unit: 'Usage unit', conversion_factor: 'Conversion factor', consume_step: 'Consume step', is_billable: 'Billable', default_cost: 'Default cost', default_price: 'Default price', global: '— Global (all branches) —' },
     stats: { total: 'Total', active: 'Active' },
@@ -109,8 +110,6 @@ function submit() {
 function destroy(row) {
     confirm({ body: t.value.modal.deleteConfirm, onConfirm: () => router.delete(route('v2.clinic-items.destroy', { clinicItem: row.id }), { preserveScroll: true }) })
 }
-const fmt = (n) => Number(n ?? 0).toFixed(3)
-
 // Deep-link from notifications: /admin/v2/clinic-items?open={id} opens that item.
 onMounted(() => { if (props.open_record) openEdit(props.open_record) })
 </script>
@@ -185,7 +184,7 @@ onMounted(() => { if (props.open_record) openEdit(props.open_record) })
                             <td class="mono" style="text-align:end;">{{ fmt(row.default_price) }}</td>
                             <td><span :class="row.is_active ? 'badge-ok' : 'badge-muted'">{{ row.is_active ? t.active : t.inactive }}</span></td>
                             <td @click.stop>
-                                <button v-if="can_edit" class="btn btn-ghost btn-sm btn-icon" @click="destroy(row)"><Icon name="trash-2" :size="14" /></button>
+                                <button v-if="can_edit" class="btn btn-ghost btn-sm btn-icon" :title="t.modal.delete" @click="destroy(row)"><Icon name="trash-2" :size="14" /></button>
                             </td>
                         </tr>
                     </tbody>
@@ -227,12 +226,12 @@ onMounted(() => { if (props.open_record) openEdit(props.open_record) })
                     </div>
                     <div>
                         <label class="label">{{ t.fields.default_cost }} (KWD) <span class="req">*</span></label>
-                        <input v-model.number="form.default_cost" type="number" step="0.001" min="0" class="input" required />
+                        <input v-model.number="form.default_cost" type="number" step="any" min="0" class="input" required />
                         <div v-if="errors.default_cost" class="err">{{ errors.default_cost }}</div>
                     </div>
                     <div>
                         <label class="label">{{ t.fields.default_price }} (KWD) <span class="req">*</span></label>
-                        <input v-model.number="form.default_price" type="number" step="0.001" min="0" class="input" required />
+                        <input v-model.number="form.default_price" type="number" step="any" min="0" class="input" required />
                         <div v-if="errors.default_price" class="err">{{ errors.default_price }}</div>
                     </div>
                     <div style="display:flex; align-items:center; gap:8px;">
@@ -262,12 +261,12 @@ onMounted(() => { if (props.open_record) openEdit(props.open_record) })
                         </div>
                         <div>
                             <label class="label">{{ t.fields.conversion_factor }}</label>
-                            <input v-model.number="form.conversion_factor" type="number" step="0.0001" min="0.0001" class="input" />
+                            <input v-model.number="form.conversion_factor" type="number" step="any" min="0.0001" class="input" />
                             <div v-if="errors.conversion_factor" class="err">{{ errors.conversion_factor }}</div>
                         </div>
                         <div>
                             <label class="label">{{ t.fields.consume_step }}</label>
-                            <input v-model.number="form.consume_step" type="number" step="0.0001" min="0.0001" class="input" />
+                            <input v-model.number="form.consume_step" type="number" step="any" min="0.0001" class="input" />
                         </div>
                     </template>
 
@@ -286,7 +285,7 @@ onMounted(() => { if (props.open_record) openEdit(props.open_record) })
 
                         <div v-for="(c, i) in form.components" :key="i" style="grid-column:span 2; display:flex; gap:8px; align-items:center;">
                             <SearchableSelect v-model="c.component_item_id" :items="componentItems" :nullable="false" :placeholder="t.bom.selectItem" :width="'100%'" style="flex:1; min-width:0;" />
-                            <input v-model.number="c.qty_base" type="number" step="0.0001" min="0.0001" class="input" style="width:110px;" :placeholder="t.bom.qty" />
+                            <input v-model.number="c.qty_base" type="number" step="any" min="0.0001" class="input" style="width:110px;" :placeholder="t.bom.qty" />
                             <label class="role-check" :title="t.bom.optional" style="padding:6px 8px; white-space:nowrap;"><input type="checkbox" v-model="c.is_optional" /><span style="font-size:11.5px;">{{ t.bom.optional }}</span></label>
                             <button type="button" class="btn btn-ghost btn-sm btn-icon" @click="removeComponent(i)"><Icon name="trash-2" :size="14" /></button>
                         </div>
@@ -300,3 +299,7 @@ onMounted(() => { if (props.open_record) openEdit(props.open_record) })
             </div>
         </div>
 </template>
+
+<style scoped>
+.table th { position: sticky; top: 0; background: var(--card, var(--bg)); z-index: 1; }
+</style>

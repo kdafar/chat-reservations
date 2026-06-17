@@ -31,8 +31,8 @@ class AccountingPeriodsController extends Controller
 
     protected function authorizeClose(Request $request): void
     {
-        if (! $request->user() || ! $request->user()->hasRole(['admin', 'super_admin'])) {
-            abort(403, 'Only admins can close or reopen periods.');
+        if (! $request->user() || ! $request->user()->can('update_accounting_periods')) {
+            abort(403, 'Not authorized to close or reopen periods.');
         }
     }
 
@@ -65,7 +65,7 @@ class AccountingPeriodsController extends Controller
             'filters' => $filters,
             'periods' => $periods,
             'years' => $years,
-            'canManage' => (bool) $request->user()?->hasRole(['admin', 'super_admin']),
+            'canManage' => (bool) $request->user()?->can('update_accounting_periods'),
             'counts' => [
                 'open' => AccountingPeriod::query()->where('status', AccountingPeriod::STATUS_OPEN)->count(),
                 'closed' => AccountingPeriod::query()->where('status', AccountingPeriod::STATUS_CLOSED)->count(),

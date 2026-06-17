@@ -11,6 +11,7 @@ import DateTimePicker from '../../Components/DateTimePicker.vue'
 import EChart from '../../Components/EChart.vue'
 import Delta from '../../Components/Delta.vue'
 import ReportSummary from '../../Components/ReportSummary.vue'
+import { formatMoney as fmt } from '../../lib/money.js'
 
 const props = defineProps({
     filters: Object, overview: Object, comparison: Object, payment_mix: Array,
@@ -44,7 +45,6 @@ function apply() {
     router.get(route('v2.reports.clinic'), { from: f.from, to: f.to, branch_id: f.branch_id || undefined, doctor_id: f.doctor_id || undefined },
         { preserveState: true, preserveScroll: true, replace: true })
 }
-const fmt = (n) => Number(n ?? 0).toFixed(3)
 
 // Bilingual labels for the ECharts toolbox (save image / data view / zoom / …).
 const cl = computed(() => isRtl.value

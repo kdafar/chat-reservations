@@ -12,6 +12,7 @@ import CheckinModal from '../../Components/CheckinModal.vue'
 import BulkBar from '../../Components/BulkBar.vue'
 import { useTableSelect } from '../../Composables/useTableSelect.js'
 import { pushToast } from '../../Composables/useNotificationState.js'
+import { formatMoney as fmtMoney } from '../../lib/money.js'
 
 const props = defineProps({
     filters: { type: Object, required: true },
@@ -437,7 +438,6 @@ function fmtDateTime(iso) {
     try { return new Date(iso).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) }
     catch { return iso }
 }
-function fmtMoney(n) { return (Number(n) || 0).toFixed(3) }
 function initialsOf(name) {
     return (name ?? '?').split(/\s+/).filter(Boolean).slice(0, 2).map((s) => s[0].toUpperCase()).join('')
 }
@@ -995,7 +995,7 @@ const canCollect = computed(() => openData.value
                         <div style="padding: 18px 20px; display: flex; flex-direction: column; gap: 14px;">
                             <div>
                                 <div class="eyebrow" style="margin-bottom: 6px;">{{ isRtl ? 'المبلغ' : 'Amount' }} <span class="req">*</span></div>
-                                <input v-model="collectAmount" type="number" step="0.001" class="input tnum" />
+                                <input v-model="collectAmount" type="number" step="any" class="input tnum" />
                             </div>
                             <div>
                                 <div class="eyebrow" style="margin-bottom: 6px;">{{ isRtl ? 'طريقة الدفع' : 'Method' }}</div>

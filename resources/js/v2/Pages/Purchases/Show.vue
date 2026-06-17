@@ -33,7 +33,7 @@ const t = computed(() => isRtl.value ? {
     lines: 'البنود', item: 'الصنف', country: 'بلد المنشأ', ordered: 'المطلوب', received: 'المستلم', remaining: 'المتبقي', unitCost: 'سعر الوحدة', discount: 'الخصم', lineTotal: 'الإجمالي',
     totals: 'الإجماليات', goods: 'البضاعة', landed: 'التكاليف الإجمالية', freight: 'الشحن', customs: 'الجمارك', clearance: 'التخليص', insurance: 'التأمين', other: 'أخرى', landedTotal: 'إجمالي التكلفة الواصلة',
     grand: 'الإجمالي الكلي', recv: 'المستلم', paid: 'المدفوع', outstanding: 'المتبقي',
-    receipts: 'الاستلامات', payments: 'المدفوعات', noReceipts: 'لا توجد استلامات', noPayments: 'لا توجد مدفوعات',
+    receipts: 'الاستلامات', payments: 'المدفوعات', noReceipts: 'لا توجد استلامات', noPayments: 'لا توجد مدفوعات', by: 'بواسطة',
     void: 'إبطال', method: 'الطريقة', date: 'التاريخ', amount: 'المبلغ', reference: 'المرجع', code: 'الرمز', goodsKwd: 'البضاعة (د.ك)', landedKwd: 'الواصلة (د.ك)',
     rcvPanel: 'استلام البضاعة', confirmReceipt: 'تأكيد الاستلام', qtyToRecv: 'كمية الاستلام', payPanel: 'تسجيل دفعة', recordPayment: 'تسجيل الدفعة',
     autoByMethod: 'تلقائي حسب الطريقة', account: 'الحساب', payDate: 'تاريخ الدفع',
@@ -54,7 +54,7 @@ const t = computed(() => isRtl.value ? {
     lines: 'Lines', item: 'Item', country: 'Country', ordered: 'Ordered', received: 'Received', remaining: 'Remaining', unitCost: 'Unit cost', discount: 'Discount', lineTotal: 'Line total',
     totals: 'Totals', goods: 'Goods', landed: 'Landed costs', freight: 'Freight', customs: 'Customs', clearance: 'Clearance', insurance: 'Insurance', other: 'Other charges', landedTotal: 'Landed total',
     grand: 'Grand total', recv: 'Received', paid: 'Paid', outstanding: 'Outstanding',
-    receipts: 'Receipts', payments: 'Payments', noReceipts: 'No receipts yet', noPayments: 'No payments yet',
+    receipts: 'Receipts', payments: 'Payments', noReceipts: 'No receipts yet', noPayments: 'No payments yet', by: 'by',
     void: 'Void', method: 'Method', date: 'Date', amount: 'Amount', reference: 'Reference', code: 'Code', goodsKwd: 'Goods (KWD)', landedKwd: 'Landed (KWD)',
     rcvPanel: 'Receive goods', confirmReceipt: 'Confirm receipt', qtyToRecv: 'Qty to receive', payPanel: 'Record payment', recordPayment: 'Record payment',
     autoByMethod: 'Auto by method', account: 'Account', payDate: 'Payment date',
@@ -311,7 +311,7 @@ const st = computed(() => order.value.status)
                             <td style="padding: 9px 14px; font-size: 13px;">{{ ln.name }}</td>
                             <td class="tnum" style="padding: 9px 14px; font-size: 13px; text-align: end; color: var(--fg-subtle);">{{ ln.qty_remaining }}</td>
                             <td style="padding: 6px 14px; text-align: end;">
-                                <input v-model.number="recvQty[ln.id]" type="number" min="0" :max="Number(ln.qty_remaining)" step="0.001" class="input tnum" style="width: 110px; text-align: end;" :disabled="Number(ln.qty_remaining) <= 0" />
+                                <input v-model.number="recvQty[ln.id]" type="number" min="0" :max="Number(ln.qty_remaining)" step="any" class="input tnum" style="width: 110px; text-align: end;" :disabled="Number(ln.qty_remaining) <= 0" />
                             </td>
                         </tr>
                     </tbody>
@@ -336,7 +336,7 @@ const st = computed(() => order.value.status)
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
                     <div>
                         <div class="eyebrow" style="margin-bottom: 4px;">{{ t.amount }} (KWD) <span class="req">*</span></div>
-                        <input v-model.number="payForm.amount" type="number" min="0" :max="Number(order.outstanding)" step="0.001" class="input tnum" />
+                        <input v-model.number="payForm.amount" type="number" min="0" :max="Number(order.outstanding)" step="any" class="input tnum" />
                     </div>
                     <div>
                         <div class="eyebrow" style="margin-bottom: 4px;">{{ t.method }}</div>
@@ -464,9 +464,9 @@ const st = computed(() => order.value.status)
                         <div></div>
                     </div>
                     <div v-for="r in order.receipts" :key="r.id" class="rc-grid rc-row" :style="{ opacity: r.reversed ? 0.5 : 1 }">
-                        <div class="ell" style="font-size: 12.5px;">
-                            {{ r.code }}
-                            <span v-if="r.reversed" class="badge badge-destructive" style="font-size: 9px; margin-inline-start: 4px;">{{ t.reversed }}</span>
+                        <div style="font-size: 12.5px; min-width: 0;">
+                            <div class="ell">{{ r.code }}<span v-if="r.reversed" class="badge badge-destructive" style="font-size: 9px; margin-inline-start: 4px;">{{ t.reversed }}</span></div>
+                            <div v-if="r.received_by" class="ell" style="font-size: 10px; color: var(--fg-faint);">{{ t.by }} {{ r.received_by }}</div>
                         </div>
                         <div class="tnum" style="font-size: 12px; color: var(--fg-subtle);">{{ fmtDate(r.received_at) }}</div>
                         <div class="tnum" :style="{ textAlign: 'end', textDecoration: r.reversed ? 'line-through' : 'none' }">{{ KWD(r.total) }}</div>
@@ -494,6 +494,7 @@ const st = computed(() => order.value.status)
                         <div style="font-size: 12.5px; min-width: 0;">
                             <div class="ell">{{ p.code }}</div>
                             <div v-if="p.reference_no" class="ell" style="font-size: 10px; color: var(--fg-faint);">{{ p.reference_no }}</div>
+                            <div v-if="p.paid_by" class="ell" style="font-size: 10px; color: var(--fg-faint);">{{ t.by }} {{ p.paid_by }}</div>
                         </div>
                         <div class="ell" style="font-size: 12px; color: var(--fg-subtle); text-transform: capitalize;">{{ p.method }}</div>
                         <div class="tnum" style="font-size: 12px; color: var(--fg-subtle);">{{ fmtDate(p.payment_date) }}</div>

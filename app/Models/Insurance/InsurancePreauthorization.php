@@ -79,4 +79,14 @@ class InsurancePreauthorization extends Model
     {
         return $this->hasOne(InsuranceClaim::class, 'preauth_id');
     }
+
+    public function requestedBy(): BelongsTo
+    {
+        return $this->belongsTo(\App\Models\User::class, 'requested_by_user_id');
+    }
+
+    public function decidedBy(): BelongsTo
+    {
+        return $this->belongsTo(\App\Models\User::class, 'decided_by_user_id');
+    }
 }

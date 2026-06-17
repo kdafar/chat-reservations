@@ -190,8 +190,12 @@ class ClinicPackagesController extends Controller
     protected function clinicItemOptions(): array
     {
         $priority = ['service' => 0, 'product' => 1, 'consumable' => 2];
+        $clinicId = $this->resolvePageClinicId();
 
-        return ClinicItem::query()->where('is_active', 1)->get(['id', 'name', 'type'])
+        return ClinicItem::query()->withoutGlobalScopes()->where('is_active', 1)
+            ->when($clinicId, fn ($q) => $q->where(fn ($w) => $w->where('partner_id', $clinicId)->orWhereNull('partner_id')))
+            ->get(['id', 'name', 'type'])
+            ->unique(fn (ClinicItem $it) => $it->localized_name)
             ->sortBy(fn (ClinicItem $it) => sprintf('%d|%s', $priority[$it->type] ?? 9, $it->localized_name))
             ->values()
             ->map(fn (ClinicItem $it) => [

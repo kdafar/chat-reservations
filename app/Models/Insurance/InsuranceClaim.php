@@ -92,6 +92,11 @@ class InsuranceClaim extends Model
         return $this->belongsTo(InsurancePreauthorization::class, 'preauth_id');
     }
 
+    public function submittedBy(): BelongsTo
+    {
+        return $this->belongsTo(\App\Models\User::class, 'submitted_by_user_id');
+    }
+
     public function items(): HasMany
     {
         return $this->hasMany(InsuranceClaimItem::class, 'claim_id');

@@ -6,6 +6,8 @@ defineOptions({ layout: AppLayout })
 import Icon from '../../Components/Icon.vue'
 import ImportButton from '../../Components/ImportButton.vue'
 import SearchableSelect from '../../Components/SearchableSelect.vue'
+import { formatMoney as fmtPrice } from '../../lib/money.js'
+import { confirm } from '../../Composables/useConfirm.js'
 
 const props = defineProps({
     filters: { type: Object, required: true },
@@ -142,14 +144,14 @@ function submit() {
 }
 
 function archive(row) {
-    if (!window.confirm(t.value.modal.archiveConfirm)) return
-    router.delete(route('v2.lab-tests.destroy', { labTest: row.id }), { preserveScroll: true })
+    confirm({ body: t.value.modal.archiveConfirm, tone: 'destructive', onConfirm: () => {
+        router.delete(route('v2.lab-tests.destroy', { labTest: row.id }), { preserveScroll: true })
+    } })
 }
 function restore(row) {
     router.post(route('v2.lab-tests.restore', { labTest: row.id }), {}, { preserveScroll: true })
 }
 
-function fmtPrice(v) { return Number(v ?? 0).toFixed(3) }
 function rowIsArchived(row) { return !!row.deleted_at || !row.is_active }
 </script>
 
@@ -342,7 +344,7 @@ function rowIsArchived(row) { return !!row.deleted_at || !row.is_active }
                     </div>
                     <div>
                         <label class="label">{{ t.modal.price }} <span class="req">*</span></label>
-                        <input v-model.number="form.default_price" type="number" step="0.001" min="0" class="input" required />
+                        <input v-model.number="form.default_price" type="number" step="any" min="0" class="input" required />
                         <div v-if="errors.default_price" class="err">{{ errors.default_price }}</div>
                     </div>
                     <div style="grid-column:span 2; display:flex; align-items:center; gap:8px;">
@@ -373,7 +375,7 @@ function rowIsArchived(row) { return !!row.deleted_at || !row.is_active }
 .stat-chip-lbl { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--fg-faint); margin-top: 4px; }
 
 .table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.table th { text-align: start; padding: 10px 12px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--fg-faint); font-weight: 600; border-bottom: 1px solid var(--line); }
+.table th { text-align: start; padding: 10px 12px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--fg-faint); font-weight: 600; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--card, var(--bg)); z-index: 1; }
 .table td { padding: 10px 12px; border-bottom: 1px solid var(--line); }
 .table tr:last-child td { border-bottom: none; }
 .table tr.is-archived { opacity: 0.55; background: repeating-linear-gradient(45deg, transparent, transparent 6px, var(--bg-hover) 6px, var(--bg-hover) 7px); }

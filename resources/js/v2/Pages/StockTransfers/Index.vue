@@ -4,6 +4,7 @@ import { Head, router, usePage } from '@inertiajs/vue3'
 import AppLayout from '../../Layouts/AppLayout.vue'
 defineOptions({ layout: AppLayout })
 import Icon from '../../Components/Icon.vue'
+import SearchableSelect from '../../Components/SearchableSelect.vue'
 import { pushToast } from '../../Composables/useNotificationState.js'
 
 const props = defineProps({
@@ -89,13 +90,25 @@ function cancelT(row) {
     router.post(route('v2.stock-transfers.cancel', { transfer: row.id }), {}, { preserveScroll: true })
 }
 
+// Option lists for the searchable dropdowns.
+const sourceBranchItems = computed(() => props.branches.map((b) => ({
+    value: b.id,
+    label: b.name + (b.id === props.hub_branch_id ? ' · ' + t.value.hub : ''),
+})))
+const destBranchItems = computed(() => props.branches.map((b) => ({ value: b.id, label: b.name })))
+const itemOptions = computed(() => props.items.map((i) => ({
+    value: i.id,
+    label: i.name,
+    sublabel: `${t.value.onHand} ${i.hub_on_hand}`,
+})))
+
 const statusTone = (s) => s === 'dispatched' ? 'badge-success' : (s === 'cancelled' ? 'badge-destructive' : 'badge-warning')
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 </script>
 
 <template>
     <Head :title="t.title" />
-    <div style="padding: 4px 0 40px;">
+    <div style="padding: 24px; max-width: 1280px; margin: 0 auto;">
         <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px;">
             <div>
                 <div class="eyebrow">{{ isRtl ? 'الصيدلية والمخزون' : 'Pharmacy & Stock' }}</div>
@@ -124,6 +137,7 @@ const fmtDate = (d) => d ? new Date(d).toLocaleDateString([], { day: '2-digit', 
                         <th style="text-align: start; padding: 10px 14px; font-size: 10px;" class="eyebrow">{{ t.from }} → {{ t.to }}</th>
                         <th style="text-align: start; padding: 10px 14px; font-size: 10px;" class="eyebrow">{{ t.items }}</th>
                         <th style="text-align: start; padding: 10px 14px; font-size: 10px;" class="eyebrow">{{ t.status }}</th>
+                        <th style="text-align: start; padding: 10px 14px; font-size: 10px;" class="eyebrow">{{ t.requestedBy }}</th>
                         <th style="text-align: start; padding: 10px 14px; font-size: 10px;" class="eyebrow">{{ t.date }}</th>
                         <th style="padding: 10px 14px;"></th>
                     </tr>
@@ -136,6 +150,11 @@ const fmtDate = (d) => d ? new Date(d).toLocaleDateString([], { day: '2-digit', 
                         </td>
                         <td class="tnum" style="padding: 11px 14px; font-size: 13px;">{{ row.lines_count }} · {{ row.qty_total }}</td>
                         <td style="padding: 11px 14px;"><span class="badge" :class="statusTone(row.status)">{{ t[row.status] ?? row.status }}</span></td>
+                        <td style="padding: 11px 14px; font-size: 12px;">
+                            <div v-if="row.requested_by">{{ row.requested_by }}</div>
+                            <div v-if="row.status === 'dispatched' && row.dispatched_by" style="font-size: 11px; color: var(--fg-subtle);">{{ t.dispatch }}: {{ row.dispatched_by }}</div>
+                            <span v-if="!row.requested_by && !row.dispatched_by" style="color: var(--fg-faint);">—</span>
+                        </td>
                         <td class="tnum" style="padding: 11px 14px; font-size: 12px; color: var(--fg-subtle);">{{ fmtDate(row.created_at) }}</td>
                         <td style="padding: 8px 14px; text-align: end; white-space: nowrap;">
                             <button v-if="row.status === 'pending' && can_dispatch" class="btn btn-primary btn-sm" @click="dispatchT(row)">
@@ -144,7 +163,7 @@ const fmtDate = (d) => d ? new Date(d).toLocaleDateString([], { day: '2-digit', 
                             <button v-if="row.status === 'pending' && (can_request || can_dispatch)" class="btn btn-ghost btn-sm" style="color: var(--destructive);" @click="cancelT(row)">{{ t.cancel }}</button>
                         </td>
                     </tr>
-                    <tr v-if="!page.data.length"><td colspan="6" style="padding: 36px; text-align: center; color: var(--fg-subtle); font-style: italic;">{{ t.empty }}</td></tr>
+                    <tr v-if="!page.data.length"><td colspan="7" style="padding: 36px; text-align: center; color: var(--fg-subtle); font-style: italic;">{{ t.empty }}</td></tr>
                 </tbody>
             </table>
         </div>
@@ -160,17 +179,11 @@ const fmtDate = (d) => d ? new Date(d).toLocaleDateString([], { day: '2-digit', 
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
                         <div>
                             <div class="eyebrow" style="margin-bottom: 4px;">{{ t.source }}</div>
-                            <select v-model="form.from_branch_id" class="input">
-                                <option value="">{{ t.pick }}</option>
-                                <option v-for="b in branches" :key="b.id" :value="b.id">{{ b.name }}{{ b.id === hub_branch_id ? ' · ' + t.hub : '' }}</option>
-                            </select>
+                            <SearchableSelect v-model="form.from_branch_id" :items="sourceBranchItems" :nullable="true" :null-label="t.pick" :placeholder="t.pick" />
                         </div>
                         <div>
                             <div class="eyebrow" style="margin-bottom: 4px;">{{ t.dest }} <span class="req">*</span></div>
-                            <select v-model="form.to_branch_id" class="input">
-                                <option value="">{{ t.pick }}</option>
-                                <option v-for="b in branches" :key="b.id" :value="b.id">{{ b.name }}</option>
-                            </select>
+                            <SearchableSelect v-model="form.to_branch_id" :items="destBranchItems" :nullable="false" :placeholder="t.pick" />
                         </div>
                     </div>
 
@@ -178,11 +191,10 @@ const fmtDate = (d) => d ? new Date(d).toLocaleDateString([], { day: '2-digit', 
                     <div>
                         <div class="eyebrow" style="margin-bottom: 4px;">{{ t.items }} <span class="req">*</span></div>
                         <div style="display: flex; gap: 8px; align-items: end;">
-                            <select v-model="lineItem" class="input" style="flex: 1;">
-                                <option value="">{{ t.pick }}</option>
-                                <option v-for="i in items" :key="i.id" :value="i.id">{{ i.name }} ({{ t.onHand }} {{ i.hub_on_hand }})</option>
-                            </select>
-                            <input v-model.number="lineQty" type="number" min="0.001" step="0.001" class="input tnum" style="width: 90px;" />
+                            <div style="flex: 1; min-width: 0;">
+                                <SearchableSelect v-model="lineItem" :items="itemOptions" :nullable="false" :placeholder="t.pick" search-placeholder="Search item…" />
+                            </div>
+                            <input v-model.number="lineQty" type="number" min="0.001" step="any" class="input tnum" style="width: 90px;" />
                             <button class="btn btn-outline" type="button" :disabled="!lineItem" @click="addLine"><Icon name="plus" :size="13" /> {{ t.add }}</button>
                         </div>
                         <div v-if="form.lines.length" class="card" style="margin-top: 8px; overflow: hidden;">

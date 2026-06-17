@@ -7,10 +7,12 @@ import Icon from '../../Components/Icon.vue'
 import BulkBar from '../../Components/BulkBar.vue'
 import SearchableSelect from '../../Components/SearchableSelect.vue'
 import { useTableSelect } from '../../Composables/useTableSelect.js'
+import { formatMoney as fmt } from '../../lib/money.js'
 
 const props = defineProps({
     filters: Object,
     page: Object,
+    summary: { type: Object, default: () => ({ total_billed: 0, total_outstanding: 0 }) },
     statuses: Array,
     insurers: { type: Array, default: () => [] },
     branches: { type: Array, default: () => [] },
@@ -46,7 +48,9 @@ const t = computed(() => isRtl.value ? {
         none: '—',
     },
     empty: 'لا توجد مطالبات', emptyAction: 'لا يوجد ما يتطلب انتباهك الآن 🎉', viewAll: 'عرض كل المطالبات', showing: 'عرض', of: 'من',
+    sum: { billed: 'إجمالي المطلوب', outstanding: 'إجمالي المتبقي', forFilter: 'للتصفية الحالية' },
     drawer: { items: 'البنود', payments: 'المدفوعات', log: 'سجل الحالة', balance: 'الرصيد المتبقي', noItems: 'لا توجد بنود', noPayments: 'لا توجد مدفوعات', close: 'إغلاق' },
+    retry: 'إعادة المحاولة', loadError: 'تعذّر تحميل المطالبة.',
     act: { submit: 'إرسال للتأمين', review: 'بدء المراجعة', approve: 'اعتماد', partial: 'اعتماد جزئي', reject: 'رفض', payment: 'تسجيل دفعة', writeoff: 'إعدام دين', void: 'إلغاء' },
     fld: { notes: 'ملاحظات', approved_amount: 'المبلغ المعتمد', rejected_amount: 'المبلغ المرفوض', reference_no: 'رقم مرجعي', reason: 'السبب', amount: 'المبلغ', method: 'الطريقة', account: 'مودع في', decision_notes: 'ملاحظات القرار', visit_id: 'رقم الزيارة' },
     method: { cheque: 'شيك', transfer: 'تحويل', cash: 'نقد' },
@@ -91,7 +95,9 @@ const t = computed(() => isRtl.value ? {
         none: '—',
     },
     empty: 'No claims', emptyAction: 'Nothing needs your attention right now 🎉', viewAll: 'View all claims', showing: 'Showing', of: 'of',
+    sum: { billed: 'Billed', outstanding: 'Outstanding', forFilter: 'for the current filter' },
     drawer: { items: 'Items', payments: 'Payments', log: 'State log', balance: 'Balance due', noItems: 'No items', noPayments: 'No payments', close: 'Close' },
+    retry: 'Retry', loadError: 'Couldn\'t load this claim.',
     act: { submit: 'Send to insurer', review: 'Start review', approve: 'Approve', partial: 'Partially approve', reject: 'Reject', payment: 'Record payment', writeoff: 'Write off', void: 'Void' },
     fld: { notes: 'Notes', approved_amount: 'Approved amount', rejected_amount: 'Rejected amount', reference_no: 'Reference no.', reason: 'Reason', amount: 'Amount', method: 'Method', account: 'Deposited to', decision_notes: 'Decision notes', visit_id: 'Visit #' },
     method: { cheque: 'Cheque', transfer: 'Bank transfer', cash: 'Cash' },
@@ -165,7 +171,6 @@ function setTab(v) { f.status = v; apply() }
 function onSearch() { clearTimeout(qTimer); qTimer = setTimeout(() => { if (f.q) f.status = 'all'; apply() }, 250) }
 function clearFilters() { f.q = ''; f.status = 'needs_action'; f.insurer = null; f.branch = null; f.sort = 'recent'; apply() }
 
-const fmt = (n) => Number(n ?? 0).toFixed(3)
 const statusBadge = (s) => ({ approved: 'badge badge-success', partially_approved: 'badge badge-warning', paid: 'badge badge-success', rejected: 'badge badge-destructive', submitted: 'badge badge-info', under_review: 'badge badge-info', void: 'badge-muted', draft: 'badge-muted' }[s] || 'badge')
 
 // Next-step presentation, shared by the list column and the drawer banner.
@@ -193,15 +198,21 @@ function canDoStep(step) {
 }
 
 // Detail drawer
-const drawer = reactive({ open: false, loading: false, claim: null, balance: 0, allowed: [], accounts: [], can: {} })
+const drawer = reactive({ open: false, loading: false, error: false, lastId: null, claim: null, balance: 0, allowed: [], accounts: [], can: {} })
 async function openDrawer(id, autoAction = null) {
-    drawer.open = true; drawer.loading = true; drawer.claim = null
-    const res = await fetch(route('v2.api.insurance.claims.show', { claim: id }), { headers: { Accept: 'application/json' } })
-    const data = await res.json()
-    drawer.claim = data.claim; drawer.balance = data.balance_due; drawer.allowed = data.allowed_next || []
-    drawer.accounts = data.accounts || []; drawer.can = data.can || {}
-    drawer.loading = false
-    if (autoAction) { await nextTick(); if (actions.value.includes(autoAction)) openAct(autoAction) }
+    drawer.open = true; drawer.loading = true; drawer.error = false; drawer.claim = null; drawer.lastId = id
+    try {
+        const res = await fetch(route('v2.api.insurance.claims.show', { claim: id }), { headers: { Accept: 'application/json' } })
+        if (!res.ok) throw new Error('request failed')
+        const data = await res.json()
+        drawer.claim = data.claim; drawer.balance = data.balance_due; drawer.allowed = data.allowed_next || []
+        drawer.accounts = data.accounts || []; drawer.can = data.can || {}
+        if (autoAction) { await nextTick(); if (actions.value.includes(autoAction)) openAct(autoAction) }
+    } catch {
+        drawer.error = true
+    } finally {
+        drawer.loading = false
+    }
 }
 function refreshDrawer() { if (drawer.claim) openDrawer(drawer.claim.id) }
 
@@ -361,6 +372,20 @@ function submitFromVisit() {
                 <button v-if="hasFilters" class="btn btn-ghost btn-sm" @click="clearFilters">{{ t.clear }}</button>
             </div>
 
+            <!-- Filtered totals over the FULL query, not just the visible page -->
+            <div class="card" style="padding:10px 14px; margin-bottom:12px; display:flex; align-items:center; gap:18px; flex-wrap:wrap; font-size:13px;">
+                <span style="display:flex; align-items:center; gap:6px;">
+                    <span style="color:var(--fg-faint);">{{ t.sum.billed }}:</span>
+                    <span class="mono" style="font-weight:700;">{{ fmt(summary.total_billed) }}</span>
+                </span>
+                <span style="color:var(--fg-faint);">·</span>
+                <span style="display:flex; align-items:center; gap:6px;">
+                    <span style="color:var(--fg-faint);">{{ t.sum.outstanding }}:</span>
+                    <span class="mono" style="font-weight:700;" :style="{ color: Number(summary.total_outstanding) > 0 ? 'var(--warning, #d97706)' : 'var(--ok)' }">{{ fmt(summary.total_outstanding) }}</span>
+                </span>
+                <span style="font-size:11px; color:var(--fg-faint); margin-inline-start:auto;">{{ t.sum.forFilter }}</span>
+            </div>
+
             <div class="card" style="overflow:hidden;">
                 <table class="table">
                     <thead>
@@ -392,6 +417,7 @@ function submitFromVisit() {
                                 <span v-if="isOpenStep(row.next_step) && row.age_days != null" :title="t.ageTitle"
                                       style="display:inline-block; margin-inline-start:6px; font-size:11px; font-weight:600;"
                                       :style="{ color: ageTone(row.age_days) }">{{ row.age_days }}{{ t.dayAbbr }}</span>
+                                <div v-if="row.submitted_by?.name" style="font-size:10px; font-weight:400; color:var(--fg-faint); margin-top:2px;">{{ isRtl ? 'بواسطة' : 'by' }} {{ row.submitted_by.name }}</div>
                             </td>
                             <td>{{ row.patient_policy?.patient?.name ?? '—' }}</td>
                             <td>{{ row.patient_policy?.insurer?.name ?? '—' }}</td>
@@ -432,6 +458,11 @@ function submitFromVisit() {
                     <button class="btn btn-ghost btn-sm btn-icon" @click="drawer.open = false"><Icon name="x" :size="14" /></button>
                 </div>
                 <div v-if="drawer.loading" style="padding:40px; text-align:center; color:var(--fg-faint);">…</div>
+                <div v-else-if="drawer.error" style="padding:32px 16px; text-align:center; display:flex; flex-direction:column; align-items:center; gap:12px;">
+                    <Icon name="alert-triangle" :size="28" style="color:var(--destructive, #dc2626);" />
+                    <div style="font-size:13px; color:var(--fg-subtle);">{{ t.loadError }}</div>
+                    <button class="btn btn-outline btn-sm" @click="openDrawer(drawer.lastId)">{{ t.retry }}</button>
+                </div>
                 <div v-else-if="drawer.claim" style="padding:16px; overflow-y:auto; flex:1; min-height:0;">
                     <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
                         <span :class="statusBadge(drawer.claim.status)">{{ t.st[drawer.claim.status] ?? drawer.claim.status }}</span>
@@ -506,12 +537,12 @@ function submitFromVisit() {
                     <!-- approve / partial -->
                     <div v-if="['approve', 'partial'].includes(act.type)">
                         <label class="label">{{ t.fld.approved_amount }} (KWD) <span class="req">*</span></label>
-                        <input v-model.number="actForm.approved_amount" type="number" step="0.001" min="0" class="input" required />
+                        <input v-model.number="actForm.approved_amount" type="number" step="any" min="0" class="input" required />
                         <div v-if="actErr.approved_amount" class="err">{{ actErr.approved_amount }}</div>
                     </div>
                     <div v-if="act.type === 'partial'">
                         <label class="label">{{ t.fld.rejected_amount }} (KWD) <span class="req">*</span></label>
-                        <input v-model.number="actForm.rejected_amount" type="number" step="0.001" min="0" class="input" required />
+                        <input v-model.number="actForm.rejected_amount" type="number" step="any" min="0" class="input" required />
                         <div v-if="actErr.rejected_amount" class="err">{{ actErr.rejected_amount }}</div>
                     </div>
                     <div v-if="act.type === 'approve'">
@@ -528,7 +559,7 @@ function submitFromVisit() {
                     <template v-if="act.type === 'payment'">
                         <div>
                             <label class="label">{{ t.fld.amount }} (KWD) <span class="req">*</span></label>
-                            <input v-model.number="actForm.amount" type="number" step="0.001" min="0.001" class="input" required />
+                            <input v-model.number="actForm.amount" type="number" step="any" min="0.001" class="input" required />
                             <div v-if="actErr.amount" class="err">{{ actErr.amount }}</div>
                         </div>
                         <div>
@@ -548,7 +579,7 @@ function submitFromVisit() {
                     <template v-if="act.type === 'writeoff'">
                         <div>
                             <label class="label">{{ t.fld.amount }} (KWD) <span class="req">*</span></label>
-                            <input v-model.number="actForm.amount" type="number" step="0.001" min="0.001" class="input" required />
+                            <input v-model.number="actForm.amount" type="number" step="any" min="0.001" class="input" required />
                             <div v-if="actErr.amount" class="err">{{ actErr.amount }}</div>
                         </div>
                         <div>
@@ -699,3 +730,7 @@ function submitFromVisit() {
             <button class="btn btn-sm btn-outline" @click="exportSelected"><Icon name="download" :size="13" /><span>{{ isRtl ? 'تصدير Excel' : 'Export Excel' }}</span></button>
         </BulkBar>
 </template>
+
+<style scoped>
+.table th { position: sticky; top: 0; background: var(--card, var(--bg)); z-index: 1; }
+</style>

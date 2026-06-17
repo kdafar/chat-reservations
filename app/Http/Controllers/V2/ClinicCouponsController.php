@@ -20,7 +20,7 @@ class ClinicCouponsController extends Controller
 
     protected function authorize(Request $request): void
     {
-        if (! $request->user() || ! $request->user()->hasAnyRole(['admin', 'super_admin', 'clinic_admin'])) {
+        if (! $request->user() || ! $request->user()->can('view_any_coupons')) {
             abort(403, 'Not authorized to manage coupons.');
         }
     }

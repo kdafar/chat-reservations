@@ -27,6 +27,15 @@ const page = usePage()
 const locale = computed(() => page.props.locale ?? 'en')
 const isRtl = computed(() => locale.value === 'ar')
 
+// "View all" on the activity feed points at the live queue, which is clinical /
+// front-desk only. Users without queue access (e.g. an accountant viewing the
+// dashboard) are sent to the Visits list — which they can open — instead.
+const activityHref = computed(() => {
+    const u = page.props.auth?.user
+    const canQueue = !!(u?.is_admin || u?.is_reception || u?.is_doctor || u?.is_nurse)
+    return canQueue ? '/admin/v2/waiting-patients' : '/admin/v2/visits-list'
+})
+
 const t = computed(() => isRtl.value
     ? {
         eyebrow: 'لوحة المعلومات',
@@ -487,7 +496,7 @@ function deltaText(pct) {
                                 {{ fmtInt(recentActivity.length) }} {{ isRtl ? 'تحديثات' : 'updates' }}
                             </div>
                         </div>
-                        <a href="/admin/v2/waiting-patients" class="btn btn-ghost btn-sm" style="text-decoration: none;">
+                        <a :href="activityHref" class="btn btn-ghost btn-sm" style="text-decoration: none;">
                             {{ t.viewAll }}
                             <Icon name="chevron-right" :size="13" class="flip-rtl" />
                         </a>

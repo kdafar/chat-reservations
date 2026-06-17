@@ -14,6 +14,17 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Brand Logo URL
+    |--------------------------------------------------------------------------
+    | Shown in the v2 topbar AND the boot splash. Read via config() (not a bare
+    | env() call) so it survives `php artisan config:cache` in production —
+    | env() returns null once config is cached, which would silently drop a
+    | custom logo back to the favicon.
+    */
+    'logo_url' => env('APP_LOGO_URL', '/favicon.svg'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Environment
     |--------------------------------------------------------------------------
     */

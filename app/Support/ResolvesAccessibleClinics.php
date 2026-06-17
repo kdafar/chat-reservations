@@ -45,6 +45,24 @@ trait ResolvesAccessibleClinics
     }
 
     /**
+     * The single clinic a v2 page should operate within when showing a global
+     * admin every clinic's catalog at once would be wrong (e.g. an item picker
+     * would list each shared item once per clinic). A non-admin's own clinic;
+     * for a global admin, the clinic that owns a hub branch, else the first
+     * clinic. Returns null only if there are no partners at all.
+     */
+    protected function resolvePageClinicId(): ?int
+    {
+        $partnerId = $this->accessiblePartnerIds()[0] ?? null; // null = global admin
+        if ($partnerId === null) {
+            $partnerId = (int) (\App\Models\Branch::query()->withoutGlobalScopes()->where('is_hub', true)->value('partner_id')
+                ?: \App\Models\Partner::query()->orderBy('id')->value('id')) ?: null;
+        }
+
+        return $partnerId;
+    }
+
+    /**
      * Branch ids the current user may act within (null = global admin = all).
      * Mirrors BelongsToBranchScope's branch logic — the Branch model itself
      * is excluded from that scope (recursion guard), so branch dropdowns must

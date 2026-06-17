@@ -69,7 +69,7 @@ class PreauthorizationsController extends Controller
         ];
 
         $query = InsurancePreauthorization::query()
-            ->with(['patientPolicy.patient:id,name', 'patientPolicy.plan:id,code']);
+            ->with(['patientPolicy.patient:id,name', 'patientPolicy.plan:id,code', 'requestedBy:id,name', 'decidedBy:id,name']);
 
         if ($filters['q'] !== '') {
             $q = $filters['q'];
@@ -81,6 +81,12 @@ class PreauthorizationsController extends Controller
         if (in_array($filters['status'], self::STATUSES, true)) {
             $query->where('status', $filters['status']);
         }
+
+        // Aggregates over the FULL filtered set (clone before paginate so the
+        // filters apply but pagination doesn't limit the totals).
+        $summary = (clone $query)
+            ->selectRaw('COALESCE(SUM(estimated_total), 0) as estimated_sum, COALESCE(SUM(approved_amount), 0) as approved_sum')
+            ->first();
 
         $page = $query->orderByDesc('id')->paginate(25)->withQueryString();
 
@@ -102,6 +108,12 @@ class PreauthorizationsController extends Controller
             'counts' => [
                 'total' => InsurancePreauthorization::query()->count(),
                 'pending' => InsurancePreauthorization::query()->whereIn('status', ['submitted', 'under_review'])->count(),
+                'approved' => InsurancePreauthorization::query()->whereIn('status', ['approved', 'partially_approved'])->count(),
+                'rejected' => InsurancePreauthorization::query()->where('status', 'rejected')->count(),
+            ],
+            'summary' => [
+                'estimated_total' => (float) ($summary->estimated_sum ?? 0),
+                'approved_amount' => (float) ($summary->approved_sum ?? 0),
             ],
             'can_edit' => $this->canEdit($request),
         ]);

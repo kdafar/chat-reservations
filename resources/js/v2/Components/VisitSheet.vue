@@ -1589,7 +1589,7 @@ function copyPaymentLink() {
                                             <input
                                                 v-if="canManagePackages"
                                                 type="number"
-                                                step="0.001"
+                                                step="any"
                                                 min="0"
                                                 :value="Number(vp.discount_amount || 0).toFixed(3)"
                                                 :max="vp.line_total"
@@ -1702,7 +1702,7 @@ function copyPaymentLink() {
                                                 >−</button>
                                                 <input
                                                     type="number"
-                                                    step="0.001"
+                                                    step="any"
                                                     min="0.001"
                                                     :value="Number(it.qty || 0)"
                                                     class="vs-qty-input tnum"
@@ -1721,7 +1721,7 @@ function copyPaymentLink() {
                                             <input
                                                 v-if="canManageItems"
                                                 type="number"
-                                                step="0.001"
+                                                step="any"
                                                 min="0"
                                                 :value="Number(it.discount_amount || 0).toFixed(3)"
                                                 :max="it.line_total"
@@ -1791,7 +1791,7 @@ function copyPaymentLink() {
                                         </div>
                                         <div v-if="discType !== 'none'" style="width: 120px;">
                                             <div class="eyebrow" style="margin-bottom: 6px;">{{ discType === 'percent' ? '%' : (isRtl ? 'د.ك' : 'KWD') }}</div>
-                                            <input v-model.number="discValue" type="number" step="0.001" min="0" class="input tnum" />
+                                            <input v-model.number="discValue" type="number" step="any" min="0" class="input tnum" />
                                         </div>
                                         <button type="button" class="btn btn-outline btn-sm" :disabled="billingBusy" @click="applyVisitDiscount">{{ isRtl ? 'تطبيق' : 'Apply' }}</button>
                                     </div>
@@ -1915,7 +1915,7 @@ function copyPaymentLink() {
                             <input
                                 v-model="payAmount"
                                 type="number"
-                                step="0.001"
+                                step="any"
                                 min="0.001"
                                 class="input tnum"
                                 style="font-size: 18px; height: 44px;"
@@ -2175,11 +2175,11 @@ function copyPaymentLink() {
                             <div v-if="addItemSelected" style="display: grid; grid-template-columns: 100px 1fr; gap: 10px; align-items: end;">
                                 <div>
                                     <div class="eyebrow" style="margin-bottom: 6px;">{{ isRtl ? 'الكمية' : 'Qty' }}</div>
-                                    <input v-model.number="addItemQty" type="number" step="0.001" min="0.001" class="input tnum" />
+                                    <input v-model.number="addItemQty" type="number" step="any" min="0.001" class="input tnum" />
                                 </div>
                                 <div>
                                     <div class="eyebrow" style="margin-bottom: 6px;">{{ isRtl ? 'السعر للوحدة' : 'Unit price' }}</div>
-                                    <input v-model="addItemPrice" type="number" step="0.001" min="0" class="input tnum" />
+                                    <input v-model="addItemPrice" type="number" step="any" min="0" class="input tnum" />
                                 </div>
                             </div>
                         </template>

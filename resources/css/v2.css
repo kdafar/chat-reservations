@@ -232,6 +232,10 @@ body {
     font-size: 11px; font-weight: 600; letter-spacing: 0.08em;
     text-transform: uppercase; color: var(--fg-subtle);
 }
+/* The eyebrow look is used for table headers too, but inline-flex pulls a <th>
+   out of the table's column model (headers bunch up and misalign with the body).
+   Keep header cells as proper table cells while inheriting the eyebrow type. */
+th.eyebrow, td.eyebrow { display: table-cell; }
 
 .num-xl { font-size: 32px; line-height: 1; font-weight: 500; letter-spacing: -0.025em; font-variant-numeric: tabular-nums; }
 .num-lg { font-size: 24px; line-height: 1.1; font-weight: 500; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
@@ -848,4 +852,90 @@ input[type="radio"]:disabled { opacity: 0.5; cursor: not-allowed; }
    full width it needs. */
 @media (max-width: 1023px) {
     .app-main { min-width: 0; }
+}
+
+/* =========================================================================
+   Global navigation loader (Inertia + NProgress)
+   -------------------------------------------------------------------------
+   Inertia's progress is NProgress: a top bar (.bar/.peg) plus a corner
+   spinner (.spinner-icon). The defaults are a flat 2px line and a bare
+   two-tone spinning circle. We restyle both to match the warm-gold brand:
+   the bar becomes a glowing gold gradient, and the circle becomes a smooth
+   conic-gradient ring sitting inside a frosted pill so it reads as a
+   deliberate, premium loader instead of a generic spinner. Colors come from
+   the design tokens, so dark mode flips automatically. !important is needed
+   because Inertia injects NProgress's own styles inline at runtime.
+   ========================================================================= */
+#nprogress { pointer-events: none; }
+
+/* Top progress bar — gold gradient with a soft glow + rounded leading edge.
+   The oversized background + slide animation gives it a living sheen rather
+   than a flat fill. */
+#nprogress .bar {
+    height: 3px !important;
+    background: linear-gradient(90deg,
+        var(--primary-hover) 0%,
+        var(--primary-soft-2) 25%,
+        var(--primary) 50%,
+        var(--primary-soft-2) 75%,
+        var(--primary-hover) 100%) !important;
+    background-size: 200% 100% !important;
+    animation: v2-nprogress-flow 1.1s linear infinite;
+    box-shadow:
+        0 0 12px oklch(var(--gold-l) var(--gold-c) var(--gold-h) / 0.65),
+        0 1px 4px  oklch(var(--gold-l) var(--gold-c) var(--gold-h) / 0.45) !important;
+    border-radius: 0 3px 3px 0;
+}
+
+@keyframes v2-nprogress-flow {
+    to { background-position: -200% 0; }
+}
+
+/* The bright comet head at the leading edge. */
+#nprogress .peg {
+    box-shadow:
+        0 0 14px var(--primary),
+        0 0 8px  var(--primary) !important;
+    opacity: 0.9;
+}
+
+/* Frosted pill that hosts the spinner — sits just below the topbar height. */
+#nprogress .spinner {
+    top: 16px !important;
+    right: 16px !important;
+    padding: 7px !important;
+    background: color-mix(in oklch, var(--bg-elev) 75%, transparent);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    box-shadow: 0 6px 20px oklch(0.18 0.02 260 / 0.14);
+    -webkit-backdrop-filter: blur(10px) saturate(1.2);
+            backdrop-filter: blur(10px) saturate(1.2);
+}
+
+/* Conic-gradient gold ring — a clean, modern replacement for the 2-tone
+   bordered circle. The radial mask punches out the centre to leave a ring. */
+#nprogress .spinner-icon {
+    width: 20px !important;
+    height: 20px !important;
+    border: none !important;
+    border-radius: 50%;
+    background: conic-gradient(from 90deg,
+        transparent 0%,
+        color-mix(in oklch, var(--primary) 35%, transparent) 35%,
+        var(--primary) 88%,
+        var(--primary-hover) 100%) !important;
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+            mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+    filter: drop-shadow(0 1px 2px oklch(var(--gold-l) var(--gold-c) var(--gold-h) / 0.5));
+    animation: v2-nprogress-spin 0.7s linear infinite !important;
+}
+
+@keyframes v2-nprogress-spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Respect users who prefer fewer animations: keep the ring, slow it right
+   down rather than strobing. */
+@media (prefers-reduced-motion: reduce) {
+    #nprogress .spinner-icon { animation-duration: 2.4s !important; }
 }

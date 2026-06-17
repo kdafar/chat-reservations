@@ -16,9 +16,11 @@ export const HELP_PAGES = new Set([
     // Laboratory
     'lab-tests',
     // Pharmacy & stock
-    'clinic-items', 'clinic-stock', 'stock-movements', 'stock-requests', 'purchase-orders', 'clinic-packages',
+    'clinic-items', 'clinic-stock', 'stock-movements', 'stock-requests', 'stock-transfers', 'purchase-orders', 'clinic-packages',
     // HR
     'leaves', 'attendance', 'doctors', 'users', 'doctor-comp', 'doctor-earnings',
+    // Payroll
+    'payroll-runs', 'salary-profiles', 'staff-loans', 'leave-balances', 'settlements',
     // Accounting
     'accounts', 'journal-entries', 'expenses', 'vendors', 'reconciliation', 'periods',
     'trial-balance', 'general-ledger', 'profit-loss', 'balance-sheet', 'cash-flow',

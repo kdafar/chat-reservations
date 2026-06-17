@@ -32,11 +32,17 @@ window.route = routeFn
 createInertiaApp({
     title: (t) => (t ? `${t} · Clinic` : 'Clinic'),
 
+    // Lazy page resolution: each page compiles to its OWN chunk, fetched on
+    // navigation, instead of being eager-bundled into one ~3MB entry. Inertia
+    // awaits this promise — including for the initial page — so the boot splash
+    // (removed in setup() below) stays up until the first page chunk lands.
+    // Navigation chunk fetches are covered by the NProgress bar + Links'
+    // prefetch="click", so there's no blank flash.
     resolve: (name) => {
-        const pages = import.meta.glob('./Pages/**/*.vue', { eager: true })
-        const page = pages[`./Pages/${name}.vue`]
-        if (!page) throw new Error(`[v2] Inertia page not found: ${name}`)
-        return page.default
+        const pages = import.meta.glob('./Pages/**/*.vue')
+        const importer = pages[`./Pages/${name}.vue`]
+        if (!importer) throw new Error(`[v2] Inertia page not found: ${name}`)
+        return importer().then((module) => module.default)
     },
 
     setup({ el, App, props, plugin }) {
@@ -44,6 +50,17 @@ createInertiaApp({
         app.use(plugin)
         app.config.globalProperties.route = routeFn // route() usable in templates
         app.mount(el)
+
+        // Dismiss the branded boot splash (resources/views/inertia/app.blade.php)
+        // once the app has painted. requestAnimationFrame waits for the first
+        // real frame so we never flip from splash → blank → content.
+        requestAnimationFrame(() => {
+            const splash = document.getElementById('v2-splash')
+            if (!splash) return
+            splash.classList.add('is-done')
+            splash.addEventListener('transitionend', () => splash.remove(), { once: true })
+            setTimeout(() => splash.remove(), 800) // fallback if transitionend is missed
+        })
     },
 
     progress: {

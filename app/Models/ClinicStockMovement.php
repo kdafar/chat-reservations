@@ -47,4 +47,10 @@ class ClinicStockMovement extends Model
     {
         return $this->belongsTo(Branch::class);
     }
+
+    /** The staff user who performed the movement (null for system/seeded actions). */
+    public function performedBy()
+    {
+        return $this->belongsTo(User::class, 'performed_by');
+    }
 }

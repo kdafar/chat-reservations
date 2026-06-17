@@ -24,7 +24,7 @@ class ClinicPromotionsController extends Controller
 
     protected function authorize(Request $request): void
     {
-        if (! $request->user() || ! $request->user()->hasAnyRole(['admin', 'super_admin', 'clinic_admin', 'clinic_reception'])) {
+        if (! $request->user() || ! $request->user()->can('view_any_promotions')) {
             abort(403, 'Not authorized to manage promotions.');
         }
     }
@@ -54,7 +54,10 @@ class ClinicPromotionsController extends Controller
             'page' => $page,
             'branches' => Branch::query()->when($this->accessibleBranchIds() !== null, fn ($q) => $q->whereIn('id', $this->accessibleBranchIds() ?: [0]))->orderBy('id')->get(['id', 'name'])
                 ->map(fn ($b) => ['id' => $b->id, 'name' => $b->localized_name])->all(),
-            'clinicItems' => ClinicItem::query()->where('is_active', 1)->orderBy('name')->get(['id', 'name', 'type'])
+            'clinicItems' => ClinicItem::query()->withoutGlobalScopes()->where('is_active', 1)
+                ->when(($cid = $this->resolvePageClinicId()), fn ($q) => $q->where(fn ($w) => $w->where('partner_id', $cid)->orWhereNull('partner_id')))
+                ->orderBy('name')->get(['id', 'name', 'type'])
+                ->unique(fn ($it) => $it->localized_name)->values()
                 ->map(fn ($it) => ['id' => $it->id, 'name' => $it->localized_name, 'sublabel' => ucfirst($it->type)])->all(),
             'clinicPackages' => ClinicPackage::query()->where('is_active', 1)->orderByDesc('id')->get(['id', 'name'])
                 ->map(fn ($p) => ['id' => $p->id, 'name' => $p->localized_name])->all(),

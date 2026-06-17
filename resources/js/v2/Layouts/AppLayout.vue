@@ -104,7 +104,10 @@ function userCan(perm) {
 }
 const navGates = {
     dashboard:              { perm: 'view_clinic_reports' },
-    'doctor-schedule':      { roles: ['admin', 'super_admin', 'clinic_admin', 'branch_manager'], flags: ['is_doctor'] },
+    // Live patient queue — clinical / front-desk only. Finance roles (accountant)
+    // are excluded here AND server-side in WaitingPatientsController.
+    waiting:                { flags: ['is_admin', 'is_reception', 'is_doctor', 'is_nurse'] },
+    'doctor-schedule':      { perm: 'view_doctor_schedule', flags: ['is_doctor'] },
     'my-earnings':          { flags: ['is_doctor'] },
     visits:                 { perm: 'view_any_visits' },
     patients:               { perm: 'view_any_patients' },
@@ -116,7 +119,7 @@ const navGates = {
     'inpatient-admissions': { flags: ['is_admin', 'is_reception', 'is_doctor', 'is_nurse'] },
     'inpatient-wards':      { perm: 'view_any_wards' },
     'inpatient-beds':       { perm: 'view_any_beds' },
-    'inpatient-reports':    { roles: ['admin', 'super_admin', 'clinic_admin'], perm: 'view_any_admissions' },
+    'inpatient-reports':    { roles: ['admin', 'super_admin', 'clinic_admin', 'accountant'], perm: 'view_any_admissions' },
     'insurance-insurers':   { perm: 'view_any_insurers' },
     'insurance-plans':      { perm: 'view_any_insurance_plans' },
     'insurance-policies':   { perm: 'view_any_patient_insurance_policies' },
@@ -133,7 +136,7 @@ const navGates = {
     leaves:                 { perm: 'view_any_staff_leaves' },
     attendance:             { perm: 'view_any_staff_attendances' },
     doctors:                { perm: 'view_any_doctors' },
-    users:                  { roles: ['admin', 'super_admin'] },
+    users:                  { perm: 'view_any_user' },
     'doctor-comp':          { perm: 'view_any_doctor_compensation_profiles' },
     'doctor-earnings':      { perm: 'view_any_doctor_compensation_ledgers' },
     'salary-profiles':      { perm: 'view_any_staff_compensation_profiles' },
@@ -142,6 +145,7 @@ const navGates = {
     'settlements':          { perm: 'view_any_staff_settlements' },
     'leave-balances':       { roles: ['admin', 'super_admin', 'clinic_admin', 'accountant'], perm: 'view_any_staff_leave_entitlements' },
     accounts:               { perm: 'view_any_accounting_accounts' },
+    'posting-accounts':     { perm: 'view_any_accounting_accounts' },
     'journal-entries':      { perm: 'view_any_accounting_journal_entries' },
     expenses:               { perm: 'view_any_accounting_expenses' },
     vendors:                { perm: 'view_any_accounting_vendors' },
@@ -154,32 +158,38 @@ const navGates = {
     'cash-flow':            { perm: 'view_accounting_cash_flow' },
     reports:                { perm: 'view_clinic_reports' },
     'daily-closing':        { perm: 'view_clinic_closing_reports' },
-    'daily-reconciliation': { roles: ['admin', 'super_admin', 'clinic_admin', 'branch_manager', 'accountant'] },
+    'daily-reconciliation': { perm: 'view_daily_reconciliation' },
     executive:              { perm: 'view_executive-dashboard' },
-    clinics:                { roles: ['admin', 'super_admin'] },
-    branches:               { roles: ['admin', 'super_admin'] },
-    gateways:               { roles: ['admin', 'super_admin'] },
-    roles:                  { roles: ['admin', 'super_admin'] },
+    clinics:                { perm: 'view_any_partner' },
+    branches:               { perm: 'view_any_branch' },
+    gateways:               { perm: 'view_any_gateway_account' },
+    roles:                  { perm: 'roles.view-any' },
     settings:               { perm: 'view_any_system_setting' },
-    activity:               { roles: ['admin', 'super_admin'] },
-    coupons:                { roles: ['admin', 'super_admin', 'clinic_admin'] },
-    promotions:             { roles: ['admin', 'super_admin', 'clinic_admin'] },
-    'wa-triggers':          { roles: ['admin', 'super_admin'] },
-    'wa-campaigns':         { roles: ['admin', 'super_admin'] },
-    'wa-commands':          { roles: ['admin', 'super_admin'] },
-    'wa-messages':          { roles: ['admin', 'super_admin'] },
-    'wa-texts':             { roles: ['admin', 'super_admin'] },
-    'wa-logs':              { roles: ['admin', 'super_admin'] },
-    'wa-sessions':          { roles: ['admin', 'super_admin'] },
-    'wa-audience':          { roles: ['admin', 'super_admin'] },
-    'wap-dashboard':        { roles: ['admin', 'super_admin', 'clinic_admin'] },
-    'wap-inbox':            { roles: ['admin', 'super_admin', 'clinic_admin'] },
-    'wap-templates':        { roles: ['admin', 'super_admin', 'clinic_admin'] },
-    'wap-contacts':         { roles: ['admin', 'super_admin', 'clinic_admin'] },
-    'wap-campaigns':        { roles: ['admin', 'super_admin', 'clinic_admin'] },
-    'wap-logs':             { roles: ['admin', 'super_admin', 'clinic_admin'] },
-    'wap-sessions':         { roles: ['admin', 'super_admin', 'clinic_admin'] },
-    'wap-settings':         { roles: ['admin', 'super_admin', 'clinic_admin'] },
+    activity:               { perm: 'view_any_activity_log' },
+    coupons:                { perm: 'view_any_coupons' },
+    promotions:             { perm: 'view_any_promotions' },
+    'wa-triggers':          { perm: 'view_any_whatsapp_trigger' },
+    'wa-campaigns':         { perm: 'view_any_bulk_invite_campaigns' },
+    'wa-commands':          { perm: 'view_any_wa_commands' },
+    'wa-messages':          { perm: 'view_any_whatsapp_message' },
+    'wa-texts':             { perm: 'view_any_message_text' },
+    'wa-logs':              { perm: 'view_any_wa_message_logs' },
+    'wa-sessions':          { perm: 'view_any_whatsapp_session' },
+    'wa-audience':          { perm: 'view_any_audience_metric' },
+    // WhatsApp module: one permission gates the whole section. Grant/revoke
+    // `view_wa_module` on any role and both the sidebar AND WaModuleController
+    // follow automatically — no code change here. (super_admin passes via
+    // Gate::before; admin holds every permission.)
+    'wap-dashboard':        { perm: 'view_wa_module' },
+    'wap-inbox':            { perm: 'view_wa_module' },
+    'wap-templates':        { perm: 'view_wa_module' },
+    'wap-media':            { perm: 'view_wa_module' },
+    'wap-points':           { perm: 'view_wa_module' },
+    'wap-contacts':         { perm: 'view_wa_module' },
+    'wap-campaigns':        { perm: 'view_wa_module' },
+    'wap-logs':             { perm: 'view_wa_module' },
+    'wap-sessions':         { perm: 'view_wa_module' },
+    'wap-settings':         { perm: 'view_wa_module' },
 }
 function itemVisible(it) {
     const g = navGates[it.id]
@@ -437,13 +447,14 @@ const navSections = computed(() => ([
         label: locale.value === 'ar' ? 'المحاسبة' : 'Accounting',
         items: [
             { id: 'accounts',         icon: 'book',          label: locale.value === 'ar' ? 'دليل الحسابات' : 'Chart of Accounts', href: '/admin/v2/accounting/chart-of-accounts', v2: true },
+            { id: 'posting-accounts', icon: 'settings',      label: locale.value === 'ar' ? 'حسابات الترحيل التلقائي' : 'Auto-Posting Accounts', href: '/admin/v2/accounting/posting-accounts', v2: true },
+            { id: 'general-ledger',   icon: 'book-open',     label: locale.value === 'ar' ? 'دفتر الأستاذ' : 'General Ledger', href: '/admin/v2/reports/accounting/general-ledger', v2: true },
             { id: 'journal-entries',  icon: 'book-open',     label: locale.value === 'ar' ? 'القيود اليومية' : 'Journal Entries', href: '/admin/v2/accounting/journal-entries', v2: true },
             { id: 'expenses',         icon: 'minus-circle',  label: locale.value === 'ar' ? 'المصروفات' : 'Expenses',             href: '/admin/v2/accounting/expenses', v2: true },
             { id: 'vendors',          icon: 'building-2',    label: locale.value === 'ar' ? 'الموردون' : 'Vendors',               href: '/admin/v2/accounting/vendors', v2: true },
             { id: 'reconciliation',   icon: 'check-circle',  label: locale.value === 'ar' ? 'التسوية المصرفية' : 'Bank Reconciliation', href: '/admin/v2/accounting/bank-reconciliations', v2: true },
             { id: 'periods',          icon: 'lock',          label: locale.value === 'ar' ? 'الفترات المحاسبية' : 'Periods', href: '/admin/v2/accounting/periods', v2: true },
             { id: 'trial-balance',    icon: 'scale',         label: locale.value === 'ar' ? 'ميزان المراجعة' : 'Trial Balance', href: '/admin/v2/reports/accounting/trial-balance', v2: true },
-            { id: 'general-ledger',   icon: 'book-open',     label: locale.value === 'ar' ? 'دفتر الأستاذ' : 'General Ledger', href: '/admin/v2/reports/accounting/general-ledger', v2: true },
             { id: 'profit-loss',      icon: 'trending-up',   label: locale.value === 'ar' ? 'قائمة الدخل' : 'Profit & Loss', href: '/admin/v2/reports/accounting/profit-loss', v2: true },
             { id: 'balance-sheet',    icon: 'scale',         label: locale.value === 'ar' ? 'الميزانية العمومية' : 'Balance Sheet', href: '/admin/v2/reports/accounting/balance-sheet', v2: true },
             { id: 'cash-flow',        icon: 'banknote',      label: locale.value === 'ar' ? 'التدفقات النقدية' : 'Cash Flow', href: '/admin/v2/reports/accounting/cash-flow', v2: true },
@@ -630,6 +641,7 @@ const navDescriptions = {
     'doctor-earnings':{ en: "What each doctor has earned and is owed, based on their compensation rules.", ar: 'ما كسبه كل طبيب وما له من مستحقات، بناءً على قواعد تعويضه.' },
     // Accounting
     accounts:         { en: "The chart of accounts — the backbone of the books grouping all assets, liabilities, income and expenses.", ar: 'دليل الحسابات — العمود الفقري للدفاتر الذي يجمع كل الأصول والخصوم والإيرادات والمصروفات.' },
+    'posting-accounts': { en: "Control which account every automated posting uses — cash, bank, receivables, inventory, COGS, payables, revenue and payroll. Leave a row on 'Default' to use the built-in setup, or point it at another account without any code change.", ar: 'تحكّم في الحساب الذي تستخدمه كل عملية ترحيل تلقائي — النقد والبنك والذمم والمخزون وتكلفة المبيعات والذمم الدائنة والإيرادات والرواتب. اترك السطر على «الافتراضي» لاستخدام الإعداد الجاهز، أو وجّهه إلى حساب آخر دون أي تعديل برمجي.' },
     'journal-entries':{ en: "Post manual double-entry transactions directly into the ledger when needed.", ar: 'سجّل قيود اليومية المزدوجة يدويًا مباشرة في الدفتر عند الحاجة.' },
     expenses:         { en: "Record what the clinic spends, categorise it, and link it to the right vendor.", ar: 'سجّل ما تنفقه العيادة، صنّفه، واربطه بالمورد الصحيح.' },
     vendors:          { en: "The suppliers and payees you buy from or pay, along with their balances.", ar: 'الموردون والمستفيدون الذين تشتري منهم أو تدفع لهم، مع أرصدتهم.' },
@@ -1226,18 +1238,24 @@ onMounted(() => {
     border-radius: 8px;
     cursor: pointer;
     font-family: inherit;
-    color: var(--fg-faint);
+    color: var(--fg-muted);
     font-size: 10.5px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.06em;
     transition: background 0.12s, color 0.12s;
 }
-.nav-group-header:hover { background: var(--bg-hover); color: var(--fg-subtle); }
-.nav-group-header.has-active { color: var(--accent); }
-.nav-group-icon { flex-shrink: 0; opacity: 0.85; }
+.nav-group-header:hover { background: var(--bg-hover); color: var(--fg); }
+.nav-group-header:hover .nav-group-icon { opacity: 1; }
+/* Active section (contains the current page): warm brand gold, not the
+   previously-undefined --accent (which silently rendered as dull grey). */
+.nav-group-header.has-active { color: var(--primary-hover); }
+.nav-group-header.has-active .nav-group-icon { opacity: 1; }
+/* Gold-tinted section icons give each heading a hint of brand colour so the
+   inactive groups read as deliberate, not washed-out. */
+.nav-group-icon { flex-shrink: 0; color: var(--primary); opacity: 0.8; transition: opacity 0.12s; }
 .nav-group-label { flex: 1; text-align: start; }
-.nav-group-chev { flex-shrink: 0; opacity: 0.6; transition: transform 0.16s ease; }
+.nav-group-chev { flex-shrink: 0; opacity: 0.5; transition: transform 0.16s ease; }
 .nav-group-chev.is-open { transform: rotate(180deg); }
 .nav-group-items {
     display: flex;

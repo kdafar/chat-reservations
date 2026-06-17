@@ -121,7 +121,7 @@ class HandleInertiaRequests extends Middleware
             //   APP_LOGO_URL  → header logo image (defaults to /favicon.svg)
             'app' => [
                 'name' => config('app.name'),
-                'logo_url' => env('APP_LOGO_URL', '/favicon.svg'),
+                'logo_url' => config('app.logo_url'),
             ],
 
             'locale' => app()->getLocale(),

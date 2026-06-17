@@ -1,6 +1,7 @@
 <script setup>
 import { computed, reactive, ref } from 'vue'
 import { Head, Link, router, usePage } from '@inertiajs/vue3'
+import { confirm } from '../../Composables/useConfirm.js'
 import AppLayout from '../../Layouts/AppLayout.vue'
 defineOptions({ layout: AppLayout })
 import Icon from '../../Components/Icon.vue'
@@ -51,7 +52,7 @@ function saveConfig() {
         preserveScroll: true, onError: e => { errors.value = e }, onFinish: () => { saving.value = false },
     })
 }
-function destroy() { if (window.confirm(t.value.delConfirm)) router.delete(route('v2.campaigns.destroy', { campaign: props.campaign.id })) }
+function destroy() { confirm({ body: t.value.delConfirm, tone: 'destructive', onConfirm: () => router.delete(route('v2.campaigns.destroy', { campaign: props.campaign.id })) }) }
 
 // recipients add
 const add = reactive({ numbers: '', preferred_region: 'KW', name: '', locale: '' })

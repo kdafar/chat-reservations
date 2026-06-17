@@ -5,6 +5,8 @@ import AppLayout from '../../Layouts/AppLayout.vue'
 defineOptions({ layout: AppLayout })
 import Icon from '../../Components/Icon.vue'
 import SearchableSelect from '../../Components/SearchableSelect.vue'
+import { formatMoney } from '../../lib/money.js'
+import { confirm } from '../../Composables/useConfirm.js'
 
 const props = defineProps({
     filters: Object, page: Object, wards: Array, statuses: Array, counts: Object, can_edit: Boolean,
@@ -21,7 +23,7 @@ const t = computed(() => isRtl.value ? {
     empty: 'لا توجد أسرّة', emptyDesc: 'أضف سريرًا لتبدأ.',
     clear: 'مسح', allWards: 'كل الأقسام', allStatuses: 'كل الحالات', showing: 'عرض', of: 'من',
     statuses: { available: 'متاح', occupied: 'مشغول', reserved: 'محجوز', maintenance: 'صيانة', cleaning: 'تنظيف' },
-    modal: { createTitle: 'سرير جديد', editTitle: 'تحرير السرير', save: 'حفظ', cancel: 'إلغاء', deleteConfirm: 'حذف السرير؟' },
+    modal: { createTitle: 'سرير جديد', editTitle: 'تحرير السرير', save: 'حفظ', cancel: 'إلغاء', delete: 'حذف', deleteConfirm: 'حذف السرير؟' },
     fields: { code: 'الكود', ward: 'القسم', status: 'الحالة', rate: 'السعر اليومي (د.ك)', rateHint: 'اتركه فارغًا لاستخدام سعر القسم', is_active: 'فعّال' },
     stats: { total: 'الكل', available: 'متاح', occupied: 'مشغول', maintenance: 'خارج الخدمة' },
 } : {
@@ -32,7 +34,7 @@ const t = computed(() => isRtl.value ? {
     empty: 'No beds', emptyDesc: 'Add a bed to get started.',
     clear: 'Clear', allWards: 'All wards', allStatuses: 'All statuses', showing: 'Showing', of: 'of',
     statuses: { available: 'Available', occupied: 'Occupied', reserved: 'Reserved', maintenance: 'Maintenance', cleaning: 'Cleaning' },
-    modal: { createTitle: 'New bed', editTitle: 'Edit bed', save: 'Save', cancel: 'Cancel', deleteConfirm: 'Delete this bed?' },
+    modal: { createTitle: 'New bed', editTitle: 'Edit bed', save: 'Save', cancel: 'Cancel', delete: 'Delete', deleteConfirm: 'Delete this bed?' },
     fields: { code: 'Code', ward: 'Ward', status: 'Status', rate: 'Daily rate override (KWD)', rateHint: "Leave empty to use the ward's rate", is_active: 'Active' },
     stats: { total: 'Total', available: 'Available', occupied: 'Occupied', maintenance: 'Out of service' },
 })
@@ -63,7 +65,7 @@ function submit() {
     const method = modalMode.value === 'create' ? 'post' : 'put'
     router[method](url, payload, { preserveScroll: true, onSuccess: () => close(), onError: (e) => { errors.value = e; saving.value = false } })
 }
-function remove(row) { if (!window.confirm(t.value.modal.deleteConfirm)) return; router.delete(route('v2.inpatient.beds.destroy', { bed: row.id }), { preserveScroll: true }) }
+function remove(row) { confirm({ body: t.value.modal.deleteConfirm, tone: 'destructive', onConfirm: () => router.delete(route('v2.inpatient.beds.destroy', { bed: row.id }), { preserveScroll: true }) }) }
 </script>
 
 <template>
@@ -104,9 +106,9 @@ function remove(row) { if (!window.confirm(t.value.modal.deleteConfirm)) return;
                             <td class="mono" style="font-weight:600;">{{ row.code }}</td>
                             <td style="font-size:12px;">{{ row.ward?.name || '—' }} <span style="color:var(--fg-faint);">({{ row.ward?.code }})</span></td>
                             <td><span class="badge" :style="{ color: statusColor(row.status), borderColor: statusColor(row.status) }">{{ t.statuses[row.status] || row.status }}</span></td>
-                            <td class="mono" style="text-align:end;">{{ row.daily_rate_override !== null ? Number(row.daily_rate_override).toFixed(3) : '—' }}</td>
+                            <td class="mono" style="text-align:end;">{{ row.daily_rate_override !== null ? formatMoney(row.daily_rate_override) : '—' }}</td>
                             <td @click.stop>
-                                <button v-if="can_edit" class="btn btn-ghost btn-sm btn-icon" @click="remove(row)"><Icon name="trash-2" :size="13" /></button>
+                                <button v-if="can_edit" class="btn btn-ghost btn-sm btn-icon" :title="t.modal.delete" :aria-label="t.modal.delete" @click="remove(row)"><Icon name="trash-2" :size="13" /></button>
                             </td>
                         </tr>
                     </tbody>
@@ -131,7 +133,7 @@ function remove(row) { if (!window.confirm(t.value.modal.deleteConfirm)) return;
                     <div><label class="label">{{ t.fields.code }} <span class="req">*</span></label><input v-model="form.code" class="input" required maxlength="32" /><div v-if="errors.code" class="err">{{ errors.code }}</div></div>
                     <div><label class="label">{{ t.fields.ward }} <span class="req">*</span></label><SearchableSelect v-model="form.ward_id" :items="wardItems" :nullable="false" placeholder="—" /></div>
                     <div><label class="label">{{ t.fields.status }} <span class="req">*</span></label><SearchableSelect v-model="form.status" :items="statusItems" :nullable="false" /></div>
-                    <div><label class="label">{{ t.fields.rate }}</label><input v-model="form.daily_rate_override" type="number" step="0.001" min="0" class="input" /><div class="hint">{{ t.fields.rateHint }}</div></div>
+                    <div><label class="label">{{ t.fields.rate }}</label><input v-model="form.daily_rate_override" type="number" step="any" min="0" class="input" /><div class="hint">{{ t.fields.rateHint }}</div></div>
                     <div style="grid-column:span 2; display:flex; align-items:center; gap:8px;"><input id="b_act" v-model="form.is_active" type="checkbox" /><label for="b_act" style="font-size:13px;">{{ t.fields.is_active }}</label></div>
                     <div style="grid-column:span 2; display:flex; justify-content:flex-end; gap:8px; padding-top:12px; border-top:1px solid var(--line);">
                         <button type="button" class="btn btn-ghost" @click="close">{{ t.modal.cancel }}</button>
@@ -147,7 +149,7 @@ function remove(row) { if (!window.confirm(t.value.modal.deleteConfirm)) return;
 .stat-chip-num { font-size:18px; font-weight:700; color:var(--fg); line-height:1; }
 .stat-chip-lbl { font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:var(--fg-faint); margin-top:4px; }
 .table { width:100%; border-collapse:collapse; font-size:13px; }
-.table th { text-align:start; padding:10px 12px; font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:var(--fg-faint); font-weight:600; border-bottom:1px solid var(--line); }
+.table th { text-align:start; padding:10px 12px; font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:var(--fg-faint); font-weight:600; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--card, var(--bg)); z-index:1; }
 .table td { padding:10px 12px; border-bottom:1px solid var(--line); }
 .table tbody tr:hover { background:var(--bg-hover); }
 .badge { display:inline-block; padding:2px 8px; font-size:11px; font-weight:600; border:1px solid; border-radius:999px; }

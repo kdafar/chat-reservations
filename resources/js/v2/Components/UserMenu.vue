@@ -8,6 +8,14 @@ const page = usePage()
 const user = computed(() => page.props.auth?.user ?? null)
 const locale = computed(() => page.props.locale ?? 'en')
 
+// The live patient queue is clinical / front-desk only (see the 'waiting'
+// navGate + WaitingPatientsController). Hide the shortcut for roles that can't
+// open it — e.g. an accountant — so the menu never offers a link that 403s.
+const canQueue = computed(() => {
+    const u = user.value
+    return !!(u?.is_admin || u?.is_reception || u?.is_doctor || u?.is_nurse)
+})
+
 // On phones the header's language + theme controls move into this menu (see the
 // "mobile preferences" section in the template). Language switching is a plain
 // full-page redirect, matching the topbar control in AppLayout.
@@ -194,16 +202,18 @@ function logout() {
                     <Icon name="calendar-x" :size="14" />
                     <span style="flex: 1;">{{ t.myLeaves }}</span>
                 </a>
-                <div style="height: 1px; background: var(--line); margin: 6px 4px;"></div>
-                <a
-                    href="/admin/v2/waiting-patients"
-                    class="menu-item"
-                    style="text-decoration: none;"
-                    @click="hide"
-                >
-                    <Icon name="users-round" :size="14" />
-                    <span style="flex: 1;">{{ t.waiting }}</span>
-                </a>
+                <template v-if="canQueue">
+                    <div style="height: 1px; background: var(--line); margin: 6px 4px;"></div>
+                    <a
+                        href="/admin/v2/waiting-patients"
+                        class="menu-item"
+                        style="text-decoration: none;"
+                        @click="hide"
+                    >
+                        <Icon name="users-round" :size="14" />
+                        <span style="flex: 1;">{{ t.waiting }}</span>
+                    </a>
+                </template>
                 <a
                     href="/admin"
                     class="menu-item"

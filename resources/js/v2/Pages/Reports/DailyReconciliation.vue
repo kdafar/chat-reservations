@@ -9,6 +9,7 @@ import Skeleton from '../../Components/Skeleton.vue'
 import SearchableSelect from '../../Components/SearchableSelect.vue'
 import DateTimePicker from '../../Components/DateTimePicker.vue'
 import EChart from '../../Components/EChart.vue'
+import { formatMoney as fmt } from '../../lib/money.js'
 
 const props = defineProps({ filters: Object, branches: Array, report: Object })
 
@@ -39,7 +40,6 @@ function apply() {
         branch_id: f.branch_id || undefined,
     }, { preserveState: true, preserveScroll: true, replace: true })
 }
-const fmt = (n) => Number(n ?? 0).toFixed(3)
 const methodLabel = (m) => t.value.methods[String(m || 'unknown').toLowerCase()] || m
 // Hex (not CSS vars) so the same colour drives both the ECharts donut and the
 // table badges below.
@@ -184,7 +184,7 @@ const methodOption = computed(() => ({
 .kpi-row { display:flex; justify-content:space-between; padding:4px 0; font-size:13px; }
 .label { display:block; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.04em; color:var(--fg-faint); margin-bottom:4px; }
 .table { width:100%; border-collapse:collapse; font-size:13px; }
-.table th { text-align:start; padding:10px 12px; font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:var(--fg-faint); font-weight:600; border-bottom:1px solid var(--line); }
+.table th { text-align:start; padding:10px 12px; font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:var(--fg-faint); font-weight:600; border-bottom:1px solid var(--line); position: sticky; top: 0; background: var(--card, var(--bg)); z-index: 1; }
 .table td { padding:10px 12px; border-bottom:1px solid var(--line); }
 .table tr:last-child td { border-bottom:none; }
 .table tbody tr:hover { background:var(--bg-hover); }

@@ -164,7 +164,7 @@ function onSheetChanged() {
 
             <!-- Wards -->
             <div v-if="wards.length === 0" class="card" style="padding: 24px; text-align: center; color: var(--fg-muted);">
-                No wards configured yet. <a href="/admin/v2/inpatient/wards">Add a ward</a>.
+                No wards configured yet.<template v-if="can_manage"> <a href="/admin/v2/inpatient/wards">Add a ward</a>.</template>
             </div>
 
             <div v-for="w in wards" :key="w.id" style="margin-bottom: 24px;">

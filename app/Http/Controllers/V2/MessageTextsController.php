@@ -19,7 +19,7 @@ class MessageTextsController extends Controller
 {
     protected function authorizeAccess(Request $request): void
     {
-        if (! $request->user() || ! $request->user()->hasRole(['admin', 'super_admin'])) {
+        if (! $request->user() || ! $request->user()->can('view_any_message_text')) {
             abort(403, 'Admin access required.');
         }
     }

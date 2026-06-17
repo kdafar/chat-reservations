@@ -18,7 +18,7 @@ class InpatientReportsController extends Controller
     public function index(Request $request): Response
     {
         $u = $request->user();
-        if (! $u || ! ($u->hasRole(['admin', 'super_admin', 'clinic_admin']) || $u->can('view_any_admissions'))) {
+        if (! $u || ! ($u->hasRole(['admin', 'super_admin', 'clinic_admin', 'accountant']) || $u->can('view_any_admissions'))) {
             abort(403, 'Not authorized to view inpatient reports.');
         }
 

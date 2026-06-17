@@ -58,6 +58,58 @@ class PurchaseOrdersController extends Controller
         return (bool) $request->user()?->can('pay_purchase_orders');
     }
 
+    /** All PO statuses, in lifecycle order — shared by index() and export(). */
+    protected function statusList(): array
+    {
+        return [
+            PurchaseOrder::STATUS_DRAFT, PurchaseOrder::STATUS_PENDING_APPROVAL,
+            PurchaseOrder::STATUS_APPROVED, PurchaseOrder::STATUS_REJECTED,
+            PurchaseOrder::STATUS_SENT, PurchaseOrder::STATUS_ACKNOWLEDGED,
+            PurchaseOrder::STATUS_PARTIALLY_RECEIVED, PurchaseOrder::STATUS_RECEIVED,
+            PurchaseOrder::STATUS_CLOSED, PurchaseOrder::STATUS_CANCELLED,
+        ];
+    }
+
+    /** Styled .xlsx export of the PO list (mirrors the list's status + search filters). */
+    public function export(Request $request)
+    {
+        $this->authorizeView($request);
+        $locale = app()->getLocale();
+        $status = $request->input('status', 'all');
+        $search = trim((string) $request->input('q', ''));
+
+        $query = PurchaseOrder::query()
+            ->with(['vendor:id,name', 'branch:id,name'])
+            ->withSum('receipts as r_sum', 'total_amount')
+            ->withSum('payments as p_sum', 'amount')
+            ->when(in_array($status, $this->statusList(), true), fn ($q) => $q->where('status', $status))
+            ->when($search !== '', fn ($q) => $q->where('code', 'like', "%{$search}%"))
+            ->orderByDesc('id');
+
+        return \Maatwebsite\Excel\Facades\Excel::download(
+            new \App\Exports\V2\StyledQueryExport(
+                $query,
+                ['Code', 'Vendor', 'Branch', 'Status', 'Currency', 'Order date', 'ETA', 'Total (KWD)', 'Received', 'Paid', 'Outstanding'],
+                fn ($po) => [
+                    $po->code,
+                    $po->vendor?->name,
+                    $po->branch?->getTranslation('name', $locale, true) ?? ('#'.$po->branch_id),
+                    $po->status,
+                    $po->currency,
+                    optional($po->order_date)->toDateString(),
+                    optional($po->eta)->toDateString(),
+                    (float) $po->total,
+                    round((float) $po->r_sum, 3),
+                    round((float) $po->p_sum, 3),
+                    round((float) $po->r_sum - (float) $po->p_sum, 3),
+                ],
+                'Purchase Orders',
+                $locale === 'ar',
+            ),
+            'purchase-orders-'.now()->format('Ymd-His').'.xlsx',
+        );
+    }
+
     public function index(Request $request): Response
     {
         $this->authorizeView($request);
@@ -65,13 +117,7 @@ class PurchaseOrdersController extends Controller
         $status = $request->input('status', 'all');
         $search = trim((string) $request->input('q', ''));
 
-        $statuses = [
-            PurchaseOrder::STATUS_DRAFT, PurchaseOrder::STATUS_PENDING_APPROVAL,
-            PurchaseOrder::STATUS_APPROVED, PurchaseOrder::STATUS_REJECTED,
-            PurchaseOrder::STATUS_SENT, PurchaseOrder::STATUS_ACKNOWLEDGED,
-            PurchaseOrder::STATUS_PARTIALLY_RECEIVED, PurchaseOrder::STATUS_RECEIVED,
-            PurchaseOrder::STATUS_CLOSED, PurchaseOrder::STATUS_CANCELLED,
-        ];
+        $statuses = $this->statusList();
 
         $query = PurchaseOrder::query()
             ->with(['vendor:id,name,code', 'branch:id,name', 'lines:id,purchase_order_id', 'receipts:id,purchase_order_id,total_amount', 'payments:id,purchase_order_id,amount'])
@@ -511,7 +557,7 @@ class PurchaseOrdersController extends Controller
     protected function payAccounts(): array
     {
         return Account::query()
-            ->where(fn ($q) => $q->where('code', 'like', '101%')->orWhere('code', 'like', '102%'))
+            ->where(fn ($q) => $q->where('code', 'like', '111%')->orWhere('code', 'like', '112%')->orWhere('code', 'like', '113%'))
             ->orderBy('code')->get(['id', 'code', 'name'])
             ->map(fn ($a) => ['id' => $a->id, 'label' => $a->code.' — '.$a->name])->all();
     }
@@ -520,7 +566,7 @@ class PurchaseOrdersController extends Controller
     protected function poDetail(PurchaseOrder $order): array
     {
         $locale = app()->getLocale();
-        $order->load(['vendor:id,name,code', 'branch:id,name,partner_id', 'lines.clinicItem', 'receipts', 'payments']);
+        $order->load(['vendor:id,name,code', 'branch:id,name,partner_id', 'lines.clinicItem', 'receipts.receiver:id,name', 'payments.payer:id,name']);
         $received = $order->amountReceived();
         $paid = $order->amountPaid();
 
@@ -597,6 +643,7 @@ class PurchaseOrdersController extends Controller
                 'total' => (float) $r->total_amount,
                 'landed' => (float) $r->landed_amount,
                 'received_at' => optional($r->received_at)->toIso8601String(),
+                'received_by' => $r->receiver?->name,
                 'reversed' => (bool) $r->reversed_at,
             ])->all(),
             'po_payments' => $order->payments->map(fn ($p) => [
@@ -606,6 +653,7 @@ class PurchaseOrdersController extends Controller
                 'method' => $p->method,
                 'reference_no' => $p->reference_no,
                 'payment_date' => optional($p->payment_date)->toDateString(),
+                'paid_by' => $p->payer?->name,
             ])->all(),
         ];
     }

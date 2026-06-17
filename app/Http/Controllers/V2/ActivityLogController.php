@@ -17,7 +17,7 @@ class ActivityLogController extends Controller
 {
     protected function authorizeAccess(Request $request): void
     {
-        if (! $request->user() || ! $request->user()->hasRole(['admin', 'super_admin'])) {
+        if (! $request->user() || ! $request->user()->can('view_any_activity_log')) {
             abort(403, 'Not authorized to view the activity log.');
         }
     }

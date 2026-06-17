@@ -20,7 +20,7 @@ const t = computed(() => isRtl.value
     ? {
         eyebrow: 'الصيدلية والمخزون', title: 'أوامر الشراء',
         sub: 'اطلب من الموردين، استلم في المخزون، وادفع — مربوط بالمحاسبة.',
-        new: 'أمر شراء جديد', searchPh: 'بحث بالرقم أو المورد…', search: 'بحث',
+        new: 'أمر شراء جديد', exportExcel: 'تصدير Excel', searchPh: 'بحث بالرقم أو المورد…', search: 'بحث',
         code: 'الرقم', vendor: 'المورد', branch: 'الفرع', items: 'الأصناف', status: 'الحالة', date: 'التاريخ',
         total: 'الإجمالي', outstanding: 'المتبقي', empty: 'لا توجد أوامر شراء',
         prev: 'السابق', next: 'التالي',
@@ -30,7 +30,7 @@ const t = computed(() => isRtl.value
     : {
         eyebrow: 'Pharmacy & Stock', title: 'Purchase Orders',
         sub: 'Order from vendors, receive into stock, and pay — wired to accounting.',
-        new: 'New PO', searchPh: 'Search code or vendor…', search: 'Search',
+        new: 'New PO', exportExcel: 'Export Excel', searchPh: 'Search code or vendor…', search: 'Search',
         code: 'Code', vendor: 'Vendor', branch: 'Branch', items: 'Items', status: 'Status', date: 'Date',
         total: 'Total', outstanding: 'Outstanding', empty: 'No purchase orders yet',
         prev: 'Previous', next: 'Next',
@@ -89,9 +89,14 @@ const kpiCards = computed(() => [
                 <h1 style="font-size: 22px; font-weight: 600; margin: 2px 0 2px;">{{ t.title }}</h1>
                 <div style="font-size: 13px; color: var(--fg-subtle);">{{ t.sub }}</div>
             </div>
-            <button v-if="can_create" class="btn btn-primary" @click="openCreate">
-                <Icon name="plus" :size="14" /><span>{{ t.new }}</span>
-            </button>
+            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                <a class="btn btn-outline" :href="route('v2.purchase-orders.export', { status: filters.status || 'all', q: filters.q || undefined })">
+                    <Icon name="download" :size="14" /><span>{{ t.exportExcel }}</span>
+                </a>
+                <button v-if="can_create" class="btn btn-primary" @click="openCreate">
+                    <Icon name="plus" :size="14" /><span>{{ t.new }}</span>
+                </button>
+            </div>
         </div>
 
         <!-- KPI stat cards -->

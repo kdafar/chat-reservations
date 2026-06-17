@@ -9,6 +9,18 @@ const page = usePage()
 const locale = computed(() => page.props.locale ?? 'en')
 const isRtl = computed(() => locale.value === 'ar')
 
+// Identity flags used to gate the quick actions below — same source the sidebar
+// navGates use, so the palette never offers an action the user can't perform.
+const authFlags = computed(() => {
+    const u = page.props.auth?.user ?? {}
+    return {
+        is_admin: !!u.is_admin,
+        is_reception: !!u.is_reception,
+        is_doctor: !!u.is_doctor,
+        is_nurse: !!u.is_nurse,
+    }
+})
+
 const q = ref('')
 const loading = ref(false)
 const groups = ref([])
@@ -35,13 +47,21 @@ const t = computed(() => isRtl.value
     }
 )
 
-// Built-in quick actions — always present.
-const quickActions = computed(() => ([
-    { type: 'action', icon: 'users-round',   title: isRtl.value ? 'قائمة الانتظار'   : 'Waiting patients',    url: '/admin/v2/waiting-patients' },
-    { type: 'action', icon: 'log-in',        title: isRtl.value ? 'تسجيل وصول مريض' : 'Check-in patient',     url: '/admin/v2/checkin' },
-    { type: 'action', icon: 'calendar-plus', title: isRtl.value ? 'حجز جديد'        : 'New booking',          url: '/admin/v2/bookings/new' },
-    { type: 'action', icon: 'layout-grid',   title: isRtl.value ? 'الإدارة الكلاسيكية' : 'Open classic admin',  url: '/admin' },
-]))
+// Built-in quick actions — gated to what the user may actually do. The queue is
+// clinical/front-desk; check-in + new booking are front-desk; classic admin is
+// open to any staff member. Each carries a `show` flag and is filtered out when
+// false, mirroring the sidebar navGates.
+const quickActions = computed(() => {
+    const f = authFlags.value
+    const canQueue = f.is_admin || f.is_reception || f.is_doctor || f.is_nurse
+    const frontDesk = f.is_admin || f.is_reception
+    return [
+        { type: 'action', icon: 'users-round',   title: isRtl.value ? 'قائمة الانتظار'   : 'Waiting patients',    url: '/admin/v2/waiting-patients', show: canQueue },
+        { type: 'action', icon: 'log-in',        title: isRtl.value ? 'تسجيل وصول مريض' : 'Check-in patient',     url: '/admin/v2/checkin',          show: frontDesk },
+        { type: 'action', icon: 'calendar-plus', title: isRtl.value ? 'حجز جديد'        : 'New booking',          url: '/admin/v2/bookings/new',     show: frontDesk },
+        { type: 'action', icon: 'layout-grid',   title: isRtl.value ? 'الإدارة الكلاسيكية' : 'Open classic admin',  url: '/admin',                     show: true },
+    ].filter(a => a.show)
+})
 
 // All items in a flat list (for keyboard navigation by index).
 const allItems = computed(() => groups.value.flatMap((g) => g.items))

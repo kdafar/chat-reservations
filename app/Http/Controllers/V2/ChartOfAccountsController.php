@@ -82,19 +82,62 @@ class ChartOfAccountsController extends Controller
             return $a;
         });
 
-        return Inertia::render('ChartOfAccounts/Index', [
+        return Inertia::render('ChartOfAccounts/Index', array_merge($this->pickerData(), [
             'filters' => $filters,
             'page' => $page,
-            'types' => self::TYPES,
-            'parents' => Account::query()->orderBy('code')->get(['id', 'code', 'name'])
-                ->map(fn ($a) => ['id' => $a->id, 'label' => $a->code.' — '.$a->name])->all(),
-            'branches' => $this->accessibleBranches()->all(),
             'counts' => [
                 'total' => Account::query()->count(),
                 'active' => Account::query()->where('is_active', true)->count(),
             ],
             'can_edit' => $this->canEdit($request),
-        ]);
+            'can_view_ledger' => (bool) $request->user()?->can('view_accounting_general_ledger'),
+        ]));
+    }
+
+    /** Type / parent / branch pickers shared by the list and the create/edit page. */
+    protected function pickerData(): array
+    {
+        return [
+            'types' => self::TYPES,
+            'parents' => Account::query()->orderBy('code')->get(['id', 'code', 'name'])
+                ->map(fn ($a) => ['id' => $a->id, 'label' => $a->code.' — '.$a->name])->all(),
+            'branches' => $this->accessibleBranches()->all(),
+        ];
+    }
+
+    /** Dedicated create page (replaces the old modal). */
+    public function create(Request $request): Response
+    {
+        $this->authorizeAccess($request);
+        abort_unless((bool) $request->user()->can('create_accounting_accounts'), 403);
+
+        return Inertia::render('ChartOfAccounts/Form', array_merge($this->pickerData(), [
+            'mode' => 'create',
+            'account' => null,
+        ]));
+    }
+
+    /** Dedicated edit page (replaces the old modal). */
+    public function edit(Request $request, Account $account): Response
+    {
+        $this->authorizeAccess($request);
+        abort_unless($this->canEdit($request), 403);
+
+        return Inertia::render('ChartOfAccounts/Form', array_merge($this->pickerData(), [
+            'mode' => 'edit',
+            'account' => [
+                'id' => $account->id,
+                'code' => $account->code,
+                'name' => $account->name,
+                'type' => $account->type,
+                'parent_id' => $account->parent_id,
+                'branch_id' => $account->branch_id,
+                'currency' => $account->currency ?: 'KWD',
+                'is_active' => (bool) $account->is_active,
+                'description' => $account->description ?? '',
+                'is_system' => (bool) $account->is_system,
+            ],
+        ]));
     }
 
     public function store(Request $request): RedirectResponse
@@ -102,7 +145,8 @@ class ChartOfAccountsController extends Controller
         $this->authorizeAccess($request);
         if (! $request->user()->can('create_accounting_accounts')) abort(403);
         Account::create($this->validated($request) + ['is_system' => false]);
-        return back()->with('flash', ['type' => 'success', 'message' => 'Account added.']);
+        return redirect()->route('v2.accounting.accounts.index')
+            ->with('flash', ['type' => 'success', 'message' => 'Account added.']);
     }
 
     public function update(Request $request, Account $account): RedirectResponse
@@ -115,10 +159,12 @@ class ChartOfAccountsController extends Controller
                 'is_active' => ['sometimes', 'boolean'],
                 'description' => ['nullable', 'string', 'max:1000'],
             ]) + ['is_active' => (bool) $request->input('is_active', $account->is_active)]);
-            return back()->with('flash', ['type' => 'success', 'message' => 'System account updated.']);
+            return redirect()->route('v2.accounting.accounts.index')
+                ->with('flash', ['type' => 'success', 'message' => 'System account updated.']);
         }
         $account->update($this->validated($request, $account->id));
-        return back()->with('flash', ['type' => 'success', 'message' => 'Account updated.']);
+        return redirect()->route('v2.accounting.accounts.index')
+            ->with('flash', ['type' => 'success', 'message' => 'Account updated.']);
     }
 
     public function destroy(Request $request, Account $account): RedirectResponse

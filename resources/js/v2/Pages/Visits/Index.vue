@@ -1,17 +1,19 @@
 <script setup>
-import { computed, reactive } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { Head, Link, router, usePage } from '@inertiajs/vue3'
 import { confirm } from '../../Composables/useConfirm.js'
 import AppLayout from '../../Layouts/AppLayout.vue'
 defineOptions({ layout: AppLayout })
 import Icon from '../../Components/Icon.vue'
 import BulkBar from '../../Components/BulkBar.vue'
+import Skeleton from '../../Components/Skeleton.vue'
 import SearchableSelect from '../../Components/SearchableSelect.vue'
 import { useTableSelect } from '../../Composables/useTableSelect.js'
 import DateTimePicker from '../../Components/DateTimePicker.vue'
+import { formatMoney as fmt } from '../../lib/money.js'
 
 const props = defineProps({
-    filters: Object, page: Object, doctors: Array, branches: Array, statuses: Array, financials_enabled: Boolean, counts: Object, can_recompute: Boolean,
+    filters: Object, page: Object, doctors: Array, branches: Array, statuses: Array, financials_enabled: Boolean, counts: Object, can_recompute: Boolean, summary: Object,
 })
 
 const pageProps = usePage()
@@ -25,7 +27,9 @@ const t = computed(() => isRtl.value ? {
     acc: { all: 'الكل', yes: 'مقبولة', no: 'غير مقبولة' },
     st: { created: 'منشأة', checked_in: 'تم الدخول', awaiting_doctor: 'بانتظار الطبيب', awaiting_stock: 'بانتظار المخزون', in_progress: 'جارية', awaiting_payment: 'بانتظار الدفع', completed: 'مكتملة', cancelled: 'ملغاة', no_show: 'لم يحضر' },
     col: { id: '#', checkedIn: 'وقت الدخول', patient: 'المريض', doctor: 'الطبيب', branch: 'الفرع', fees: 'الأتعاب', profit: 'الربح', status: 'الحالة' },
-    empty: 'لا توجد زيارات', showing: 'عرض', of: 'من', recompute: 'إعادة حساب', recomputeConfirm: 'إعادة حساب اللقطة المالية لهذه الزيارة؟',
+    empty: 'لا توجد زيارات', emptyDesc: 'جرّب تعديل عوامل التصفية أو وسّع نطاق التاريخ.',
+    showing: 'عرض', of: 'من', recompute: 'إعادة حساب', recomputeConfirm: 'إعادة حساب اللقطة المالية لهذه الزيارة؟',
+    feesTotal: 'إجمالي الأتعاب',
     stats: { total: 'الكل', completed: 'مكتملة' },
 } : {
     title: 'Visits', eyebrow: 'Operations',
@@ -34,7 +38,9 @@ const t = computed(() => isRtl.value ? {
     acc: { all: 'All', yes: 'Accepted', no: 'Not accepted' },
     st: { created: 'Created', checked_in: 'Checked in', awaiting_doctor: 'Awaiting doctor', awaiting_stock: 'Awaiting stock', in_progress: 'In progress', awaiting_payment: 'Awaiting payment', completed: 'Completed', cancelled: 'Cancelled', no_show: 'No show' },
     col: { id: '#', checkedIn: 'Checked in', patient: 'Patient', doctor: 'Doctor', branch: 'Branch', fees: 'Fees', profit: 'Profit', status: 'Status' },
-    empty: 'No visits', showing: 'Showing', of: 'of', recompute: 'Recompute', recomputeConfirm: 'Recompute the financial snapshot for this visit?',
+    empty: 'No visits', emptyDesc: 'Try adjusting your filters or widening the date range.',
+    showing: 'Showing', of: 'of', recompute: 'Recompute', recomputeConfirm: 'Recompute the financial snapshot for this visit?',
+    feesTotal: 'Total fees',
     stats: { total: 'Total', completed: 'Completed' },
 })
 
@@ -43,12 +49,17 @@ const f = reactive({
     status: props.filters.status || 'all', accepted: props.filters.accepted || 'all', from: props.filters.from || '', until: props.filters.until || '',
 })
 let qTimer = null
+const loading = ref(false)
 function apply() {
     router.get(route('v2.visits.index'), {
         q: f.q || undefined, doctor_id: f.doctor_id || undefined, branch_id: f.branch_id || undefined,
         status: f.status === 'all' ? undefined : f.status, accepted: f.accepted === 'all' ? undefined : f.accepted,
         from: f.from || undefined, until: f.until || undefined,
-    }, { preserveState: true, preserveScroll: true, replace: true })
+    }, {
+        preserveState: true, preserveScroll: true, replace: true,
+        onStart: () => { loading.value = true },
+        onFinish: () => { loading.value = false },
+    })
 }
 function onSearch() { clearTimeout(qTimer); qTimer = setTimeout(apply, 250) }
 function clearFilters() { Object.assign(f, { q: '', doctor_id: '', branch_id: '', status: 'all', accepted: 'all', from: '', until: '' }); apply() }
@@ -61,17 +72,16 @@ function openVisit(row) { router.get(route('v2.visits.show', { visit: row.id }))
 function recompute(row) { confirm({ body: t.value.recomputeConfirm, tone: 'primary', confirmLabel: t.value.recompute, onConfirm: () => router.post(route('v2.visits.recompute', { visit: row.id }), {}, { preserveScroll: true }) }) }
 
 const statusBadge = (s) => ({ completed: 'badge badge-success', in_progress: 'badge badge-info', cancelled: 'badge-muted', no_show: 'badge badge-warning' }[s] || 'badge badge-warning')
-const fmt = (n) => Number(n ?? 0).toFixed(3)
 const dt = (d) => d ? String(d).slice(0, 16).replace('T', ' ') : '—'
 </script>
 
 <template>
     <Head :title="t.title" />
         <div style="padding:24px; max-width:1280px; margin:0 auto;">
-            <div style="margin-bottom:16px;">
+            <div style="margin-bottom:20px;">
                 <div class="eyebrow">{{ t.eyebrow }}</div>
-                <h1 style="margin:4px 0 0; font-size:22px; font-weight:700; color:var(--fg);">{{ t.title }}</h1>
-                <p style="margin:6px 0 0; font-size:13px; color:var(--fg-subtle); max-width:640px;">{{ t.desc }}</p>
+                <h1 style="margin:6px 0 4px; font-size:26px; font-weight:500; letter-spacing:-0.02em;">{{ t.title }}</h1>
+                <p style="margin:0; font-size:13.5px; color:var(--fg-muted);">{{ t.desc }}</p>
             </div>
 
             <div style="display:flex; gap:8px; margin-bottom:16px;">
@@ -108,12 +118,21 @@ const dt = (d) => d ? String(d).slice(0, 16).replace('T', ' ') : '—'
                         </tr>
                     </thead>
                     <tbody>
-                        <tr v-if="page.data.length === 0">
-                            <td :colspan="financials_enabled ? 9 : 8" style="text-align:center; padding:48px; color:var(--fg-faint);">
-                                <Icon name="clipboard-list" :size="32" style="margin-bottom:8px; opacity:0.4;" /><div style="font-weight:600;">{{ t.empty }}</div>
+                        <tr v-if="loading">
+                            <td :colspan="financials_enabled ? 9 : 8" style="padding:14px 16px;">
+                                <div style="display:flex; flex-direction:column; gap:10px;">
+                                    <Skeleton v-for="n in 8" :key="n" height="20px" />
+                                </div>
                             </td>
                         </tr>
-                        <tr v-for="row in page.data" :key="row.id" @click="openVisit(row)" :class="sel.isSelected(row.id) ? 'is-selected' : ''" style="cursor:pointer;">
+                        <tr v-else-if="page.data.length === 0">
+                            <td :colspan="financials_enabled ? 9 : 8" style="text-align:center; padding:48px 24px; color:var(--fg-faint);">
+                                <div class="empty-illo" style="margin:0 auto 12px;"><Icon name="clipboard-list" :size="22" /></div>
+                                <div style="font-weight:500; font-size:14px; color:var(--fg);">{{ t.empty }}</div>
+                                <div style="font-size:12.5px; color:var(--fg-muted); margin-top:4px;">{{ t.emptyDesc }}</div>
+                            </td>
+                        </tr>
+                        <tr v-for="row in page.data" v-show="!loading" :key="row.id" @click="openVisit(row)" :class="sel.isSelected(row.id) ? 'is-selected' : ''" style="cursor:pointer;">
                             <td style="text-align:center;" @click.stop><input type="checkbox" :checked="sel.isSelected(row.id)" @change="sel.toggle(row.id)" /></td>
                             <td class="mono">{{ row.id }}</td>
                             <td style="font-size:12px; white-space:nowrap;">{{ dt(row.checked_in_at) }}</td>
@@ -130,6 +149,13 @@ const dt = (d) => d ? String(d).slice(0, 16).replace('T', ' ') : '—'
                             </td>
                         </tr>
                     </tbody>
+                    <tfoot v-if="financials_enabled && !loading && page.data.length > 0 && summary && summary.fees_total != null">
+                        <tr class="total-row">
+                            <td :colspan="6" style="text-transform:uppercase; font-size:11px; letter-spacing:0.04em; color:var(--fg-subtle); font-weight:700;">{{ t.feesTotal }}</td>
+                            <td class="mono" style="text-align:end; font-weight:700;">{{ fmt(summary.fees_total) }}</td>
+                            <td colspan="2"></td>
+                        </tr>
+                    </tfoot>
                 </table>
             </div>
 
@@ -145,3 +171,8 @@ const dt = (d) => d ? String(d).slice(0, 16).replace('T', ' ') : '—'
             <button class="btn btn-sm btn-outline" @click="exportSelected"><Icon name="download" :size="13" /><span>{{ isRtl ? 'تصدير Excel' : 'Export Excel' }}</span></button>
         </BulkBar>
 </template>
+
+<style scoped>
+.table th { position: sticky; top: 0; background: var(--card, var(--bg)); z-index: 1; }
+.total-row td { padding: 12px; border-top: 2px solid var(--line); border-bottom: none; background: var(--bg-hover); }
+</style>

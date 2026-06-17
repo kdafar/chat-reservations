@@ -7,10 +7,12 @@ defineOptions({ layout: AppLayout })
 import Icon from '../../Components/Icon.vue'
 import ImportButton from '../../Components/ImportButton.vue'
 import SearchableSelect from '../../Components/SearchableSelect.vue'
+import { formatMoney } from '../../lib/money.js'
 
 const props = defineProps({
     filters: Object,
     page: Object,
+    summary: { type: Object, default: () => ({}) },
     branches: Array,
     items: Array,
     counts: Object,
@@ -27,18 +29,18 @@ const t = computed(() => isRtl.value ? {
     searchPh: 'ابحث باسم الصنف…', new: 'سجل مخزون', receive: 'استلام مخزون', clear: 'مسح', lowOnly: 'منخفض فقط',
     col: { item: 'الصنف', branch: 'الفرع', onHand: 'المتوفر', threshold: 'حد التنبيه', bin: 'الموقع', status: '' },
     low: 'منخفض', empty: 'لا توجد سجلات', showing: 'عرض', of: 'من',
-    modal: { createTitle: 'سجل مخزون جديد', editTitle: 'تحرير سجل المخزون', receiveTitle: 'استلام مخزون', save: 'حفظ', cancel: 'إلغاء', deleteConfirm: 'حذف سجل المخزون؟', receiveDo: 'استلام' },
+    modal: { createTitle: 'سجل مخزون جديد', editTitle: 'تحرير سجل المخزون', receiveTitle: 'استلام مخزون', save: 'حفظ', cancel: 'إلغاء', deleteConfirm: 'حذف سجل المخزون؟', receiveDo: 'استلام', edit: 'تحرير', delete: 'حذف' },
     fields: { branch: 'الفرع', item: 'الصنف', threshold: 'حد التنبيه', bin: 'الموقع', qty_stock_units: 'الكمية (وحدات تخزين)', qty_base: 'الكمية (وحدات أساسية)', notes: 'ملاحظات', qtyHint: 'أدخل وحدات التخزين وتُحتسب الوحدات الأساسية تلقائياً، أو أدخل الوحدات الأساسية مباشرة.' },
-    stats: { total: 'الكل', low: 'منخفض' },
+    stats: { total: 'الكل', low: 'منخفض', onHandQty: 'إجمالي المتوفر', onHandValue: 'قيمة المخزون' },
 } : {
     title: 'Clinic Stock', eyebrow: 'Pharmacy & Stock',
     desc: 'On-hand balances per item and branch. Quantities move only through stock receipts.',
     searchPh: 'Search by item name…', new: 'New record', receive: 'Receive stock', clear: 'Clear', lowOnly: 'Low only',
     col: { item: 'Item', branch: 'Branch', onHand: 'On hand', threshold: 'Threshold', bin: 'Bin', status: '' },
     low: 'Low', empty: 'No stock records', showing: 'Showing', of: 'of',
-    modal: { createTitle: 'New stock record', editTitle: 'Edit stock record', receiveTitle: 'Receive stock', save: 'Save', cancel: 'Cancel', deleteConfirm: 'Delete this stock record?', receiveDo: 'Receive' },
+    modal: { createTitle: 'New stock record', editTitle: 'Edit stock record', receiveTitle: 'Receive stock', save: 'Save', cancel: 'Cancel', deleteConfirm: 'Delete this stock record?', receiveDo: 'Receive', edit: 'Edit', delete: 'Delete' },
     fields: { branch: 'Branch', item: 'Item', threshold: 'Alert threshold', bin: 'Bin location', qty_stock_units: 'Qty (stock units)', qty_base: 'Qty (base units)', notes: 'Notes', qtyHint: 'Enter stock units and base units fill in automatically, or type base units directly.' },
-    stats: { total: 'Total', low: 'Low' },
+    stats: { total: 'Total', low: 'Low', onHandQty: 'Total on hand', onHandValue: 'Stock value' },
 })
 
 const f = reactive({ q: props.filters.q || '', low: !!props.filters.low })
@@ -177,6 +179,9 @@ watch(() => [recvForm.qty_stock_units, recvForm.clinic_item_id], () => {
 })
 
 const fmt = (n) => Number(n ?? 0).toFixed(4)
+// Plain-number formatter for the total on-hand quantity chip (thousand-grouped,
+// trims trailing zeros so whole units don't show ".0000").
+const qtyNum = (n) => Number(n ?? 0).toLocaleString('en-US', { maximumFractionDigits: 4 })
 </script>
 
 <template>
@@ -201,6 +206,8 @@ const fmt = (n) => Number(n ?? 0).toFixed(4)
             <div style="display:flex; gap:8px; margin-bottom:16px;">
                 <div class="stat-chip"><span class="stat-chip-num">{{ counts.total }}</span><span class="stat-chip-lbl">{{ t.stats.total }}</span></div>
                 <div class="stat-chip"><span class="stat-chip-num" style="color:var(--warning, #d97706);">{{ counts.low }}</span><span class="stat-chip-lbl">{{ t.stats.low }}</span></div>
+                <div class="stat-chip"><span class="stat-chip-num">{{ qtyNum(summary.total_qty) }}</span><span class="stat-chip-lbl">{{ t.stats.onHandQty }}</span></div>
+                <div v-if="summary.has_value" class="stat-chip"><span class="stat-chip-num">{{ formatMoney(summary.total_value) }}</span><span class="stat-chip-lbl">{{ t.stats.onHandValue }}</span></div>
             </div>
 
             <div class="card" style="padding:12px; margin-bottom:12px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
@@ -244,8 +251,8 @@ const fmt = (n) => Number(n ?? 0).toFixed(4)
                             <td style="font-size:12px;">{{ row.bin_location || '—' }}</td>
                             <td style="white-space:nowrap;">
                                 <button v-if="can_edit" class="btn btn-ghost btn-sm btn-icon" :title="t.receive" @click="openReceive(row)"><Icon name="truck" :size="14" /></button>
-                                <button v-if="can_edit" class="btn btn-ghost btn-sm btn-icon" @click="openEdit(row)"><Icon name="pencil" :size="14" /></button>
-                                <button v-if="can_edit" class="btn btn-ghost btn-sm btn-icon" @click="destroy(row)"><Icon name="trash-2" :size="14" /></button>
+                                <button v-if="can_edit" class="btn btn-ghost btn-sm btn-icon" :title="t.modal.edit" @click="openEdit(row)"><Icon name="pencil" :size="14" /></button>
+                                <button v-if="can_edit" class="btn btn-ghost btn-sm btn-icon" :title="t.modal.delete" @click="destroy(row)"><Icon name="trash-2" :size="14" /></button>
                             </td>
                         </tr>
                     </tbody>
@@ -333,3 +340,7 @@ const fmt = (n) => Number(n ?? 0).toFixed(4)
             </div>
         </div>
 </template>
+
+<style scoped>
+.table th { position: sticky; top: 0; background: var(--card, var(--bg)); z-index: 1; }
+</style>

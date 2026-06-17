@@ -7,6 +7,7 @@ import Icon from '../../Components/Icon.vue'
 import SearchableSelect from '../../Components/SearchableSelect.vue'
 import DateTimePicker from '../../Components/DateTimePicker.vue'
 import { pushToast } from '../../Composables/useNotificationState.js'
+import { formatMoney, formatMoney as fmtMoney } from '../../lib/money.js'
 
 const props = defineProps({
     branches: { type: Array, default: () => [] },
@@ -148,7 +149,7 @@ const doctorItems = computed(() => {
     return list.map((d) => ({
         value: d.id,
         label: d.name,
-        sublabel: d.consultation_fee > 0 ? (Number(d.consultation_fee).toFixed(3) + ' ' + t.value.kwd) : null,
+        sublabel: d.consultation_fee > 0 ? (formatMoney(d.consultation_fee) + ' ' + t.value.kwd) : null,
     }))
 })
 
@@ -282,7 +283,6 @@ function submit() {
     })
 }
 
-function fmtMoney(n) { return (Number(n) || 0).toFixed(3) }
 function fmtDate(s) {
     if (!s) return ''
     try {

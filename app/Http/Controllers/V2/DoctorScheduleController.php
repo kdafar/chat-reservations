@@ -32,7 +32,7 @@ class DoctorScheduleController extends Controller
         // doctors' appointment lists.
         $isDoctor = $user && Doctor::where('user_id', $user->id)->exists();
         abort_unless(
-            $user && ($user->hasRole(['admin', 'super_admin', 'clinic_admin']) || $isDoctor),
+            $user && ($user->can('view_doctor_schedule') || $isDoctor),
             403,
             'Not authorized to view doctor schedules.'
         );

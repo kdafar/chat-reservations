@@ -8,6 +8,7 @@ import PrintHeader from '../../Components/PrintHeader.vue'
 import Skeleton from '../../Components/Skeleton.vue'
 import DateTimePicker from '../../Components/DateTimePicker.vue'
 import EChart from '../../Components/EChart.vue'
+import { formatMoney as fmt } from '../../lib/money.js'
 
 const props = defineProps({ filters: Object, report: Object, branches: Array })
 
@@ -38,7 +39,6 @@ function toggleBranch(id) {
     apply()
 }
 function setBranches(arr) { f.branch_ids = arr; apply() }
-const fmt = (n) => Number(n ?? 0).toFixed(3)
 const fin = computed(() => props.report?.visits?.financials ?? {})
 const payments = computed(() => props.report?.payments ?? { collected_total: 0, by_method: [] })
 const outstanding = computed(() => props.report?.outstanding ?? { total: 0, unpaid_count: 0 })

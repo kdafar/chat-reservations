@@ -9,6 +9,7 @@ import NewBookingSheet from '../../Components/NewBookingSheet.vue'
 import BulkBar from '../../Components/BulkBar.vue'
 import PatientFormModal from '../../Components/PatientFormModal.vue'
 import { useTableSelect } from '../../Composables/useTableSelect.js'
+import { formatMoney as fmtMoney } from '../../lib/money.js'
 
 const props = defineProps({
     filters: { type: Object, required: true },
@@ -52,6 +53,7 @@ const t = computed(() => isRtl.value
         col: { name: 'الاسم', phone: 'الهاتف', age: 'العمر', gender: 'الجنس', civilId: 'الهوية', visits: 'الزيارات' },
         empty: 'لا يوجد مرضى',
         emptyDesc: 'جرّب بحثًا مختلفًا أو أضف مريضًا جديدًا.',
+        retry: 'إعادة المحاولة', loadError: 'تعذّر تحميل بيانات المريض.',
         previous: 'السابق', next: 'التالي',
         showing: 'عرض', of: 'من',
         sheetTitle: 'بطاقة المريض',
@@ -79,6 +81,7 @@ const t = computed(() => isRtl.value
         col: { name: 'Name', phone: 'Phone', age: 'Age', gender: 'Gender', civilId: 'Civil ID', visits: 'Visits' },
         empty: 'No patients',
         emptyDesc: 'Try a different search or add a new patient.',
+        retry: 'Retry', loadError: 'Couldn\'t load this patient.',
         previous: 'Previous', next: 'Next',
         showing: 'Showing', of: 'of',
         sheetTitle: 'Patient',
@@ -122,6 +125,8 @@ const hasAnyFilter = computed(() => f.q !== '' || f.gender || f.has_phone)
 const openId = ref(null)
 const openData = ref(null)
 const openLoading = ref(false)
+const openError = ref(false)
+const openRowRef = ref(null)
 
 // New booking slide-over (pre-selects the patient from the quick-view sheet)
 const newBookingOpen = ref(false)
@@ -132,14 +137,20 @@ function openNewBookingForCurrent() {
 }
 
 async function openRow(p) {
+    openRowRef.value = p
     openId.value = p.id
     openLoading.value = true
+    openError.value = false
     try {
         const resp = await fetch(`/admin/v2/api/patients/${p.id}`, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
-        if (resp.ok) openData.value = await resp.json()
+        if (!resp.ok) throw new Error('request failed')
+        openData.value = await resp.json()
+    } catch {
+        openError.value = true
     } finally { openLoading.value = false }
 }
-function closeSheet() { openId.value = null; openData.value = null }
+function retryRow() { if (openRowRef.value) openRow(openRowRef.value) }
+function closeSheet() { openId.value = null; openData.value = null; openError.value = false }
 
 function initialsOf(name) {
     return (name ?? '?').split(/\s+/).filter(Boolean).slice(0, 2).map((s) => s[0].toUpperCase()).join('')
@@ -150,7 +161,6 @@ function fmtDate(s) {
     catch { return s }
 }
 function fmtTime(s) { return s ? s.substring(0, 5) : '—' }
-function fmtMoney(n) { return (Number(n) || 0).toFixed(3) }
 function relativeAge(iso) {
     if (!iso) return t.value.labels.never
     const ms = Date.now() - new Date(iso).getTime()
@@ -348,6 +358,12 @@ function statusTone(s) {
                     <Icon name="loader" :size="22" :style="{ color: 'var(--fg-subtle)' }" />
                 </div>
 
+                <div v-else-if="openError" style="padding: 32px 20px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 12px;">
+                    <Icon name="alert-triangle" :size="26" :style="{ color: 'var(--destructive)' }" />
+                    <div style="font-size: 13px; color: var(--fg-muted);">{{ t.loadError }}</div>
+                    <button type="button" class="btn btn-outline btn-sm" @click="retryRow">{{ t.retry }}</button>
+                </div>
+
                 <div v-else-if="openData" style="flex: 1; overflow: auto; padding: 20px; display: flex; flex-direction: column; gap: 18px;">
                     <!-- Allergy alert -->
                     <div v-if="openData.patient.allergies || openData.patient.medical_alerts" class="card" style="padding: 12px 14px; background: var(--destructive-soft); border-color: var(--destructive);">
@@ -490,6 +506,10 @@ function statusTone(s) {
     letter-spacing: 0.06em;
     padding: 10px 14px;
     white-space: nowrap;
+    position: sticky;
+    top: 0;
+    background: var(--card, var(--bg));
+    z-index: 1;
 }
 .td {
     padding: 12px 14px;

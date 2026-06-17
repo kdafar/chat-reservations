@@ -7,6 +7,7 @@ defineOptions({ layout: AppLayout })
 import Icon from '../../Components/Icon.vue'
 import SearchableSelect from '../../Components/SearchableSelect.vue'
 import DateTimePicker from '../../Components/DateTimePicker.vue'
+import { formatMoney as fmt } from '../../lib/money.js'
 
 const props = defineProps({
     filters: Object,
@@ -15,6 +16,7 @@ const props = defineProps({
     policies: Array,
     statuses: Array,
     counts: Object,
+    summary: { type: Object, default: () => ({ estimated_total: 0, approved_amount: 0 }) },
     can_edit: Boolean,
 })
 
@@ -27,21 +29,23 @@ const t = computed(() => isRtl.value ? {
     desc: 'طلبات الموافقة المسبقة من شركات التأمين — الخدمات المقدّرة والقرار.',
     searchPh: 'ابحث بالرقم المرجعي أو اسم المريض…', new: 'طلب جديد', clear: 'مسح', statusAll: 'كل الحالات',
     st: { draft: 'مسودة', submitted: 'مُرسل', under_review: 'قيد المراجعة', approved: 'موافَق', partially_approved: 'موافقة جزئية', rejected: 'مرفوض', expired: 'منتهي' },
-    col: { id: '#', patient: 'المريض', ref: 'مرجع', estimated: 'المقدّر', approved: 'المعتمد', status: 'الحالة', requested: 'تاريخ الطلب' },
-    empty: 'لا توجد طلبات', showing: 'عرض', of: 'من',
-    modal: { createTitle: 'طلب موافقة مسبقة', editTitle: 'تحرير الطلب', save: 'حفظ', cancel: 'إلغاء', deleteConfirm: 'حذف هذا الطلب؟', decide: 'تسجيل القرار' },
+    col: { id: '#', patient: 'المريض', ref: 'مرجع', estimated: 'المقدّر', approved: 'المعتمد', status: 'الحالة', requested: 'تاريخ الطلب' }, by: 'بواسطة', decidedBy: 'البتّ',
+    empty: 'لا توجد طلبات', emptyHint: 'سجّل طلب موافقة مسبقة من شركة التأمين للبدء.', showing: 'عرض', of: 'من',
+    summaryEstimated: 'إجمالي المقدّر', summaryApproved: 'إجمالي المعتمد',
+    modal: { createTitle: 'طلب موافقة مسبقة', editTitle: 'تحرير الطلب', save: 'حفظ', cancel: 'إلغاء', deleteConfirm: 'حذف هذا الطلب؟', decide: 'تسجيل القرار', edit: 'تحرير', delete: 'حذف' },
     fields: { policy: 'البوليصة', visit_id: 'رقم الزيارة (اختياري)', reference_no: 'الرقم المرجعي', requested_at: 'تاريخ الطلب', services: 'الخدمات', label: 'الوصف', amount: 'المبلغ المقدّر', total: 'الإجمالي المقدّر', status: 'الحالة', valid_from: 'صالح من', valid_until: 'صالح حتى', decision_notes: 'ملاحظات القرار', addService: 'إضافة خدمة', decision: 'القرار', approved_amount: 'المبلغ المعتمد' },
-    stats: { total: 'الكل', pending: 'قيد القرار' },
+    stats: { total: 'الكل', pending: 'قيد القرار', approved: 'موافَق', rejected: 'مرفوض' },
 } : {
     title: 'Pre-authorizations', eyebrow: 'Insurance',
     desc: 'Insurer pre-authorization requests — estimated services and decision.',
     searchPh: 'Search by reference or patient…', new: 'New request', clear: 'Clear', statusAll: 'All statuses',
     st: { draft: 'Draft', submitted: 'Submitted', under_review: 'Under review', approved: 'Approved', partially_approved: 'Partially approved', rejected: 'Rejected', expired: 'Expired' },
-    col: { id: '#', patient: 'Patient', ref: 'Ref', estimated: 'Estimated', approved: 'Approved', status: 'Status', requested: 'Requested' },
-    empty: 'No requests', showing: 'Showing', of: 'of',
-    modal: { createTitle: 'Pre-authorization request', editTitle: 'Edit request', save: 'Save', cancel: 'Cancel', deleteConfirm: 'Delete this request?', decide: 'Record decision' },
+    col: { id: '#', patient: 'Patient', ref: 'Ref', estimated: 'Estimated', approved: 'Approved', status: 'Status', requested: 'Requested' }, by: 'by', decidedBy: 'decided',
+    empty: 'No requests', emptyHint: 'Record an insurer pre-authorization request to get started.', showing: 'Showing', of: 'of',
+    summaryEstimated: 'Total estimated', summaryApproved: 'Total approved',
+    modal: { createTitle: 'Pre-authorization request', editTitle: 'Edit request', save: 'Save', cancel: 'Cancel', deleteConfirm: 'Delete this request?', decide: 'Record decision', edit: 'Edit', delete: 'Delete' },
     fields: { policy: 'Policy', visit_id: 'Visit # (optional)', reference_no: 'Reference no.', requested_at: 'Requested at', services: 'Services', label: 'Description', amount: 'Est. amount', total: 'Estimated total', status: 'Status', valid_from: 'Valid from', valid_until: 'Valid until', decision_notes: 'Decision notes', addService: 'Add service', decision: 'Decision', approved_amount: 'Approved amount' },
-    stats: { total: 'Total', pending: 'Awaiting decision' },
+    stats: { total: 'Total', pending: 'Awaiting decision', approved: 'Approved', rejected: 'Rejected' },
 })
 
 const statusItems = computed(() => props.statuses.map((s) => ({ value: s, label: t.value.st[s] ?? s })))
@@ -125,7 +129,6 @@ function submitDecide() {
 
 const canDecide = (row) => ['submitted', 'under_review'].includes(row.status)
 const statusBadge = (s) => ({ approved: 'badge badge-success', partially_approved: 'badge badge-warning', rejected: 'badge badge-destructive', submitted: 'badge badge-info', under_review: 'badge badge-info', expired: 'badge-muted', draft: 'badge-muted' }[s] || 'badge')
-const fmt = (n) => Number(n ?? 0).toFixed(3)
 
 // Deep-link from notifications: /admin/v2/insurance/preauthorizations?open={id} opens that record.
 onMounted(() => { if (props.open_record) openEdit(props.open_record) })
@@ -146,9 +149,25 @@ onMounted(() => { if (props.open_record) openEdit(props.open_record) })
                 </div>
             </div>
 
-            <div style="display:flex; gap:8px; margin-bottom:16px;">
+            <div style="display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap;">
                 <div class="stat-chip"><span class="stat-chip-num">{{ counts.total }}</span><span class="stat-chip-lbl">{{ t.stats.total }}</span></div>
                 <div class="stat-chip"><span class="stat-chip-num" style="color:var(--warning, #d97706);">{{ counts.pending }}</span><span class="stat-chip-lbl">{{ t.stats.pending }}</span></div>
+                <div v-if="counts.approved != null" class="stat-chip"><span class="stat-chip-num" style="color:var(--ok, #16a34a);">{{ counts.approved }}</span><span class="stat-chip-lbl">{{ t.stats.approved }}</span></div>
+                <div v-if="counts.rejected != null" class="stat-chip"><span class="stat-chip-num" style="color:var(--destructive, #dc2626);">{{ counts.rejected }}</span><span class="stat-chip-lbl">{{ t.stats.rejected }}</span></div>
+            </div>
+
+            <!-- Filtered totals: sums over the full filtered query (server-side). -->
+            <div style="display:flex; gap:20px; flex-wrap:wrap; margin-bottom:16px; padding:10px 14px; background:var(--bg-sunken); border:1px solid var(--line); border-radius:10px;">
+                <div style="display:flex; align-items:baseline; gap:8px;">
+                    <span style="font-size:12px; color:var(--fg-subtle);">{{ t.summaryEstimated }}</span>
+                    <span class="mono" style="font-weight:700; font-size:14px;">{{ fmt(summary.estimated_total) }}</span>
+                    <span style="font-size:11px; color:var(--fg-faint);">KWD</span>
+                </div>
+                <div style="display:flex; align-items:baseline; gap:8px;">
+                    <span style="font-size:12px; color:var(--fg-subtle);">{{ t.summaryApproved }}</span>
+                    <span class="mono" style="font-weight:700; font-size:14px; color:var(--ok, #16a34a);">{{ fmt(summary.approved_amount) }}</span>
+                    <span style="font-size:11px; color:var(--fg-faint);">KWD</span>
+                </div>
             </div>
 
             <div class="card" style="padding:12px; margin-bottom:12px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
@@ -176,9 +195,13 @@ onMounted(() => { if (props.open_record) openEdit(props.open_record) })
                     </thead>
                     <tbody>
                         <tr v-if="page.data.length === 0">
-                            <td colspan="8" style="text-align:center; padding:48px; color:var(--fg-faint);">
-                                <Icon name="document-check" :size="32" style="margin-bottom:8px; opacity:0.4;" />
-                                <div style="font-weight:600;">{{ t.empty }}</div>
+                            <td colspan="8" style="text-align:center; padding:48px 24px; color:var(--fg-faint);">
+                                <Icon name="document-check" :size="34" style="margin-bottom:10px; opacity:0.4;" />
+                                <div style="font-weight:600; font-size:14px; color:var(--fg);">{{ t.empty }}</div>
+                                <div style="font-size:12.5px; margin-top:4px;">{{ t.emptyHint }}</div>
+                                <button v-if="can_edit" class="btn btn-primary btn-sm" style="margin-top:14px;" @click="openCreate">
+                                    <Icon name="plus" :size="13" /><span>{{ t.new }}</span>
+                                </button>
                             </td>
                         </tr>
                         <tr v-for="row in page.data" :key="row.id">
@@ -187,12 +210,18 @@ onMounted(() => { if (props.open_record) openEdit(props.open_record) })
                             <td class="mono">{{ row.reference_no || '—' }}</td>
                             <td class="mono" style="text-align:end;">{{ fmt(row.estimated_total) }}</td>
                             <td class="mono" style="text-align:end;">{{ row.approved_amount != null ? fmt(row.approved_amount) : '—' }}</td>
-                            <td><span :class="statusBadge(row.status)">{{ t.st[row.status] ?? row.status }}</span></td>
-                            <td style="font-size:12px; color:var(--fg-subtle);">{{ row.requested_at ? String(row.requested_at).slice(0, 16).replace('T', ' ') : '—' }}</td>
+                            <td>
+                                <span :class="statusBadge(row.status)">{{ t.st[row.status] ?? row.status }}</span>
+                                <div v-if="row.decided_by?.name" style="font-size:10px; color:var(--fg-faint); margin-top:3px;">{{ t.decidedBy }}: {{ row.decided_by.name }}</div>
+                            </td>
+                            <td style="font-size:12px; color:var(--fg-subtle);">
+                                <div>{{ row.requested_at ? String(row.requested_at).slice(0, 16).replace('T', ' ') : '—' }}</div>
+                                <div v-if="row.requested_by?.name" style="font-size:11px;">{{ t.by }} {{ row.requested_by.name }}</div>
+                            </td>
                             <td style="white-space:nowrap;">
                                 <button v-if="can_edit && canDecide(row)" class="btn btn-ghost btn-sm btn-icon" :title="t.modal.decide" @click="openDecide(row)"><Icon name="check-badge" :size="15" style="color:var(--ok);" /></button>
-                                <button v-if="can_edit" class="btn btn-ghost btn-sm btn-icon" @click="openEdit(row)"><Icon name="pencil" :size="14" /></button>
-                                <button v-if="can_edit" class="btn btn-ghost btn-sm btn-icon" @click="destroy(row)"><Icon name="trash-2" :size="14" /></button>
+                                <button v-if="can_edit" class="btn btn-ghost btn-sm btn-icon" :title="t.modal.edit" @click="openEdit(row)"><Icon name="pencil" :size="14" /></button>
+                                <button v-if="can_edit" class="btn btn-ghost btn-sm btn-icon" :title="t.modal.delete" @click="destroy(row)"><Icon name="trash-2" :size="14" /></button>
                             </td>
                         </tr>
                     </tbody>
@@ -234,7 +263,7 @@ onMounted(() => { if (props.open_record) openEdit(props.open_record) })
                         <label class="label">{{ t.fields.services }} <span class="req">*</span></label>
                         <div v-for="(s, i) in form.services" :key="i" style="display:flex; gap:8px; margin-bottom:6px; align-items:center;">
                             <input v-model="s.label" class="input" :placeholder="t.fields.label" style="flex:1;" maxlength="191" />
-                            <input v-model.number="s.estimated_amount" type="number" step="0.001" min="0" class="input" :placeholder="t.fields.amount" style="width:140px;" />
+                            <input v-model.number="s.estimated_amount" type="number" step="any" min="0" class="input" :placeholder="t.fields.amount" style="width:140px;" />
                             <button type="button" class="btn btn-ghost btn-sm btn-icon" @click="removeService(i)"><Icon name="x" :size="14" /></button>
                         </div>
                         <div v-if="errors.services" class="err">{{ errors.services }}</div>
@@ -285,7 +314,7 @@ onMounted(() => { if (props.open_record) openEdit(props.open_record) })
                     </div>
                     <div>
                         <label class="label">{{ t.fields.approved_amount }} (KWD) <span class="req">*</span></label>
-                        <input v-model.number="decideForm.approved_amount" type="number" step="0.001" min="0" class="input" />
+                        <input v-model.number="decideForm.approved_amount" type="number" step="any" min="0" class="input" />
                         <div v-if="decideErr.approved_amount" class="err">{{ decideErr.approved_amount }}</div>
                     </div>
                     <div>
@@ -300,3 +329,7 @@ onMounted(() => { if (props.open_record) openEdit(props.open_record) })
             </div>
         </div>
 </template>
+
+<style scoped>
+.table th { position: sticky; top: 0; background: var(--card, var(--bg)); z-index: 1; }
+</style>

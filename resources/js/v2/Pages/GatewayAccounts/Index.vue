@@ -5,6 +5,7 @@ import AppLayout from '../../Layouts/AppLayout.vue'
 defineOptions({ layout: AppLayout })
 import Icon from '../../Components/Icon.vue'
 import SearchableSelect from '../../Components/SearchableSelect.vue'
+import { confirm } from '../../Composables/useConfirm.js'
 
 const props = defineProps({
     filters: { type: Object, required: true },
@@ -115,8 +116,9 @@ function submit() {
     })
 }
 function destroy(row) {
-    if (!window.confirm(t.value.modal.deleteConfirm)) return
-    router.delete(route('v2.gateway-accounts.destroy', { gatewayAccount: row.id }), { preserveScroll: true })
+    confirm({ body: t.value.modal.deleteConfirm, tone: 'destructive', onConfirm: () => {
+        router.delete(route('v2.gateway-accounts.destroy', { gatewayAccount: row.id }), { preserveScroll: true })
+    } })
 }
 const ownerColor = (o) => ({ system: 'var(--accent, #2563eb)', partner: 'var(--warn, #d97706)', branch: 'var(--ok)', service: '#0891b2' }[o] || 'var(--fg-subtle)')
 </script>

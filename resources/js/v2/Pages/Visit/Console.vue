@@ -12,6 +12,7 @@ import LabPicker from '../../Components/LabPicker.vue'
 import QuickPicks from '../../Components/QuickPicks.vue'
 import PrintMenu from '../../Components/PrintMenu.vue'
 import { pushToast } from '../../Composables/useNotificationState.js'
+import { formatMoney as fmtMoney } from '../../lib/money.js'
 
 const props = defineProps({
     visit: { type: Object, required: true },
@@ -21,6 +22,16 @@ const props = defineProps({
 const page = usePage()
 const locale = computed(() => page.props.locale ?? 'en')
 const isRtl = computed(() => locale.value === 'ar')
+
+// The Back button returns to where the user came from. The live queue is a
+// clinical / front-desk surface (see WaitingPatientsController + the 'waiting'
+// navGate), so a user without queue access — e.g. an accountant reviewing a
+// visit — is sent to the Visits list instead of a link that would 403.
+const backHref = computed(() => {
+    const u = page.props.auth?.user
+    const canQueue = !!(u?.is_admin || u?.is_reception || u?.is_doctor || u?.is_nurse)
+    return canQueue ? '/admin/v2/waiting-patients' : '/admin/v2/visits-list'
+})
 
 const tab = ref('overview')
 const showSidebar = ref(true)
@@ -542,6 +553,7 @@ const t = computed(() => isRtl.value
             vitals: 'العلامات الحيوية', notes: 'ملاحظات',
             fee: 'رسوم الاستشارة', paid: 'مدفوع', unpaid: 'غير مدفوع',
             items: 'الخدمات والمستلزمات', payments: 'المدفوعات',
+            total: 'الإجمالي',
             recent: 'الزيارات السابقة',
             none: 'لا يوجد', empty: 'لا توجد سجلات بعد',
             edit: 'فتح في النموذج الكامل',
@@ -595,6 +607,7 @@ const t = computed(() => isRtl.value
             vitals: 'Vitals', notes: 'Notes',
             fee: 'Consultation fee', paid: 'Paid', unpaid: 'Unpaid',
             items: 'Items & services', payments: 'Payments',
+            total: 'Total',
             recent: 'Recent visits',
             none: 'None', empty: 'No records yet',
             edit: 'Open in full editor',
@@ -657,10 +670,6 @@ function fmtTime(iso) {
     catch { return iso }
 }
 
-function fmtMoney(n) {
-    return (Number(n) || 0).toFixed(3)
-}
-
 // Derived "primary action" based on visit status.
 // Computes which primary action to expose. Each option points to a *handler*
 // (not a URL) so we mutate via the v2 API instead of bouncing to Filament.
@@ -712,7 +721,7 @@ const primaryPolicy = computed(() => {
             <div class="vc-stickybar-inner">
                 <div style="display: flex; align-items: center; gap: 10px; min-width: 0;">
                     <a
-                        href="/admin/v2/waiting-patients"
+                        :href="backHref"
                         class="btn btn-outline btn-sm"
                         style="text-decoration: none; flex-shrink: 0;"
                         :title="t.labels.back"
@@ -1033,7 +1042,7 @@ const primaryPolicy = computed(() => {
                             </div>
                             <div style="display: inline-flex; gap: 10px; align-items: center;">
                                 <div class="tnum" style="font-size: 13px; color: var(--fg-muted);">
-                                    Total: <span style="color: var(--fg); font-weight: 500;">{{ fmtMoney(visit.totals.packages_price) }} KWD</span>
+                                    {{ t.labels.total }}: <span style="color: var(--fg); font-weight: 500;">{{ fmtMoney(visit.totals.packages_price) }} KWD</span>
                                 </div>
                                 <button type="button" class="btn btn-primary btn-sm" @click="openAddPackage">
                                     <Icon name="layers" :size="13" />
@@ -1042,11 +1051,16 @@ const primaryPolicy = computed(() => {
                             </div>
                         </div>
 
-                        <div v-if="visit.packages.length === 0" style="padding: 28px 24px; text-align: center; color: var(--fg-subtle); font-size: 13px;">
-                            {{ isRtl ? 'لم تتم إضافة باقات بعد' : 'No packages added yet' }}
+                        <div v-if="visit.packages.length === 0" style="padding: 48px 24px; text-align: center; color: var(--fg-subtle);">
+                            <div class="empty-illo" style="margin: 0 auto 10px;"><Icon name="layers" :size="22" /></div>
+                            <div style="font-size: 13px;">{{ isRtl ? 'لم تتم إضافة باقات بعد' : 'No packages added yet' }}</div>
+                            <button type="button" class="btn btn-outline btn-sm" style="margin-top: 12px;" @click="openAddPackage">
+                                <Icon name="layers" :size="13" />
+                                {{ isRtl ? 'إضافة أول باقة' : 'Add first package' }}
+                            </button>
                         </div>
-                        <div v-else>
-                            <div style="display: grid; grid-template-columns: 1fr 70px 90px 96px 96px 44px; gap: 8px; padding: 8px 18px; background: var(--bg-sunken); border-top: 1px solid var(--line);">
+                        <div v-else style="overflow-x: auto;">
+                            <div style="display: grid; grid-template-columns: 1fr 70px 90px 96px 96px 44px; gap: 8px; padding: 8px 18px; background: var(--bg-sunken); border-top: 1px solid var(--line); min-width: 560px;">
                                 <div class="eyebrow" style="font-size: 10px;">{{ isRtl ? 'الباقة' : 'Package' }}</div>
                                 <div class="eyebrow" style="font-size: 10px; text-align: end;">{{ isRtl ? 'الكمية' : 'Qty' }}</div>
                                 <div class="eyebrow" style="font-size: 10px; text-align: end;">{{ isRtl ? 'السعر' : 'Unit' }}</div>
@@ -1057,7 +1071,7 @@ const primaryPolicy = computed(() => {
                             <div
                                 v-for="vp in visit.packages"
                                 :key="vp.id"
-                                style="display: grid; grid-template-columns: 1fr 70px 90px 96px 96px 44px; gap: 8px; padding: 10px 18px; border-top: 1px solid var(--line); align-items: center;"
+                                style="display: grid; grid-template-columns: 1fr 70px 90px 96px 96px 44px; gap: 8px; padding: 10px 18px; border-top: 1px solid var(--line); align-items: center; min-width: 560px;"
                             >
                                 <div style="display: flex; align-items: center; gap: 8px; min-width: 0;">
                                     <span style="width: 26px; height: 26px; border-radius: 8px; background: var(--primary-soft); color: var(--primary); display: inline-flex; align-items: center; justify-content: center;"><Icon name="layers" :size="13" /></span>
@@ -1095,7 +1109,7 @@ const primaryPolicy = computed(() => {
                             </div>
                             <div style="display: inline-flex; gap: 10px; align-items: center;">
                                 <div class="tnum" style="font-size: 13px; color: var(--fg-muted);">
-                                    Total: <span style="color: var(--fg); font-weight: 500;">{{ fmtMoney(visit.totals.items_price) }} KWD</span>
+                                    {{ t.labels.total }}: <span style="color: var(--fg); font-weight: 500;">{{ fmtMoney(visit.totals.items_price) }} KWD</span>
                                 </div>
                                 <button type="button" class="btn btn-primary btn-sm" @click="openAddItem">
                                     <Icon name="plus" :size="13" />
@@ -1113,9 +1127,9 @@ const primaryPolicy = computed(() => {
                             </button>
                         </div>
 
-                        <div v-else>
+                        <div v-else style="overflow-x: auto;">
                             <!-- Header -->
-                            <div style="display: grid; grid-template-columns: 1fr 90px 110px 110px 44px; gap: 8px; padding: 8px 18px; background: var(--bg-sunken); border-top: 1px solid var(--line);">
+                            <div style="display: grid; grid-template-columns: 1fr 90px 110px 110px 44px; gap: 8px; padding: 8px 18px; background: var(--bg-sunken); border-top: 1px solid var(--line); min-width: 540px;">
                                 <div class="eyebrow" style="font-size: 10px;">{{ isRtl ? 'الخدمة' : 'Item' }}</div>
                                 <div class="eyebrow" style="font-size: 10px; text-align: end;">{{ isRtl ? 'الكمية' : 'Qty' }}</div>
                                 <div class="eyebrow" style="font-size: 10px; text-align: end;">{{ isRtl ? 'السعر' : 'Unit price' }}</div>
@@ -1126,7 +1140,7 @@ const primaryPolicy = computed(() => {
                             <div
                                 v-for="it in visit.items"
                                 :key="it.id"
-                                style="display: grid; grid-template-columns: 1fr 90px 110px 110px 44px; gap: 8px; padding: 10px 18px; border-top: 1px solid var(--line); align-items: center;"
+                                style="display: grid; grid-template-columns: 1fr 90px 110px 110px 44px; gap: 8px; padding: 10px 18px; border-top: 1px solid var(--line); align-items: center; min-width: 540px;"
                             >
                                 <div style="font-size: 13px; font-weight: 500; min-width: 0; display: flex; align-items: center; gap: 6px;">
                                     <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ it.name }}</span>
@@ -1184,7 +1198,7 @@ const primaryPolicy = computed(() => {
                                 </div>
                                 <div v-if="discType !== 'none'" style="width: 130px;">
                                     <div class="eyebrow" style="margin-bottom: 6px;">{{ discType === 'percent' ? (isRtl ? 'النسبة %' : 'Percent %') : (isRtl ? 'المبلغ (د.ك)' : 'Amount KWD') }}</div>
-                                    <input v-model.number="discValue" type="number" step="0.001" min="0" class="input tnum" />
+                                    <input v-model.number="discValue" type="number" step="any" min="0" class="input tnum" />
                                 </div>
                                 <button type="button" class="btn btn-outline btn-sm" :disabled="billingBusy" @click="applyVisitDiscount">{{ isRtl ? 'تطبيق' : 'Apply' }}</button>
                             </div>
@@ -1241,13 +1255,14 @@ const primaryPolicy = computed(() => {
                             </button>
                         </div>
 
-                        <div v-else>
+                        <div v-else style="overflow-x: auto;">
                             <div
                                 v-for="p in visit.payments"
                                 :key="p.id"
                                 :style="{
                                     display: 'grid',
                                     gridTemplateColumns: '88px 1fr 110px 150px 110px 40px',
+                                    minWidth: '608px',
                                     padding: '12px 18px',
                                     borderTop: '1px solid var(--line)',
                                     alignItems: 'center',
@@ -1400,11 +1415,11 @@ const primaryPolicy = computed(() => {
                         <div v-if="addItemSelected" class="rgrid-2" style="padding: 14px 20px; border-top: 1px solid var(--line); display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
                             <div>
                                 <div class="eyebrow" style="margin-bottom: 6px;">{{ isRtl ? 'الكمية' : 'Quantity' }} <span class="req">*</span></div>
-                                <input v-model="addItemQty" type="number" step="0.001" min="0.001" class="input tnum" />
+                                <input v-model="addItemQty" type="number" step="any" min="0.001" class="input tnum" />
                             </div>
                             <div>
                                 <div class="eyebrow" style="margin-bottom: 6px;">{{ isRtl ? 'سعر الوحدة' : 'Unit price (KWD)' }}</div>
-                                <input v-model="addItemPrice" type="number" step="0.001" min="0" class="input tnum" />
+                                <input v-model="addItemPrice" type="number" step="any" min="0" class="input tnum" />
                             </div>
                         </div>
 
@@ -1557,7 +1572,7 @@ const primaryPolicy = computed(() => {
                                 <input
                                     v-model="addPaymentAmount"
                                     type="number"
-                                    step="0.001"
+                                    step="any"
                                     min="0.001"
                                     class="input tnum"
                                     style="font-size: 18px; height: 44px;"

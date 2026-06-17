@@ -6,6 +6,7 @@ defineOptions({ layout: AppLayout })
 import Icon from '../../Components/Icon.vue'
 import PrintHeader from '../../Components/PrintHeader.vue'
 import DateTimePicker from '../../Components/DateTimePicker.vue'
+import { formatMoney as fmt } from '../../lib/money.js'
 
 const props = defineProps({ filters: Object, doctor: Object, rows: Array, summary: Object })
 
@@ -31,7 +32,6 @@ const f = reactive({ date: props.filters.date })
 function apply() {
     router.get(route('v2.my-earnings'), { date: f.date }, { preserveState: true, preserveScroll: true, replace: true })
 }
-const fmt = (n) => Number(n ?? 0).toFixed(3)
 </script>
 
 <template>

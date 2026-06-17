@@ -9,6 +9,7 @@ import BulkBar from '../../Components/BulkBar.vue'
 import SearchableSelect from '../../Components/SearchableSelect.vue'
 import { useTableSelect } from '../../Composables/useTableSelect.js'
 import { confirm } from '../../Composables/useConfirm.js'
+import { formatMoney as fmt } from '../../lib/money.js'
 
 const props = defineProps({
     filters: { type: Object, required: true },
@@ -204,7 +205,6 @@ function restore(row) {
     router.post(route('v2.doctors.restore', { doctor: row.id }), {}, { preserveScroll: true })
 }
 
-function fmt(n) { return Number(n ?? 0).toFixed(3) }
 function rowIsArchived(row) { return !!row.deleted_at || !row.is_active }
 </script>
 
@@ -355,7 +355,7 @@ function rowIsArchived(row) { return !!row.deleted_at || !row.is_active }
                     </div>
                     <div>
                         <label class="label">{{ t.modal.fee }} <span class="req">*</span></label>
-                        <input v-model.number="form.consultation_fee" type="number" step="0.001" min="0.001" class="input" required />
+                        <input v-model.number="form.consultation_fee" type="number" step="any" min="0.001" class="input" required />
                         <div v-if="errors.consultation_fee" class="err">{{ errors.consultation_fee }}</div>
                     </div>
                     <div>
@@ -401,7 +401,7 @@ function rowIsArchived(row) { return !!row.deleted_at || !row.is_active }
 .stat-chip-num { font-size:18px; font-weight:700; color:var(--fg); line-height:1; }
 .stat-chip-lbl { font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:var(--fg-faint); margin-top:4px; }
 .table { width:100%; border-collapse:collapse; font-size:13px; }
-.table th { text-align:start; padding:10px 12px; font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:var(--fg-faint); font-weight:600; border-bottom:1px solid var(--line); }
+.table th { text-align:start; padding:10px 12px; font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:var(--fg-faint); font-weight:600; border-bottom:1px solid var(--line); position: sticky; top: 0; background: var(--card, var(--bg)); z-index: 1; }
 .table td { padding:10px 12px; border-bottom:1px solid var(--line); }
 .table tr:last-child td { border-bottom:none; }
 .table tbody tr:hover { background:var(--bg-hover); }

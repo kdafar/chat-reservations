@@ -5,6 +5,7 @@ import AppLayout from '../../Layouts/AppLayout.vue'
 defineOptions({ layout: AppLayout })
 import Icon from '../../Components/Icon.vue'
 import SearchableSelect from '../../Components/SearchableSelect.vue'
+import { confirm } from '../../Composables/useConfirm.js'
 
 const props = defineProps({
     filters: { type: Object, required: true },
@@ -114,8 +115,9 @@ function submit() {
     })
 }
 function deactivate(row) {
-    if (!window.confirm(t.value.modal.deleteConfirm)) return
-    router.delete(route('v2.branches.destroy', { branch: row.id }), { preserveScroll: true })
+    confirm({ body: t.value.modal.deleteConfirm, tone: 'destructive', onConfirm: () => {
+        router.delete(route('v2.branches.destroy', { branch: row.id }), { preserveScroll: true })
+    } })
 }
 </script>
 

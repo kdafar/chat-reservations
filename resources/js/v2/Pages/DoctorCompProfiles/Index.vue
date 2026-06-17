@@ -187,7 +187,7 @@ function destroy(row) {
                     </div>
                     <div v-if="form.type === 'percentage'">
                         <label class="label">{{ t.fields.percentage_rate }} (%) <span class="req">*</span></label>
-                        <input v-model.number="form.percentage_rate" type="number" step="0.001" min="0" class="input" />
+                        <input v-model.number="form.percentage_rate" type="number" step="any" min="0" class="input" />
                         <div v-if="errors.percentage_rate" class="err">{{ errors.percentage_rate }}</div>
                     </div>
                     <div style="display:flex; align-items:center; gap:8px;">
@@ -202,3 +202,7 @@ function destroy(row) {
             </div>
         </div>
 </template>
+
+<style scoped>
+.table th { position: sticky; top: 0; background: var(--card, var(--bg)); z-index: 1; }
+</style>

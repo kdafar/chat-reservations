@@ -5,6 +5,8 @@ import AppLayout from '../../Layouts/AppLayout.vue'
 defineOptions({ layout: AppLayout })
 import Icon from '../../Components/Icon.vue'
 import SearchableSelect from '../../Components/SearchableSelect.vue'
+import { formatMoney } from '../../lib/money.js'
+import { confirm } from '../../Composables/useConfirm.js'
 
 const props = defineProps({
     filters: Object, page: Object, branches: Array, partners: Array,
@@ -21,7 +23,7 @@ const t = computed(() => isRtl.value ? {
     col: { name: 'الاسم', code: 'الكود', type: 'النوع', branch: 'الفرع', beds: 'أسرّة', rate: 'السعر اليومي' },
     empty: 'لا توجد أقسام', emptyDesc: 'أنشئ قسمًا لتبدأ.',
     clear: 'مسح', allBranches: 'كل الفروع', allTypes: 'كل الأنواع', showing: 'عرض', of: 'من',
-    modal: { createTitle: 'قسم جديد', editTitle: 'تحرير القسم', save: 'حفظ', cancel: 'إلغاء', deleteConfirm: 'حذف القسم؟' },
+    modal: { createTitle: 'قسم جديد', editTitle: 'تحرير القسم', save: 'حفظ', cancel: 'إلغاء', delete: 'حذف', deleteConfirm: 'حذف القسم؟' },
     fields: { name: 'الاسم', code: 'الكود', ward_type: 'النوع', branch: 'الفرع', partner: 'العيادة', daily_rate: 'السعر اليومي (د.ك)', gender: 'تخصيص الجنس', is_active: 'فعّال', notes: 'ملاحظات' },
     types: { general: 'عام', icu: 'عناية مركزة', pediatric: 'أطفال', maternity: 'أمومة', vip: 'في آي بي', isolation: 'عزل' },
     genders: { any: 'الكل', male: 'ذكور', female: 'إناث' },
@@ -33,7 +35,7 @@ const t = computed(() => isRtl.value ? {
     col: { name: 'Name', code: 'Code', type: 'Type', branch: 'Branch', beds: 'Beds', rate: 'Daily rate' },
     empty: 'No wards', emptyDesc: 'Create a ward to get started.',
     clear: 'Clear', allBranches: 'All branches', allTypes: 'All types', showing: 'Showing', of: 'of',
-    modal: { createTitle: 'New ward', editTitle: 'Edit ward', save: 'Save', cancel: 'Cancel', deleteConfirm: 'Delete this ward?' },
+    modal: { createTitle: 'New ward', editTitle: 'Edit ward', save: 'Save', cancel: 'Cancel', delete: 'Delete', deleteConfirm: 'Delete this ward?' },
     fields: { name: 'Name', code: 'Code', ward_type: 'Type', branch: 'Branch', partner: 'Partner', daily_rate: 'Daily rate (KWD)', gender: 'Gender restriction', is_active: 'Active', notes: 'Notes' },
     types: { general: 'General', icu: 'ICU', pediatric: 'Pediatric', maternity: 'Maternity', vip: 'VIP', isolation: 'Isolation' },
     genders: { any: 'Any', male: 'Male only', female: 'Female only' },
@@ -67,7 +69,7 @@ function submit() {
     const method = modalMode.value === 'create' ? 'post' : 'put'
     router[method](url, payload, { preserveScroll: true, onSuccess: () => close(), onError: (e) => { errors.value = e; saving.value = false } })
 }
-function remove(row) { if (!window.confirm(t.value.modal.deleteConfirm)) return; router.delete(route('v2.inpatient.wards.destroy', { ward: row.id }), { preserveScroll: true }) }
+function remove(row) { confirm({ body: t.value.modal.deleteConfirm, tone: 'destructive', onConfirm: () => router.delete(route('v2.inpatient.wards.destroy', { ward: row.id }), { preserveScroll: true }) }) }
 </script>
 
 <template>
@@ -108,9 +110,9 @@ function remove(row) { if (!window.confirm(t.value.modal.deleteConfirm)) return;
                             <td>{{ t.types[row.ward_type] || row.ward_type }}</td>
                             <td style="font-size:12px;">{{ row.branch?.name || '—' }}</td>
                             <td>{{ row.beds_count || 0 }}</td>
-                            <td class="mono" style="text-align:end;">{{ Number(row.daily_rate).toFixed(3) }}</td>
+                            <td class="mono" style="text-align:end;">{{ formatMoney(row.daily_rate) }}</td>
                             <td @click.stop>
-                                <button v-if="can_edit" class="btn btn-ghost btn-sm btn-icon" @click="remove(row)"><Icon name="trash-2" :size="13" /></button>
+                                <button v-if="can_edit" class="btn btn-ghost btn-sm btn-icon" :title="t.modal.delete" :aria-label="t.modal.delete" @click="remove(row)"><Icon name="trash-2" :size="13" /></button>
                             </td>
                         </tr>
                     </tbody>
@@ -128,7 +130,7 @@ function remove(row) { if (!window.confirm(t.value.modal.deleteConfirm)) return;
                     <div><label class="label">{{ t.fields.name }} <span class="req">*</span></label><input v-model="form.name" class="input" required /><div v-if="errors.name" class="err">{{ errors.name }}</div></div>
                     <div><label class="label">{{ t.fields.code }} <span class="req">*</span></label><input v-model="form.code" class="input" required maxlength="32" /><div v-if="errors.code" class="err">{{ errors.code }}</div></div>
                     <div><label class="label">{{ t.fields.ward_type }} <span class="req">*</span></label><SearchableSelect v-model="form.ward_type" :items="wardTypeItems" :nullable="false" /></div>
-                    <div><label class="label">{{ t.fields.daily_rate }} <span class="req">*</span></label><input v-model.number="form.daily_rate" type="number" step="0.001" min="0" class="input" required /></div>
+                    <div><label class="label">{{ t.fields.daily_rate }} <span class="req">*</span></label><input v-model.number="form.daily_rate" type="number" step="any" min="0" class="input" required /></div>
                     <div><label class="label">{{ t.fields.branch }} <span class="req">*</span></label><SearchableSelect v-model="form.branch_id" :items="branches" :nullable="false" placeholder="—" /><div v-if="errors.branch_id" class="err">{{ errors.branch_id }}</div></div>
                     <div><label class="label">{{ t.fields.gender }}</label><SearchableSelect v-model="form.gender_restriction" :items="genderItems" :nullable="false" /></div>
                     <div style="display:flex; align-items:flex-end; gap:8px;"><input id="w_act" v-model="form.is_active" type="checkbox" /><label for="w_act" style="font-size:13px;">{{ t.fields.is_active }}</label></div>
@@ -147,7 +149,7 @@ function remove(row) { if (!window.confirm(t.value.modal.deleteConfirm)) return;
 .stat-chip-num { font-size:18px; font-weight:700; color:var(--fg); line-height:1; }
 .stat-chip-lbl { font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:var(--fg-faint); margin-top:4px; }
 .table { width:100%; border-collapse:collapse; font-size:13px; }
-.table th { text-align:start; padding:10px 12px; font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:var(--fg-faint); font-weight:600; border-bottom:1px solid var(--line); }
+.table th { text-align:start; padding:10px 12px; font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:var(--fg-faint); font-weight:600; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--card, var(--bg)); z-index:1; }
 .table td { padding:10px 12px; border-bottom:1px solid var(--line); }
 .table tbody tr:hover { background:var(--bg-hover); }
 .label { display:block; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.04em; color:var(--fg-faint); margin-bottom:4px; }

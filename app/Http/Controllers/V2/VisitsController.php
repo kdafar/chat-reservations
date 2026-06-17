@@ -68,6 +68,26 @@ class VisitsController extends Controller
             return $v;
         });
 
+        // Total fees over the current (filtered, unpaginated) set — a footer summing
+        // only visible rows would be wrong because the list is paginated.
+        $feesTotal = null;
+        if ($this->financialsEnabled()) {
+            $totalQuery = Visit::query();
+            if ($filters['q'] !== '') {
+                $q = $filters['q'];
+                $totalQuery->whereHas('patient', fn ($p) => $p->where('name', 'like', "%{$q}%")->orWhere('phone', 'like', "%{$q}%"));
+            }
+            if ($filters['doctor_id']) $totalQuery->where('doctor_id', $filters['doctor_id']);
+            if ($filters['branch_id']) $totalQuery->where('branch_id', $filters['branch_id']);
+            if (in_array($filters['status'], self::STATUSES, true)) $totalQuery->where('status', $filters['status']);
+            if ($filters['accepted'] === 'yes') $totalQuery->whereNotNull('accepted_at');
+            elseif ($filters['accepted'] === 'no') $totalQuery->whereNull('accepted_at');
+            if ($filters['from']) $totalQuery->whereDate('checked_in_at', '>=', $filters['from']);
+            if ($filters['until']) $totalQuery->whereDate('checked_in_at', '<=', $filters['until']);
+
+            $feesTotal = round((float) $totalQuery->sum('fees_total'), 3);
+        }
+
         return Inertia::render('Visits/Index', [
             'filters' => $filters,
             'page' => $page,
@@ -77,6 +97,9 @@ class VisitsController extends Controller
                 ->map(fn ($b) => ['id' => $b->id, 'name' => $b->localized_name ?? ('#'.$b->id)])->all(),
             'statuses' => self::STATUSES,
             'financials_enabled' => $this->financialsEnabled(),
+            'summary' => [
+                'fees_total' => $feesTotal,
+            ],
             'counts' => [
                 'total' => Visit::query()->count(),
                 'completed' => Visit::query()->where('status', 'completed')->count(),

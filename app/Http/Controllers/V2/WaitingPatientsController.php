@@ -25,6 +25,19 @@ class WaitingPatientsController extends Controller
      */
     public function index(Request $request): Response
     {
+        // The live patient queue is a clinical / front-desk surface: admin,
+        // reception, doctors and nurses. Finance-only roles (e.g. accountant)
+        // have no business in the queue, so they're blocked here — not just
+        // hidden in the sidebar. Matches the 'waiting' navGate in AppLayout.
+        $u = $request->user();
+        $maySeeQueue = $this->isAdminUser()
+            || $this->isReceptionUser()
+            || $this->isDoctorUser()
+            || (bool) ($u && method_exists($u, 'hasRole') && $u->hasRole('clinic_nurse'));
+        if (! $maySeeQueue) {
+            abort(403, 'Not authorized to view the patient queue.');
+        }
+
         // Reception + admin also see awaiting_payment visits — they need to
         // collect remaining payments and then click Complete visit. Doctors
         // don't see these (their work is done; the visit left their queue).

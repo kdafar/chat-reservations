@@ -1,14 +1,18 @@
 <script setup>
-import { computed, reactive } from 'vue'
+import { computed, reactive, watch } from 'vue'
 import { Head, Link, router, usePage } from '@inertiajs/vue3'
 import AppLayout from '../../Layouts/AppLayout.vue'
 defineOptions({ layout: AppLayout })
 import Icon from '../../Components/Icon.vue'
+import SearchableSelect from '../../Components/SearchableSelect.vue'
+import DateTimePicker from '../../Components/DateTimePicker.vue'
 
 const props = defineProps({
     filters: Object,
     page: Object,
     types: Array,
+    items: { type: Array, default: () => [] },
+    users: { type: Array, default: () => [] },
     counts: Object,
 })
 
@@ -19,27 +23,38 @@ const isRtl = computed(() => locale.value === 'ar')
 const t = computed(() => isRtl.value ? {
     title: 'حركة المخزون', eyebrow: 'الصيدلية والمخزون',
     desc: 'سجل غير قابل للتعديل لكل تغيّر في المخزون. يُنشأ تلقائياً عند الاستلام أو الاستهلاك.',
-    searchPh: 'ابحث باسم الصنف…', clear: 'مسح', typeAll: 'كل الأنواع',
+    searchPh: 'ابحث باسم الصنف…', clear: 'مسح', typeAll: 'كل الأنواع', allItems: 'كل الأصناف', itemPh: 'تصفية حسب الصنف…', allUsers: 'كل المستخدمين', userPh: 'تصفية حسب المستخدم…', from: 'من', to: 'إلى',
     tp: { restock: 'استلام', consume: 'استهلاك', adjustment: 'تسوية' },
-    col: { when: 'التاريخ', item: 'الصنف', branch: 'الفرع', type: 'النوع', change: 'التغيّر', after: 'الرصيد بعد', notes: 'ملاحظات' },
+    col: { when: 'التاريخ', item: 'الصنف', branch: 'الفرع', type: 'النوع', change: 'التغيّر', after: 'الرصيد بعد', by: 'بواسطة', notes: 'ملاحظات' },
+    system: 'النظام',
     empty: 'لا توجد حركات', showing: 'عرض', of: 'من', stats: { total: 'الكل' },
 } : {
     title: 'Stock Movements', eyebrow: 'Pharmacy & Stock',
     desc: 'Immutable record of every stock change. Created automatically on receipt or consumption.',
-    searchPh: 'Search by item name…', clear: 'Clear', typeAll: 'All types',
+    searchPh: 'Search by item name…', clear: 'Clear', typeAll: 'All types', allItems: 'All items', itemPh: 'Filter by item…', allUsers: 'All users', userPh: 'Filter by user…', from: 'From', to: 'To',
     tp: { restock: 'Restock', consume: 'Consume', adjustment: 'Adjustment' },
-    col: { when: 'When', item: 'Item', branch: 'Branch', type: 'Type', change: 'Change', after: 'After', notes: 'Notes' },
+    col: { when: 'When', item: 'Item', branch: 'Branch', type: 'Type', change: 'Change', after: 'After', by: 'By', notes: 'Notes' },
+    system: 'System',
     empty: 'No movements', showing: 'Showing', of: 'of', stats: { total: 'Total' },
 })
 
-const f = reactive({ q: props.filters.q || '', type: props.filters.type || 'all' })
+const f = reactive({ q: props.filters.q || '', type: props.filters.type || 'all', item_id: props.filters.item_id || null, performed_by: props.filters.performed_by || null, from: props.filters.from || null, to: props.filters.to || null })
+const itemSelectItems = computed(() => props.items.map((i) => ({ value: i.id, label: i.name })))
+const userSelectItems = computed(() => props.users.map((u) => ({ value: u.id, label: u.name })))
 let qTimer = null
 function apply() {
-    router.get(route('v2.stock-movements.index'), { q: f.q || undefined, type: f.type === 'all' ? undefined : f.type },
-        { preserveState: true, preserveScroll: true, replace: true })
+    router.get(route('v2.stock-movements.index'), {
+        q: f.q || undefined,
+        type: f.type === 'all' ? undefined : f.type,
+        item_id: f.item_id || undefined,
+        performed_by: f.performed_by || undefined,
+        from: f.from || undefined,
+        to: f.to || undefined,
+    }, { preserveState: true, preserveScroll: true, replace: true })
 }
 function onSearch() { clearTimeout(qTimer); qTimer = setTimeout(apply, 250) }
-function clearFilters() { f.q = ''; f.type = 'all'; apply() }
+function clearFilters() { f.q = ''; f.type = 'all'; f.item_id = null; f.performed_by = null; f.from = null; f.to = null; apply() }
+watch(() => [f.item_id, f.performed_by], () => apply())
 
 const typeBadge = (ty) => ({ restock: 'badge badge-success', consume: 'badge badge-warning', adjustment: 'badge badge-info' }[ty] || 'badge')
 const fmt = (n) => Number(n ?? 0).toFixed(4)
@@ -67,14 +82,19 @@ const when = (d) => d ? String(d).slice(0, 16).replace('T', ' ') : '—'
                     <Icon name="search" :size="14" style="position:absolute; inset-inline-start:10px; top:50%; transform:translateY(-50%); color:var(--fg-faint);" />
                     <input v-model="f.q" @input="onSearch" type="search" :placeholder="t.searchPh" class="input" style="padding-inline-start:32px;" />
                 </div>
+                <SearchableSelect v-model="f.item_id" :items="itemSelectItems" :nullable="true" :null-label="t.allItems" :placeholder="t.allItems" :search-placeholder="t.itemPh" :width="220" />
+                <SearchableSelect v-if="users.length" v-model="f.performed_by" :items="userSelectItems" :nullable="true" :null-label="t.allUsers" :placeholder="t.allUsers" :search-placeholder="t.userPh" :width="200" />
+                <DateTimePicker v-model="f.from" :with-time="false" :width="150" :locale="locale" :placeholder="t.from" @update:model-value="apply" />
+                <DateTimePicker v-model="f.to" :with-time="false" :width="150" :locale="locale" :placeholder="t.to" @update:model-value="apply" />
                 <div class="seg seg-sm">
                     <button :class="f.type === 'all' ? 'is-active' : ''" @click="f.type = 'all'; apply()">{{ t.typeAll }}</button>
                     <button v-for="ty in types" :key="ty" :class="f.type === ty ? 'is-active' : ''" @click="f.type = ty; apply()">{{ t.tp[ty] }}</button>
                 </div>
-                <button v-if="f.q || f.type !== 'all'" class="btn btn-ghost btn-sm" @click="clearFilters">{{ t.clear }}</button>
+                <button v-if="f.q || f.type !== 'all' || f.item_id || f.performed_by || f.from || f.to" class="btn btn-ghost btn-sm" @click="clearFilters">{{ t.clear }}</button>
             </div>
 
             <div class="card" style="overflow:hidden;">
+                <div style="overflow-x:auto;">
                 <table class="table">
                     <thead>
                         <tr>
@@ -84,12 +104,13 @@ const when = (d) => d ? String(d).slice(0, 16).replace('T', ' ') : '—'
                             <th>{{ t.col.type }}</th>
                             <th style="text-align:end;">{{ t.col.change }}</th>
                             <th style="text-align:end;">{{ t.col.after }}</th>
+                            <th>{{ t.col.by }}</th>
                             <th>{{ t.col.notes }}</th>
                         </tr>
                     </thead>
                     <tbody>
                         <tr v-if="page.data.length === 0">
-                            <td colspan="7" style="text-align:center; padding:48px; color:var(--fg-faint);">
+                            <td colspan="8" style="text-align:center; padding:48px; color:var(--fg-faint);">
                                 <Icon name="truck" :size="32" style="margin-bottom:8px; opacity:0.4;" />
                                 <div style="font-weight:600;">{{ t.empty }}</div>
                             </td>
@@ -101,10 +122,15 @@ const when = (d) => d ? String(d).slice(0, 16).replace('T', ' ') : '—'
                             <td><span :class="typeBadge(row.type)">{{ t.tp[row.type] ?? row.type }}</span></td>
                             <td class="mono" style="text-align:end;" :style="{ color: Number(row.qty_change_base) < 0 ? 'var(--err, #dc2626)' : 'var(--ok)' }">{{ fmt(row.qty_change_base) }}</td>
                             <td class="mono" style="text-align:end;">{{ fmt(row.after_qty_base) }}</td>
+                            <td style="font-size:12px;">
+                                <span v-if="row.performed_by_name">{{ row.performed_by_name }}</span>
+                                <span v-else style="color:var(--fg-faint); font-style:italic;">{{ t.system }}</span>
+                            </td>
                             <td style="font-size:12px; color:var(--fg-subtle);">{{ row.notes || '—' }}</td>
                         </tr>
                     </tbody>
                 </table>
+                </div>
             </div>
 
             <div v-if="page.last_page > 1" style="display:flex; justify-content:space-between; align-items:center; margin-top:12px; padding:0 4px; font-size:12px; color:var(--fg-subtle);">
@@ -115,3 +141,7 @@ const when = (d) => d ? String(d).slice(0, 16).replace('T', ' ') : '—'
             </div>
         </div>
 </template>
+
+<style scoped>
+.table th { position: sticky; top: 0; background: var(--card, var(--bg)); z-index: 1; }
+</style>

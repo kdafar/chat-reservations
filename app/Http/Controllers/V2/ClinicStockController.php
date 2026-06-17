@@ -9,6 +9,7 @@ use App\Services\Clinic\ClinicStockService;
 use App\Support\ResolvesAccessibleClinics;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -82,6 +83,21 @@ class ClinicStockController extends Controller
                 ->whereColumn('qty_on_hand_base', '<=', 'min_qty_threshold_base');
         }
 
+        // Server-side summary over the FULL filtered set (not just the current
+        // page). Total on-hand quantity, plus total on-hand value using each
+        // item's default_cost (cost per base unit). Clone before paginate so the
+        // aggregate query is unaffected by the limit/offset.
+        $summaryQuery = (clone $query);
+        $totalQty = (float) $summaryQuery->sum('qty_on_hand_base');
+        $totalValue = (float) (clone $query)
+            ->join('clinic_items', 'clinic_items.id', '=', 'clinic_item_stocks.clinic_item_id')
+            ->sum(DB::raw('clinic_item_stocks.qty_on_hand_base * clinic_items.default_cost'));
+        $summary = [
+            'total_qty' => $totalQty,
+            'total_value' => $totalValue,
+            'has_value' => true,
+        ];
+
         $page = $query->orderBy('id')->paginate(25)->withQueryString();
         $page->getCollection()->transform(function (ClinicItemStock $s) {
             $s->setAttribute('item_name', $s->clinicItem?->localized_name);
@@ -94,6 +110,7 @@ class ClinicStockController extends Controller
         return Inertia::render('ClinicStock/Index', [
             'filters' => $filters,
             'page' => $page,
+            'summary' => $summary,
             'branches' => $this->branchOptions(),
             'items' => $this->itemOptions(),
             'counts' => [

@@ -1,11 +1,12 @@
 <script setup>
 import { computed, reactive, ref } from 'vue'
-import { Head, router, usePage } from '@inertiajs/vue3'
+import { Head, Link, router, usePage } from '@inertiajs/vue3'
 import { confirm } from '../../Composables/useConfirm.js'
 import AppLayout from '../../Layouts/AppLayout.vue'
 defineOptions({ layout: AppLayout })
 import Icon from '../../Components/Icon.vue'
 import SearchableSelect from '../../Components/SearchableSelect.vue'
+import { formatMoney as fmt } from '../../lib/money.js'
 
 const props = defineProps({
     filters: Object,
@@ -25,6 +26,8 @@ const t = computed(() => isRtl.value ? {
     f: { code: 'الكود', name: 'الاسم (اختياري)', type: 'نوع الخصم', amount: 'مبلغ (د.ك)', percent: 'نسبة (%)', value: 'قيمة الخصم', min: 'أدنى مبلغ للزيارة', cap: 'حد أقصى للخصم (للنسبة)', branch: 'الفرع', allBranches: '— كل الفروع —', starts: 'يبدأ في', ends: 'ينتهي في', maxUses: 'أقصى عدد استخدامات', isActive: 'فعّال', stacks: 'يُجمع مع العروض الترويجية' },
     save: 'حفظ', cancel: 'إلغاء', editTitle: 'تحرير الكوبون', createTitle: 'كوبون جديد', del: 'حذف هذا الكوبون؟',
     unlimited: 'غير محدود',
+    showing: 'عرض', of: 'من',
+    stats: { total: 'الكل', active: 'فعّال' },
 } : {
     eyebrow: 'Billing', title: 'Coupons', desc: 'Discount codes applied to a visit at checkout.',
     searchPh: 'Search code or name…', new: 'New coupon', clear: 'Clear',
@@ -34,6 +37,8 @@ const t = computed(() => isRtl.value ? {
     f: { code: 'Code', name: 'Name (optional)', type: 'Discount type', amount: 'Amount (KWD)', percent: 'Percent (%)', value: 'Discount value', min: 'Min visit subtotal', cap: 'Max discount (percent only)', branch: 'Branch', allBranches: '— All branches —', starts: 'Starts at', ends: 'Ends at', maxUses: 'Max uses', isActive: 'Active', stacks: 'Stacks with promotions' },
     save: 'Save', cancel: 'Cancel', editTitle: 'Edit coupon', createTitle: 'New coupon', del: 'Delete this coupon?',
     unlimited: 'Unlimited',
+    showing: 'Showing', of: 'of',
+    stats: { total: 'Total', active: 'Active' },
 })
 
 const typeItems = computed(() => [
@@ -75,7 +80,6 @@ function submit() {
 }
 function destroy(row) { confirm({ body: t.value.del, onConfirm: () => router.delete(route('v2.coupons.destroy', { clinicCoupon: row.id }), { preserveScroll: true }) }) }
 
-const fmt = (n) => Number(n ?? 0).toFixed(3)
 function discLabel(r) { return r.discount_type === 'percent' ? `${Number(r.discount_value)}%` : `${fmt(r.discount_value)} KWD` }
 function validityLabel(r) {
     if (!r.starts_at && !r.ends_at) return '—'
@@ -93,6 +97,11 @@ function validityLabel(r) {
                 <div style="font-size:13px; color:var(--fg-muted);">{{ t.desc }}</div>
             </div>
             <button class="btn btn-primary" @click="openCreate"><Icon name="plus" :size="14" /><span>{{ t.new }}</span></button>
+        </div>
+
+        <div style="display:flex; gap:8px; margin-bottom:16px;">
+            <div class="stat-chip"><span class="stat-chip-num">{{ counts.total }}</span><span class="stat-chip-lbl">{{ t.stats.total }}</span></div>
+            <div class="stat-chip"><span class="stat-chip-num" style="color:var(--ok);">{{ counts.active }}</span><span class="stat-chip-lbl">{{ t.stats.active }}</span></div>
         </div>
 
         <div class="card" style="padding:12px; margin-bottom:12px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
@@ -135,6 +144,13 @@ function validityLabel(r) {
                 </tbody>
             </table>
         </div>
+
+        <div v-if="page.last_page > 1" style="display:flex; justify-content:space-between; align-items:center; margin-top:12px; padding:0 4px; font-size:12px; color:var(--fg-subtle);">
+            <span>{{ t.showing }} {{ page.from }}–{{ page.to }} {{ t.of }} {{ page.total }}</span>
+            <div style="display:flex; gap:4px;">
+                <component :is="link.url ? Link : 'span'" v-for="link in page.links" :key="link.label" :href="link.url || undefined" v-html="link.label" :class="['btn', 'btn-sm', link.active ? 'btn-primary' : 'btn-ghost', !link.url ? 'is-disabled' : '']" style="min-width:32px;" preserve-scroll preserve-state prefetch="click" />
+            </div>
+        </div>
     </div>
 
     <Teleport to="body">
@@ -161,16 +177,16 @@ function validityLabel(r) {
                         </div>
                         <div>
                             <label class="label">{{ t.f.value }} <span class="req">*</span></label>
-                            <input v-model.number="form.discount_value" type="number" step="0.001" min="0" class="input" required />
+                            <input v-model.number="form.discount_value" type="number" step="any" min="0" class="input" required />
                             <div v-if="errors.discount_value" class="err">{{ errors.discount_value }}</div>
                         </div>
                         <div>
                             <label class="label">{{ t.f.min }}</label>
-                            <input v-model.number="form.min_subtotal" type="number" step="0.001" min="0" class="input" />
+                            <input v-model.number="form.min_subtotal" type="number" step="any" min="0" class="input" />
                         </div>
                         <div v-if="form.discount_type === 'percent'">
                             <label class="label">{{ t.f.cap }}</label>
-                            <input v-model.number="form.max_discount" type="number" step="0.001" min="0" class="input" />
+                            <input v-model.number="form.max_discount" type="number" step="any" min="0" class="input" />
                         </div>
                         <div>
                             <label class="label">{{ t.f.branch }}</label>
@@ -201,3 +217,12 @@ function validityLabel(r) {
         </Transition>
     </Teleport>
 </template>
+
+<style scoped>
+.table thead th {
+    position: sticky;
+    top: 0;
+    background: var(--card, var(--bg));
+    z-index: 1;
+}
+</style>

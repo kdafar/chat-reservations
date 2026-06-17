@@ -318,7 +318,7 @@ const dischargeStatusItems = [
                         <div v-if="newChargeOpen" class="card" style="padding: 14px; margin-bottom: 12px; display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 8px; align-items: end;">
                             <div><label style="font-size: 11px; color: var(--fg-muted);">Date</label><DateTimePicker :with-time="false" v-model="chargeDate" :width="170" /></div>
                             <div><label style="font-size: 11px; color: var(--fg-muted);">Description <span class="req">*</span></label><input class="input" v-model="chargeDesc" /></div>
-                            <div><label style="font-size: 11px; color: var(--fg-muted);">Amount (KWD) <span class="req">*</span></label><input class="input" type="number" step="0.001" v-model.number="chargeAmount" /></div>
+                            <div><label style="font-size: 11px; color: var(--fg-muted);">Amount (KWD) <span class="req">*</span></label><input class="input" type="number" step="any" v-model.number="chargeAmount" /></div>
                             <div style="display: flex; gap: 6px;">
                                 <button class="btn btn-ghost btn-sm" @click="newChargeOpen = false">Cancel</button>
                                 <button class="btn btn-primary btn-sm" @click="doCharge"><Icon name="check" size="14" /></button>

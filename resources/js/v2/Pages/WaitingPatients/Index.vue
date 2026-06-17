@@ -12,6 +12,8 @@ import NewBookingSheet from '../../Components/NewBookingSheet.vue'
 import VisitSheet from '../../Components/VisitSheet.vue'
 import SearchableSelect from '../../Components/SearchableSelect.vue'
 import { pushToast } from '../../Composables/useNotificationState.js'
+import { confirm } from '../../Composables/useConfirm.js'
+import { formatMoney } from '../../lib/money.js'
 
 const checkinOpen = ref(false)
 const checkinBookingId = ref(null)
@@ -136,10 +138,9 @@ async function reassignDoctor(visitId, doctorId, force = false) {
         if (!resp.ok || !data.ok) {
             // Visit already started: an admin may override after confirming.
             if (data.requires_force && !force) {
-                const ok = window.confirm(locale.value === 'ar'
+                confirm({ body: locale.value === 'ar'
                     ? 'بدأت هذه الزيارة بالفعل. تغيير الطبيب الآن سيعيد كتابة من عالج المريض. هل تريد المتابعة؟'
-                    : 'This visit has already started. Changing the doctor now rewrites who treated the patient. Continue anyway?')
-                if (ok) return reassignDoctor(visitId, doctorId, true)
+                    : 'This visit has already started. Changing the doctor now rewrites who treated the patient. Continue anyway?', tone: 'destructive', onConfirm: () => reassignDoctor(visitId, doctorId, true) })
                 return
             }
             pushToast({ kind: 'warning', icon: 'alert-triangle', title: locale.value === 'ar' ? 'تعذر تغيير الطبيب' : 'Could not change doctor', desc: data.error })
@@ -625,7 +626,7 @@ const gridCols = 'repeat(auto-fill, minmax(320px, 1fr))'
                             :title="locale === 'ar' ? 'المبلغ المتبقي' : 'Outstanding balance'"
                         >
                             <Icon name="alert-circle" :size="11" />
-                            {{ v.fee.balance.toFixed(3) }} {{ locale === 'ar' ? 'متبقّي' : 'due' }}
+                            {{ formatMoney(v.fee.balance) }} {{ locale === 'ar' ? 'متبقّي' : 'due' }}
                         </span>
                         <span
                             v-else-if="v.fee && (v.fee.paid_total > 0)"
@@ -634,7 +635,7 @@ const gridCols = 'repeat(auto-fill, minmax(320px, 1fr))'
                             :title="locale === 'ar' ? 'المبلغ المدفوع' : 'Amount paid'"
                         >
                             <Icon name="check" :size="11" />
-                            {{ v.fee.paid_total.toFixed(3) }} {{ locale === 'ar' ? 'مدفوع' : 'paid' }}
+                            {{ formatMoney(v.fee.paid_total) }} {{ locale === 'ar' ? 'مدفوع' : 'paid' }}
                         </span>
                         <span
                             v-if="v.policy"
@@ -652,7 +653,7 @@ const gridCols = 'repeat(auto-fill, minmax(320px, 1fr))'
                             :title="locale === 'ar' ? 'الخصم' : 'Discount'"
                         >
                             <Icon name="tag" :size="11" />
-                            -{{ v.discount_total.toFixed(3) }}
+                            -{{ formatMoney(v.discount_total) }}
                         </span>
                     </div>
 
@@ -812,7 +813,7 @@ const gridCols = 'repeat(auto-fill, minmax(320px, 1fr))'
                     <div v-if="openPatient.fee && openPatient.fee.amount > 0" class="card" style="padding: 14px; background: var(--bg-sunken);">
                         <div class="eyebrow" style="margin-bottom: 10px;">{{ locale === 'ar' ? 'رسوم الاستشارة' : 'Consultation fee' }}</div>
                         <div class="tnum" style="display: inline-flex; align-items: baseline; gap: 8px;">
-                            <span style="font-weight: 500; font-size: 16px;">{{ openPatient.fee.amount.toFixed(3) }}</span>
+                            <span style="font-weight: 500; font-size: 16px;">{{ formatMoney(openPatient.fee.amount) }}</span>
                             <span style="font-size: 11px; color: var(--fg-subtle);">KWD</span>
                             <span v-if="openPatient.fee.paid" class="badge badge-success tnum" style="margin-inline-start: 4px;">
                                 <Icon name="check" :size="10" />
@@ -831,15 +832,15 @@ const gridCols = 'repeat(auto-fill, minmax(320px, 1fr))'
                         >
                             <div v-if="openPatient.fee.paid_total > 0" style="display: flex; justify-content: space-between; align-items: center;">
                                 <span style="color: var(--fg-muted);">{{ locale === 'ar' ? 'إجمالي المدفوع' : 'Total paid' }}</span>
-                                <span class="tnum" style="font-weight: 500; color: var(--success);">{{ openPatient.fee.paid_total.toFixed(3) }} <span style="font-size: 10px; color: var(--fg-subtle);">KWD</span></span>
+                                <span class="tnum" style="font-weight: 500; color: var(--success);">{{ formatMoney(openPatient.fee.paid_total) }} <span style="font-size: 10px; color: var(--fg-subtle);">KWD</span></span>
                             </div>
                             <div v-if="openPatient.fee.balance > 0" style="display: flex; justify-content: space-between; align-items: center;">
                                 <span style="color: var(--fg-muted);">{{ locale === 'ar' ? 'الرصيد المتبقي' : 'Outstanding balance' }}</span>
-                                <span class="tnum" style="font-weight: 500; color: var(--warning);">{{ openPatient.fee.balance.toFixed(3) }} <span style="font-size: 10px; color: var(--fg-subtle);">KWD</span></span>
+                                <span class="tnum" style="font-weight: 500; color: var(--warning);">{{ formatMoney(openPatient.fee.balance) }} <span style="font-size: 10px; color: var(--fg-subtle);">KWD</span></span>
                             </div>
                             <div v-if="openPatient.discount_total > 0" style="display: flex; justify-content: space-between; align-items: center;">
                                 <span style="color: var(--fg-muted);">{{ locale === 'ar' ? 'الخصم' : 'Discount' }}</span>
-                                <span class="tnum" style="font-weight: 500; color: var(--violet);">-{{ openPatient.discount_total.toFixed(3) }} <span style="font-size: 10px; color: var(--fg-subtle);">KWD</span></span>
+                                <span class="tnum" style="font-weight: 500; color: var(--violet);">-{{ formatMoney(openPatient.discount_total) }} <span style="font-size: 10px; color: var(--fg-subtle);">KWD</span></span>
                             </div>
                         </div>
                     </div>

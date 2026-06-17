@@ -34,11 +34,6 @@ class ExpensesController extends Controller
         return (bool) $request->user()?->can('update_accounting_expenses');
     }
 
-    protected function isAdmin(Request $request): bool
-    {
-        return (bool) $request->user()?->hasRole(['admin', 'super_admin']);
-    }
-
     /** Styled .xlsx export of expenses (mirrors the list filters). */
     public function export(Request $request)
     {
@@ -92,19 +87,63 @@ class ExpensesController extends Controller
         return Inertia::render('Expenses/Index', [
             'filters' => $filters,
             'page' => $page,
-            'vendors' => Vendor::query()->where('is_active', true)->orderBy('name')->get(['id', 'name', 'default_account_id'])
-                ->map(fn ($v) => ['id' => $v->id, 'name' => $v->name, 'default_account_id' => $v->default_account_id])->all(),
-            'expense_accounts' => $this->expenseAccountOptions(),
-            'payment_accounts' => $this->paymentAccountOptions(),
-            'branches' => $this->accessibleBranches()->all(),
             'statuses' => ['draft', 'posted', 'void'],
             'counts' => [
                 'total' => Expense::query()->count(),
                 'draft' => Expense::query()->where('status', 'draft')->count(),
             ],
             'can_edit' => $this->canEdit($request),
-            'is_admin' => $this->isAdmin($request),
         ]);
+    }
+
+    /** Vendor / account / branch pickers shared by the create/edit page. */
+    protected function pickerData(): array
+    {
+        return [
+            'vendors' => Vendor::query()->where('is_active', true)->orderBy('name')->get(['id', 'name', 'default_account_id'])
+                ->map(fn ($v) => ['id' => $v->id, 'name' => $v->name, 'default_account_id' => $v->default_account_id])->all(),
+            'expense_accounts' => $this->expenseAccountOptions(),
+            'payment_accounts' => $this->paymentAccountOptions(),
+            'branches' => $this->accessibleBranches()->all(),
+        ];
+    }
+
+    /** Dedicated create page (replaces the old modal). */
+    public function create(Request $request): Response
+    {
+        $this->authorizeAccess($request);
+        abort_unless((bool) $request->user()->can('create_accounting_expenses'), 403);
+
+        return Inertia::render('Expenses/Form', array_merge($this->pickerData(), [
+            'mode' => 'create',
+            'expense' => null,
+        ]));
+    }
+
+    /** Dedicated edit page for a draft (posted / void expenses are immutable). */
+    public function edit(Request $request, Expense $expense): Response|RedirectResponse
+    {
+        $this->authorizeAccess($request);
+        abort_unless($this->canEdit($request), 403);
+        if ($expense->status !== 'draft') {
+            return redirect()->route('v2.accounting.expenses.index')
+                ->with('flash', ['type' => 'error', 'message' => 'Only draft expenses can be edited.']);
+        }
+
+        return Inertia::render('Expenses/Form', array_merge($this->pickerData(), [
+            'mode' => 'edit',
+            'expense' => [
+                'id' => $expense->id,
+                'expense_date' => \Illuminate\Support\Carbon::parse($expense->expense_date)->toDateString(),
+                'vendor_id' => $expense->vendor_id,
+                'branch_id' => $expense->branch_id,
+                'account_id' => $expense->account_id,
+                'payment_account_id' => $expense->payment_account_id,
+                'amount' => (float) $expense->amount,
+                'description' => $expense->description ?? '',
+                'reference_no' => $expense->reference_no ?? '',
+            ],
+        ]));
     }
 
     public function store(Request $request): RedirectResponse
@@ -112,7 +151,8 @@ class ExpensesController extends Controller
         $this->authorizeAccess($request);
         if (! $request->user()->can('create_accounting_expenses')) abort(403);
         Expense::create($this->validated($request) + ['status' => 'draft']);
-        return back()->with('flash', ['type' => 'success', 'message' => 'Expense recorded.']);
+        return redirect()->route('v2.accounting.expenses.index')
+            ->with('flash', ['type' => 'success', 'message' => 'Expense recorded.']);
     }
 
     public function update(Request $request, Expense $expense): RedirectResponse
@@ -123,7 +163,8 @@ class ExpensesController extends Controller
             return back()->with('flash', ['type' => 'error', 'message' => 'Only draft expenses can be edited.']);
         }
         $expense->update($this->validated($request));
-        return back()->with('flash', ['type' => 'success', 'message' => 'Expense updated.']);
+        return redirect()->route('v2.accounting.expenses.index')
+            ->with('flash', ['type' => 'success', 'message' => 'Expense updated.']);
     }
 
     public function post(Request $request, Expense $expense): RedirectResponse
@@ -144,7 +185,7 @@ class ExpensesController extends Controller
     public function void(Request $request, Expense $expense): RedirectResponse
     {
         $this->authorizeAccess($request);
-        if (! $this->isAdmin($request)) abort(403);
+        if (! $this->canEdit($request)) abort(403);
         try {
             $expense->void((int) $request->user()->id);
         } catch (\Throwable $e) {
@@ -192,8 +233,8 @@ class ExpensesController extends Controller
         return Account::query()
             ->where('type', Account::TYPE_ASSET)->where('is_active', true)
             ->where(function ($q) {
-                $q->whereIn('code', ['1010', '1020', '1021', '1022'])
-                    ->orWhere('code', 'like', '1010-%')->orWhere('code', 'like', '1020-%');
+                $q->whereIn('code', ['1110', '1120', '1130'])
+                    ->orWhere('code', 'like', '1110-%')->orWhere('code', 'like', '1120-%');
             })
             ->orderBy('code')->get(['id', 'code', 'name'])
             ->map(fn ($a) => ['id' => $a->id, 'label' => "{$a->code} — {$a->name}"])->all();

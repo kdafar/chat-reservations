@@ -86,14 +86,43 @@ class VendorsController extends Controller
         return Inertia::render('Vendors/Index', [
             'filters' => $filters,
             'page' => $page,
-            'expenseAccounts' => $this->accountOptions([Account::TYPE_EXPENSE, Account::TYPE_COGS]),
-            'payableAccounts' => $this->accountOptions([Account::TYPE_LIABILITY]),
             'counts' => [
                 'total' => Vendor::query()->count(),
                 'active' => Vendor::query()->where('is_active', true)->count(),
                 'inactive' => Vendor::query()->where('is_active', false)->count(),
             ],
         ]);
+    }
+
+    /** Expense + payable account pickers shared by the create/edit page. */
+    protected function pickerData(): array
+    {
+        return [
+            'expenseAccounts' => $this->accountOptions([Account::TYPE_EXPENSE, Account::TYPE_COGS]),
+            'payableAccounts' => $this->accountOptions([Account::TYPE_LIABILITY]),
+        ];
+    }
+
+    /** Dedicated create page (replaces the old modal). */
+    public function create(Request $request): Response
+    {
+        $this->authorizeWrite($request);
+
+        return Inertia::render('Vendors/Form', array_merge($this->pickerData(), [
+            'mode' => 'create',
+            'vendor' => null,
+        ]));
+    }
+
+    /** Dedicated edit page (replaces the old modal). */
+    public function edit(Request $request, Vendor $vendor): Response
+    {
+        $this->authorizeWrite($request);
+
+        return Inertia::render('Vendors/Form', array_merge($this->pickerData(), [
+            'mode' => 'edit',
+            'vendor' => $this->present($vendor),
+        ]));
     }
 
     public function store(Request $request): RedirectResponse
@@ -103,7 +132,8 @@ class VendorsController extends Controller
 
         Vendor::create($data);
 
-        return back()->with('flash', ['type' => 'success', 'message' => 'Vendor created.']);
+        return redirect()->route('v2.accounting.vendors.index')
+            ->with('flash', ['type' => 'success', 'message' => 'Vendor created.']);
     }
 
     public function update(Request $request, Vendor $vendor): RedirectResponse
@@ -113,7 +143,8 @@ class VendorsController extends Controller
 
         $vendor->update($data);
 
-        return back()->with('flash', ['type' => 'success', 'message' => 'Vendor updated.']);
+        return redirect()->route('v2.accounting.vendors.index')
+            ->with('flash', ['type' => 'success', 'message' => 'Vendor updated.']);
     }
 
     public function destroy(Request $request, Vendor $vendor): RedirectResponse

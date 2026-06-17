@@ -44,7 +44,7 @@ class StockTransfersController extends Controller
         $status = $request->input('status', 'all');
 
         $query = StockTransfer::query()
-            ->with(['fromBranch:id,name', 'toBranch:id,name', 'lines', 'requester:id,name'])
+            ->with(['fromBranch:id,name', 'toBranch:id,name', 'lines', 'requester:id,name', 'dispatcher:id,name'])
             ->when(in_array($status, ['pending', 'dispatched', 'cancelled'], true), fn ($q) => $q->where('status', $status))
             ->orderByDesc('id');
 
@@ -58,23 +58,44 @@ class StockTransfersController extends Controller
             'qty_total' => (float) $t->lines->sum('qty_base'),
             'visit_id' => $t->visit_id,
             'requested_by' => $t->requester?->name,
+            'dispatched_by' => $t->dispatcher?->name,
             'dispatched_at' => optional($t->dispatched_at)->toIso8601String(),
             'created_at' => optional($t->created_at)->toIso8601String(),
         ]);
 
-        // New-transfer picker data, scoped to the user's clinic.
-        $partnerId = $this->accessiblePartnerIds()[0] ?? null; // null = admin (all)
+        // A transfer is intra-clinic, so the page operates within ONE clinic.
+        // Resolve it: a non-admin's own clinic, or — for a global admin who
+        // bypasses BelongsToPartnerScope — the clinic that owns a hub branch,
+        // else the first clinic. Without this anchor the admin would see every
+        // clinic's branches and the catalog repeated once per clinic.
+        $partnerId = $this->accessiblePartnerIds()[0] ?? null; // null = global admin
+        if ($partnerId === null) {
+            $partnerId = (int) (\App\Models\Branch::query()->withoutGlobalScopes()->where('is_hub', true)->value('partner_id')
+                ?: \App\Models\Partner::query()->orderBy('id')->value('id')) ?: null;
+        }
         $hubId = app(StockTransferService::class)->hubBranchId($partnerId);
-        $items = ClinicItem::query()->where('is_active', true)->where('is_stockable', true)
-            ->orderBy('name')->get(['id', 'name']);
         $hubStock = $hubId
             ? ClinicItemStock::query()->where('branch_id', $hubId)->pluck('qty_on_hand_base', 'clinic_item_id')
             : collect();
 
+        // The resolved clinic's stockable catalog (its own items + shared globals),
+        // de-duped by name — preferring the copy that actually carries hub stock —
+        // so the same item never appears twice in the picker.
+        $nameOf = fn ($i) => is_array($i->name) ? ($i->name[$locale] ?? $i->name['en'] ?? reset($i->name)) : $i->name;
+        $items = ClinicItem::query()
+            ->withoutGlobalScopes()
+            ->where('is_active', true)->where('is_stockable', true)
+            ->when($partnerId, fn ($q) => $q->where(fn ($w) => $w->where('partner_id', $partnerId)->orWhereNull('partner_id')))
+            ->orderBy('name')->get(['id', 'name'])
+            ->sortByDesc(fn ($i) => (float) ($hubStock[$i->id] ?? 0))
+            ->unique($nameOf)
+            ->sortBy($nameOf)
+            ->values();
+
         return Inertia::render('StockTransfers/Index', [
             'filters' => ['status' => $status],
             'page' => $page,
-            'branches' => $this->accessibleBranches()->all(),
+            'branches' => $this->accessibleBranches()->when($partnerId, fn ($c) => $c->where('partner_id', $partnerId))->values()->all(),
             'hub_branch_id' => $hubId,
             'items' => $items->map(fn ($i) => [
                 'id' => $i->id,

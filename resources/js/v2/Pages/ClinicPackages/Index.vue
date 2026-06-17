@@ -6,6 +6,8 @@ defineOptions({ layout: AppLayout })
 import Icon from '../../Components/Icon.vue'
 import ImportButton from '../../Components/ImportButton.vue'
 import SearchableSelect from '../../Components/SearchableSelect.vue'
+import { formatMoney as fmt } from '../../lib/money.js'
+import { confirm } from '../../Composables/useConfirm.js'
 
 const props = defineProps({
     filters: { type: Object, required: true },
@@ -108,10 +110,10 @@ function submit() {
     })
 }
 function destroy(row) {
-    if (!window.confirm(t.value.modal.deleteConfirm)) return
-    router.delete(route('v2.clinic-packages.destroy', { clinicPackage: row.id }), { preserveScroll: true })
+    confirm({ body: t.value.modal.deleteConfirm, tone: 'destructive', onConfirm: () => {
+        router.delete(route('v2.clinic-packages.destroy', { clinicPackage: row.id }), { preserveScroll: true })
+    } })
 }
-const fmt = (n) => Number(n ?? 0).toFixed(3)
 </script>
 
 <template>
@@ -218,7 +220,7 @@ const fmt = (n) => Number(n ?? 0).toFixed(3)
                     </div>
                     <div>
                         <label class="label">{{ t.modal.price }} <span class="req">*</span></label>
-                        <input v-model.number="form.default_price" type="number" step="0.001" min="0" class="input" required />
+                        <input v-model.number="form.default_price" type="number" step="any" min="0" class="input" required />
                         <div v-if="errors.default_price" class="err">{{ errors.default_price }}</div>
                     </div>
                 </div>
@@ -233,7 +235,7 @@ const fmt = (n) => Number(n ?? 0).toFixed(3)
                 <div v-if="!form.items.length" style="color:var(--fg-faint); font-size:12px; font-style:italic; padding:8px 0;">{{ t.modal.noItems }}</div>
                 <div v-for="(it, i) in form.items" :key="i" class="item-row">
                     <SearchableSelect v-model="it.clinic_item_id" :items="clinicItems" :nullable="false" :placeholder="t.modal.selectItem" :width="'100%'" style="flex:1; min-width:0;" />
-                    <input v-model.number="it.qty_base" type="number" step="0.0001" min="0.0001" class="input" style="width:100px;" :placeholder="t.modal.qty" required />
+                    <input v-model.number="it.qty_base" type="number" step="any" min="0.0001" class="input" style="width:100px;" :placeholder="t.modal.qty" required />
                     <label class="role-check" :title="t.modal.consumable" style="padding:6px 8px;"><input type="checkbox" v-model="it.is_consumable" /><Icon name="package" :size="14" /></label>
                     <button type="button" class="btn btn-ghost btn-sm btn-icon" @click="removeItem(i)"><Icon name="trash-2" :size="14" /></button>
                 </div>
@@ -253,7 +255,7 @@ const fmt = (n) => Number(n ?? 0).toFixed(3)
 .stat-chip-num { font-size:18px; font-weight:700; color:var(--fg); line-height:1; }
 .stat-chip-lbl { font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:var(--fg-faint); margin-top:4px; }
 .table { width:100%; border-collapse:collapse; font-size:13px; }
-.table th { text-align:start; padding:10px 12px; font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:var(--fg-faint); font-weight:600; border-bottom:1px solid var(--line); }
+.table th { text-align:start; padding:10px 12px; font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:var(--fg-faint); font-weight:600; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--card, var(--bg)); z-index:1; }
 .table td { padding:10px 12px; border-bottom:1px solid var(--line); }
 .table tr:last-child td { border-bottom:none; }
 .table tbody tr:hover { background:var(--bg-hover); }
