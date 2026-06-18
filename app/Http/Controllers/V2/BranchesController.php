@@ -3,9 +3,11 @@
 namespace App\Http\Controllers\V2;
 
 use App\Http\Controllers\Controller;
+use App\Models\Accounting\Account;
 use App\Models\Branch;
 use App\Models\City;
 use App\Models\Partner;
+use App\Services\Accounting\ChartOfAccounts;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -42,7 +44,7 @@ class BranchesController extends Controller
             'status' => $request->input('status', 'all'),
         ];
 
-        $query = Branch::query()->with(['partner:id,name', 'city:id,name']);
+        $query = Branch::query()->with(['partner:id,name', 'city:id,name', 'account:id,code,name']);
 
         if ($filters['q'] !== '') {
             $q = $filters['q'];
@@ -66,10 +68,6 @@ class BranchesController extends Controller
         return Inertia::render('Branches/Index', [
             'filters' => $filters,
             'page' => $page,
-            'partners' => Partner::query()->orderBy('id')->get(['id', 'name'])
-                ->map(fn ($p) => ['id' => $p->id, 'name' => (string) $p->getTranslation('name', $locale)])->all(),
-            'cities' => City::query()->orderBy("name->{$locale}")->get(['id', 'name'])
-                ->map(fn ($c) => ['id' => $c->id, 'name' => (string) $c->getTranslation('name', $locale)])->all(),
             'counts' => [
                 'total' => Branch::query()->count(),
                 'available' => Branch::query()->where('is_available', true)->count(),
@@ -85,9 +83,14 @@ class BranchesController extends Controller
 
         $branch = new Branch();
         $this->fillFromData($branch, $data);
+        $changed = $this->applyAccountLink($branch, $request, $data);
         $branch->save();
+        if ($changed) {
+            app(ChartOfAccounts::class)->refresh();
+        }
 
-        return back()->with('flash', ['type' => 'success', 'message' => 'Branch created.']);
+        return redirect()->route('v2.branches.index')
+            ->with('flash', ['type' => 'success', 'message' => 'Branch created.']);
     }
 
     public function update(Request $request, Branch $branch): RedirectResponse
@@ -96,9 +99,67 @@ class BranchesController extends Controller
         $data = $this->validateData($request, $branch);
 
         $this->fillFromData($branch, $data);
+        $changed = $this->applyAccountLink($branch, $request, $data);
         $branch->save();
+        if ($changed) {
+            app(ChartOfAccounts::class)->refresh();
+        }
 
-        return back()->with('flash', ['type' => 'success', 'message' => 'Branch updated.']);
+        return redirect()->route('v2.branches.index')
+            ->with('flash', ['type' => 'success', 'message' => 'Branch updated.']);
+    }
+
+    /** Dedicated create page (replaces the old popup modal). */
+    public function create(Request $request): Response
+    {
+        $this->authorizeAccess($request);
+
+        return Inertia::render('Branches/Form', array_merge(
+            ['mode' => 'create', 'branch' => null],
+            $this->formSupport($request),
+        ));
+    }
+
+    /** Dedicated edit page (replaces the old popup modal). */
+    public function edit(Request $request, Branch $branch): Response
+    {
+        $this->authorizeAccess($request);
+        $branch->load('partner:id,name', 'city:id,name', 'account:id,code,name');
+
+        return Inertia::render('Branches/Form', array_merge(
+            ['mode' => 'edit', 'branch' => $this->present($branch, app()->getLocale())],
+            $this->formSupport($request),
+        ));
+    }
+
+    /** Shared select/options + permission flags for the create & edit pages. */
+    protected function formSupport(Request $request): array
+    {
+        $locale = app()->getLocale();
+
+        return [
+            'partners' => Partner::query()->orderBy('id')->get(['id', 'name'])
+                ->map(fn ($p) => ['id' => $p->id, 'name' => (string) $p->getTranslation('name', $locale)])->all(),
+            'cities' => City::query()->orderBy("name->{$locale}")->get(['id', 'name'])
+                ->map(fn ($c) => ['id' => $c->id, 'name' => (string) $c->getTranslation('name', $locale)])->all(),
+            'accounts' => Account::postableOptions([Account::TYPE_ASSET]),
+            'can_edit_accounting' => (bool) $request->user()?->can('update_accounting_accounts'),
+        ];
+    }
+
+    /**
+     * Set the branch's cash/operating account link — only an accountant
+     * (update_accounting_accounts) may change it; other admins leave it as-is.
+     * Returns true when the link actually changed.
+     */
+    protected function applyAccountLink(Branch $branch, Request $request, array $data): bool
+    {
+        if (! $request->user()?->can('update_accounting_accounts')) {
+            return false;
+        }
+        $branch->account_id = $data['account_id'] ?: null;
+
+        return $branch->isDirty('account_id');
     }
 
     public function destroy(Request $request, Branch $branch): RedirectResponse
@@ -126,6 +187,7 @@ class BranchesController extends Controller
             'max_booking_days' => ['required', 'integer', 'min:1', 'max:365'],
             'is_available' => ['boolean'],
             'is_hub' => ['boolean'],
+            'account_id' => ['nullable', 'integer', 'exists:chart_of_accounts,id'],
         ]);
     }
 
@@ -170,6 +232,8 @@ class BranchesController extends Controller
             'max_booking_days' => $b->max_booking_days,
             'is_available' => (bool) $b->is_available,
             'is_hub' => (bool) $b->is_hub,
+            'account_id' => $b->account_id,
+            'account_label' => $b->account ? $b->account->code.' — '.$b->account->name : null,
         ];
     }
 }

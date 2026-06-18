@@ -14,7 +14,35 @@ class VisitObserver
     public function saved(Visit $visit): void
     {
         $this->syncFollowUpPlan($visit);
+        $this->syncRevenueAccrual($visit);
         $this->autoDraftInsuranceClaim($visit);
+    }
+
+    /**
+     * Full-accrual revenue: recognise (or reverse) the visit's earned revenue
+     * whenever its status or billed totals change. The accounting service is
+     * idempotent and decides what to post — accrue on completion, re-accrue on
+     * a billing change, reverse if the visit leaves the completed state.
+     * Errors are logged + swallowed; accounting never breaks the visit save.
+     */
+    protected function syncRevenueAccrual(Visit $visit): void
+    {
+        // wasChanged() is empty on an INSERT, so also accrue when a visit is
+        // created already-completed (seeders / direct creates). The service is
+        // idempotent and no-ops for non-completed or zero-value visits.
+        $watched = ['status', 'fees_total', 'packages_price_total', 'items_price_total', 'discount_total'];
+        if (! $visit->wasRecentlyCreated && ! $visit->wasChanged($watched)) {
+            return;
+        }
+
+        try {
+            app(\App\Services\Accounting\AccountingService::class)->recordVisitRevenueAccrual($visit);
+        } catch (\Throwable $e) {
+            Log::error('[VisitObserver] revenue accrual failed', [
+                'visit_id' => $visit->id,
+                'msg' => $e->getMessage(),
+            ]);
+        }
     }
 
     protected function syncFollowUpPlan(Visit $visit): void

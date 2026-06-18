@@ -1,6 +1,6 @@
 <script setup>
-import { computed, reactive, ref, watch } from 'vue'
-import { Head, router, usePage } from '@inertiajs/vue3'
+import { computed, reactive, watch } from 'vue'
+import { Head, Link, router, usePage } from '@inertiajs/vue3'
 import AppLayout from '../../Layouts/AppLayout.vue'
 defineOptions({ layout: AppLayout })
 import Icon from '../../Components/Icon.vue'
@@ -9,7 +9,6 @@ import { confirm } from '../../Composables/useConfirm.js'
 const props = defineProps({
     filters: { type: Object, required: true },
     page: { type: Object, required: true },
-    services: { type: Array, required: true },
     counts: { type: Object, required: true },
 })
 
@@ -30,6 +29,7 @@ const t = computed(() => isRtl.value ? {
         nameEn: 'الاسم (إنجليزي)', nameAr: 'الاسم (عربي)', slug: 'الكود / slug', slugHelp: 'يُستخدم في الروابط.',
         website: 'الموقع', email: 'البريد', license: 'رقم الترخيص (وزارة الصحة)', footer: 'تذييل الطباعة',
         footerHelp: 'يظهر أسفل الوصفات والفواتير.', specialties: 'التخصصات الطبية', active: 'فعّالة',
+        account: 'حساب الإيراد الافتراضي', accountHelp: 'حساب إيراد الخدمات الذي تُرحَّل إليه إيرادات هذه العيادة. يُترك للنظام إن لم يُحدَّد.', accountNone: 'افتراضي النظام',
         save: 'حفظ', cancel: 'إلغاء', deleteConfirm: 'سيتم تعطيل هذه العيادة. متابعة؟',
     },
 } : {
@@ -45,6 +45,7 @@ const t = computed(() => isRtl.value ? {
         nameEn: 'Name (English)', nameAr: 'Name (Arabic)', slug: 'Code / slug', slugHelp: 'Used in links/URLs.',
         website: 'Website', email: 'Email', license: 'MOH / commercial license', footer: 'Print footer / disclaimer',
         footerHelp: 'Appears at the bottom of prescriptions and invoices.', specialties: 'Medical specialties', active: 'Active',
+        account: 'Default revenue account', accountHelp: "The services-revenue account this clinic's income posts to. Leave as system default if unset.", accountNone: 'System default',
         save: 'Save', cancel: 'Cancel', deleteConfirm: 'Deactivate this clinic?',
     },
 })
@@ -58,38 +59,7 @@ function apply() {
 }
 function clearFilters() { f.q = ''; f.status = 'all'; apply() }
 
-const modalOpen = ref(false)
-const modalMode = ref('create')
-const editing = ref(null)
-const blank = () => ({ name_en: '', name_ar: '', slug: '', website: '', email: '', license_number: '', footer_text: '', is_active: true, services: [] })
-const form = reactive(blank())
-const errors = ref({})
-const saving = ref(false)
-
-function openCreate() { modalMode.value = 'create'; editing.value = null; Object.assign(form, blank()); errors.value = {}; modalOpen.value = true }
-function openEdit(row) {
-    modalMode.value = 'edit'; editing.value = row
-    Object.assign(form, {
-        name_en: row.name_en || '', name_ar: row.name_ar || '', slug: row.slug || '', website: row.website || '',
-        email: row.email || '', license_number: row.license_number || '', footer_text: row.footer_text || '',
-        is_active: !!row.is_active, services: [...(row.service_ids || [])],
-    })
-    errors.value = {}; modalOpen.value = true
-}
-function closeModal() { modalOpen.value = false; saving.value = false }
-function toggleService(id) { const i = form.services.indexOf(id); if (i === -1) form.services.push(id); else form.services.splice(i, 1) }
-
-function submit() {
-    saving.value = true; errors.value = {}
-    const url = modalMode.value === 'create' ? route('v2.partners.store') : route('v2.partners.update', { partner: editing.value.id })
-    const method = modalMode.value === 'create' ? 'post' : 'put'
-    router[method](url, { ...form }, {
-        preserveScroll: true,
-        onSuccess: () => closeModal(),
-        onError: (errs) => { errors.value = errs; saving.value = false },
-        onFinish: () => { saving.value = false },
-    })
-}
+function openEdit(row) { router.visit(route('v2.partners.edit', { partner: row.id })) }
 function deactivate(row) {
     confirm({ body: t.value.modal.deleteConfirm, tone: 'destructive', onConfirm: () => {
         router.delete(route('v2.partners.destroy', { partner: row.id }), { preserveScroll: true })
@@ -109,7 +79,7 @@ function deactivate(row) {
             </div>
             <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
                 <a class="btn btn-sm btn-outline" :href="route('v2.partners.export', { ...f })"><Icon name="download" :size="13" /><span>{{ isRtl ? 'تصدير Excel' : 'Export Excel' }}</span></a>
-                <button class="btn btn-primary" @click="openCreate"><Icon name="plus" :size="14" /><span>{{ t.new }}</span></button>
+                <Link class="btn btn-primary" :href="route('v2.partners.create')"><Icon name="plus" :size="14" /><span>{{ t.new }}</span></Link>
             </div>
         </div>
 
@@ -174,65 +144,6 @@ function deactivate(row) {
                 <a v-for="link in page.links" :key="link.label" :href="link.url || undefined" v-html="link.label"
                    :class="['btn', 'btn-sm', link.active ? 'btn-primary' : 'btn-ghost', !link.url ? 'is-disabled' : '']" style="min-width:32px;" />
             </div>
-        </div>
-    </div>
-
-    <div v-if="modalOpen" class="modal-backdrop" @click.self="closeModal">
-        <div class="modal-panel" role="dialog" aria-modal="true">
-            <div style="display:flex; justify-content:space-between; align-items:center; padding:14px 16px; border-bottom:1px solid var(--line);">
-                <h3 style="margin:0; font-size:15px; font-weight:600;">{{ modalMode === 'create' ? t.modal.createTitle : t.modal.editTitle }}</h3>
-                <button class="btn btn-ghost btn-sm btn-icon" @click="closeModal"><Icon name="x" :size="14" /></button>
-            </div>
-            <form @submit.prevent="submit" class="rgrid-2" style="padding:16px; display:grid; grid-template-columns:1fr 1fr; gap:12px; max-height:78vh; overflow-y:auto;">
-                <div>
-                    <label class="label">{{ t.modal.nameEn }} <span class="req">*</span></label>
-                    <input v-model="form.name_en" type="text" class="input" required maxlength="255" />
-                    <div v-if="errors.name_en" class="err">{{ errors.name_en }}</div>
-                </div>
-                <div>
-                    <label class="label">{{ t.modal.nameAr }}</label>
-                    <input v-model="form.name_ar" type="text" class="input" maxlength="255" dir="rtl" />
-                </div>
-                <div>
-                    <label class="label">{{ t.modal.slug }} <span class="req">*</span></label>
-                    <input v-model="form.slug" type="text" class="input" required maxlength="255" :placeholder="t.modal.slugHelp" />
-                    <div v-if="errors.slug" class="err">{{ errors.slug }}</div>
-                </div>
-                <div>
-                    <label class="label">{{ t.modal.license }}</label>
-                    <input v-model="form.license_number" type="text" class="input" maxlength="255" />
-                </div>
-                <div>
-                    <label class="label">{{ t.modal.website }}</label>
-                    <input v-model="form.website" type="text" class="input" maxlength="255" placeholder="www.myclinic.com" />
-                </div>
-                <div>
-                    <label class="label">{{ t.modal.email }}</label>
-                    <input v-model="form.email" type="email" class="input" maxlength="255" />
-                    <div v-if="errors.email" class="err">{{ errors.email }}</div>
-                </div>
-                <div style="grid-column:span 2;">
-                    <label class="label">{{ t.modal.footer }}</label>
-                    <textarea v-model="form.footer_text" class="input" rows="2" maxlength="2000" :placeholder="t.modal.footerHelp"></textarea>
-                </div>
-                <div style="grid-column:span 2;">
-                    <label class="label">{{ t.modal.specialties }}</label>
-                    <div style="display:flex; flex-wrap:wrap; gap:6px; max-height:140px; overflow-y:auto;">
-                        <label v-for="s in services" :key="s.id" class="chip-check" :class="form.services.includes(s.id) ? 'is-on' : ''">
-                            <input type="checkbox" :checked="form.services.includes(s.id)" @change="toggleService(s.id)" style="display:none;" />
-                            {{ s.name }}
-                        </label>
-                    </div>
-                </div>
-                <div style="grid-column:span 2;">
-                    <label class="role-check" style="width:fit-content;"><input type="checkbox" v-model="form.is_active" /><span>{{ t.modal.active }}</span></label>
-                </div>
-
-                <div style="grid-column:span 2; display:flex; justify-content:flex-end; gap:8px; margin-top:8px; padding-top:12px; border-top:1px solid var(--line);">
-                    <button type="button" class="btn btn-ghost" @click="closeModal">{{ t.modal.cancel }}</button>
-                    <button type="submit" class="btn btn-primary" :disabled="saving">{{ saving ? '…' : t.modal.save }}</button>
-                </div>
-            </form>
         </div>
     </div>
 </template>

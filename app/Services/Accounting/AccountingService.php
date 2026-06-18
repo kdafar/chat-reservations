@@ -46,6 +46,16 @@ class AccountingService
                 return null; // pending — no entry yet
             }
 
+            // Insurance is recognised through the claims module: revenue accrues
+            // when the visit is completed (recordVisitRevenueAccrual), and claim
+            // approval reclassifies the covered portion of the patient receivable
+            // into the insurer's AR (recordClaimApprovalReclass). Posting an
+            // insurance-method visit payment here too would double-count, so it
+            // is intentionally GL-neutral.
+            if (strtolower((string) $payment->method) === 'insurance') {
+                return null;
+            }
+
             // Idempotency
             if ($existing = $this->existingFor($payment)) {
                 return $existing;
@@ -61,10 +71,15 @@ class AccountingService
                 return null;
             }
 
+            // Full-accrual model: revenue was already recognised at visit
+            // completion (Dr AR / Cr Revenue). A patient payment therefore only
+            // SETTLES the receivable — Dr Cash/Bank/Clearing, Cr Accounts
+            // Receivable. (Paying before completion simply parks a credit on AR
+            // that the completion accrual nets against — order-independent.)
             $cashAccount = $this->coa->cashAccountFor($payment->method, (int) $visit->branch_id);
-            $revenueAccount = $this->coa->revenueAccountFor((string) ($payment->kind ?? 'consultation'));
+            $arAccount = $this->coa->resolve('1140'); // Accounts Receivable — Patients
 
-            if (! $cashAccount || ! $revenueAccount) {
+            if (! $cashAccount || ! $arAccount) {
                 Log::warning('[AccountingService] missing accounts for VisitPayment', [
                     'payment_id' => $payment->id,
                     'method' => $payment->method,
@@ -90,10 +105,10 @@ class AccountingService
                         'patient_id' => $visit->patient_id,
                     ],
                     [
-                        'account_id' => $revenueAccount->id,
+                        'account_id' => $arAccount->id,
                         'debit' => 0,
                         'credit' => $amount,
-                        'description' => 'Service revenue ('.($payment->kind ?? 'consultation').')',
+                        'description' => 'Settle patient receivable',
                         'branch_id' => $visit->branch_id,
                         'doctor_id' => $visit->doctor_id,
                         'patient_id' => $visit->patient_id,
@@ -103,6 +118,188 @@ class AccountingService
         } catch (\Throwable $e) {
             Log::error('[AccountingService::recordVisitPayment] error', [
                 'payment_id' => $payment->id,
+                'msg' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
+    /**
+     * Accrual revenue recognition. When a visit is COMPLETED its charges are
+     * earned, so revenue is booked against a receivable regardless of whether
+     * the patient has paid yet:
+     *
+     *   Dr  Accounts Receivable (1140)        net billed (gross − discount)
+     *   Dr  Discounts & Promotions (4310)     discount given (contra-revenue)
+     *     Cr  Clinical Services Revenue (4110) fees + packages
+     *     Cr  Product / Retail Sales (4210)    items
+     *
+     * Idempotent on the visit. If the billed total later changes (charges
+     * edited) the prior accrual is reversed and re-posted. If the visit leaves
+     * the completed state (re-opened / cancelled) the accrual is reversed.
+     * Patient payments separately settle the AR (recordVisitPayment); insurer
+     * coverage reclassifies it (recordClaimApprovalReclass) — neither touches
+     * revenue again, so revenue is recognised exactly once.
+     */
+    public function recordVisitRevenueAccrual(Visit $visit): ?JournalEntry
+    {
+        try {
+            $fees = (float) ($visit->fees_total ?? 0);
+            $packages = (float) ($visit->packages_price_total ?? 0);
+            $items = (float) ($visit->items_price_total ?? 0);
+            $discount = max(0.0, (float) ($visit->discount_total ?? 0));
+            $services = round($fees + $packages, 3);
+            $products = round($items, 3);
+            $gross = round($services + $products, 3);
+
+            $completed = $visit->status === Visit::STATUS_COMPLETED;
+            $existing = $this->existingFor($visit);
+
+            // No (longer any) revenue to recognise — reverse a prior accrual.
+            if (! $completed || $gross <= 0) {
+                if ($existing) {
+                    return $existing->reverse(null, 'Visit revenue reversed (not completed)');
+                }
+
+                return null;
+            }
+
+            // Re-accrue only if the billed total moved.
+            if ($existing) {
+                $priorGross = (float) $existing->lines->sum('debit'); // AR + discount = gross
+                if (abs($priorGross - $gross) <= 0.005) {
+                    return $existing;
+                }
+                $existing->reverse(null, 'Visit revenue re-accrued');
+            }
+
+            $branchId = (int) $visit->branch_id;
+            $arAccount = $this->coa->resolve('1140');
+            $servicesAccount = $this->coa->revenueAccountFor('services', $branchId);
+            $productsAccount = $this->coa->revenueAccountFor('medicines', $branchId);
+            $discountAccount = $this->coa->resolve('4310'); // Discounts & Promotions (contra-revenue)
+
+            if (! $arAccount || ! $servicesAccount || ($products > 0 && ! $productsAccount) || ($discount > 0 && ! $discountAccount)) {
+                Log::warning('[AccountingService] missing accounts for visit revenue accrual', ['visit_id' => $visit->id]);
+
+                return null;
+            }
+
+            $net = round($gross - $discount, 3);
+            $dim = ['branch_id' => $branchId, 'doctor_id' => $visit->doctor_id, 'patient_id' => $visit->patient_id];
+            $lines = [];
+            $lines[] = array_merge($dim, ['account_id' => $arAccount->id, 'debit' => $net, 'credit' => 0, 'description' => 'Patient receivable: visit #'.$visit->id]);
+            if ($discount > 0) {
+                $lines[] = array_merge($dim, ['account_id' => $discountAccount->id, 'debit' => $discount, 'credit' => 0, 'description' => 'Discount on visit #'.$visit->id]);
+            }
+            if ($services > 0) {
+                $lines[] = array_merge($dim, ['account_id' => $servicesAccount->id, 'debit' => 0, 'credit' => $services, 'description' => 'Service revenue: visit #'.$visit->id]);
+            }
+            if ($products > 0) {
+                $lines[] = array_merge($dim, ['account_id' => $productsAccount->id, 'debit' => 0, 'credit' => $products, 'description' => 'Product revenue: visit #'.$visit->id]);
+            }
+
+            return $this->postBalancedEntry(
+                date: $visit->completed_at ?? now(),
+                narration: "Revenue accrual for visit #{$visit->id}",
+                source: $visit,
+                branchId: $branchId,
+                lines: $lines,
+            );
+        } catch (\Throwable $e) {
+            Log::error('[AccountingService::recordVisitRevenueAccrual] error', [
+                'visit_id' => $visit->id,
+                'msg' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
+    /**
+     * Insurer-coverage reclassification (NOT a revenue event). Revenue is
+     * recognised once at visit completion against Accounts Receivable; when an
+     * insurer approves a claim the covered portion of that receivable simply
+     * moves from the patient AR into the insurer's AR:
+     *
+     *   Dr  AR — Insurer (insurer's own AR account)   approved amount
+     *     Cr  AR — Patients (1140)                     approved amount
+     *
+     * The insurer payment (recordInsurerPayment) then settles the insurer AR.
+     * Idempotent on the claim; re-runs when the approved amount changes and
+     * reverses when the claim leaves an approved state (rejected / void).
+     * No-op when the insurer has no dedicated AR account (both sides resolve to
+     * 1140, so the reclass would be a wash).
+     */
+    public function recordClaimApprovalReclass(\App\Models\Insurance\InsuranceClaim $claim): ?JournalEntry
+    {
+        try {
+            // The receivable stays reclassified to the insurer for the whole
+            // life of the coverage — including after the claim is marked PAID
+            // (the insurer payment settles the insurer AR; it must NOT unwind
+            // the reclass). Only a rejection / void / draft reset removes it.
+            $coveredStatuses = [
+                \App\Models\Insurance\InsuranceClaim::STATUS_APPROVED,
+                \App\Models\Insurance\InsuranceClaim::STATUS_PARTIALLY_APPROVED,
+                \App\Models\Insurance\InsuranceClaim::STATUS_PAID,
+            ];
+            $covered = in_array($claim->status, $coveredStatuses, true)
+                ? round((float) ($claim->approved_amount ?? 0), 3)
+                : 0.0;
+
+            $existing = $this->existingFor($claim);
+
+            if ($covered <= 0) {
+                if ($existing) {
+                    return $existing->reverse(null, 'Claim coverage reversed');
+                }
+
+                return null;
+            }
+
+            $insurerId = (int) ($claim->patientPolicy?->insurer_id ?: 0) ?: null;
+            $insurerAr = $this->coa->arAccountForInsurer($insurerId);
+            $patientAr = $this->coa->resolve('1140');
+            if (! $insurerAr || ! $patientAr) {
+                return null;
+            }
+            // No dedicated insurer AR → the reclass is a wash within 1140; skip.
+            if ((int) $insurerAr->id === (int) $patientAr->id) {
+                if ($existing) {
+                    $existing->reverse(null, 'Claim coverage reclass no longer needed');
+                }
+
+                return null;
+            }
+
+            if ($existing) {
+                $prior = (float) $existing->lines->sum('debit');
+                if (abs($prior - $covered) <= 0.005) {
+                    return $existing;
+                }
+                $existing->reverse(null, 'Claim coverage re-stated');
+            }
+
+            // Carry the patient on the patient-AR credit so it FIFO-settles that
+            // patient's receivable in AR aging, and stamp the insurer on both
+            // lines so insurer aging can attribute the balance.
+            $patientId = (int) ($claim->patientPolicy?->patient_id ?: $claim->visit?->patient_id ?: 0) ?: null;
+            $insurerMeta = $insurerId ? ['insurer_id' => $insurerId] : null;
+
+            return $this->postBalancedEntry(
+                date: $claim->decided_at ?? now(),
+                narration: "Insurer coverage for claim {$claim->claim_number}",
+                source: $claim,
+                branchId: (int) $claim->branch_id,
+                lines: [
+                    ['account_id' => $insurerAr->id, 'debit' => $covered, 'credit' => 0, 'description' => "AR moved to insurer: claim {$claim->claim_number}", 'branch_id' => $claim->branch_id, 'meta' => $insurerMeta],
+                    ['account_id' => $patientAr->id, 'debit' => 0, 'credit' => $covered, 'description' => "Patient AR covered by insurer: claim {$claim->claim_number}", 'branch_id' => $claim->branch_id, 'patient_id' => $patientId, 'meta' => $insurerMeta],
+                ],
+            );
+        } catch (\Throwable $e) {
+            Log::error('[AccountingService::recordClaimApprovalReclass] error', [
+                'claim_id' => $claim->id,
                 'msg' => $e->getMessage(),
             ]);
 
@@ -136,8 +333,9 @@ class AccountingService
                 return null; // free items / services don't move the GL
             }
 
-            $cogsAccount = $this->coa->resolve('5120'); // Cost of Items Sold
-            $inventoryAccount = $this->coa->resolve('1150'); // Inventory
+            // Honor the item's own COGS/inventory accounts when configured.
+            $cogsAccount = $this->coa->cogsAccountForItem((int) $item->id);
+            $inventoryAccount = $this->coa->inventoryAccountForItem((int) $item->id);
 
             if (! $cogsAccount || ! $inventoryAccount) {
                 return null;
@@ -201,7 +399,8 @@ class AccountingService
                 return null;
             }
 
-            $inventoryAccount = $this->coa->resolve('1150');
+            // Honor the item's own inventory account when configured.
+            $inventoryAccount = $this->coa->inventoryAccountForItem((int) $item->id);
             // Assume paid in cash from main till by default. Real bills will use AP.
             $cashAccount = $this->coa->resolve('1110');
 
@@ -233,6 +432,67 @@ class AccountingService
             );
         } catch (\Throwable $e) {
             Log::error('[AccountingService::recordStockRestock] error', [
+                'movement_id' => $movement->id,
+                'msg' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
+    /**
+     * Inventory recount adjustment: trues the inventory book value to a physical
+     * count. A recount that finds LESS stock (negative qty_change_base) is
+     * shrinkage — Dr COGS / Cr Inventory; finding MORE is an overage — Dr
+     * Inventory / Cr COGS. Valued at the item's standard cost, using the item's
+     * own inventory/COGS accounts when configured. Idempotent on the movement.
+     */
+    public function recordStockAdjustment(ClinicStockMovement $movement): ?JournalEntry
+    {
+        try {
+            if ($movement->type !== 'adjust') {
+                return null;
+            }
+            if ($existing = $this->existingFor($movement)) {
+                return $existing;
+            }
+
+            $qty = (float) $movement->qty_change_base;
+            $item = $movement->clinicItem;
+            if (! $item || $qty == 0.0) {
+                return null;
+            }
+
+            $unitCost = (float) ($item->default_cost ?? 0);
+            $amount = round(abs($qty) * $unitCost, 3);
+            if ($amount <= 0) {
+                return null;
+            }
+
+            $inventoryAccount = $this->coa->inventoryAccountForItem((int) $item->id);
+            $cogsAccount = $this->coa->cogsAccountForItem((int) $item->id);
+            if (! $inventoryAccount || ! $cogsAccount) {
+                return null;
+            }
+
+            $isLoss = $qty < 0;
+            // Loss: Dr COGS / Cr Inventory. Gain: Dr Inventory / Cr COGS.
+            $debit = $isLoss ? $cogsAccount : $inventoryAccount;
+            $credit = $isLoss ? $inventoryAccount : $cogsAccount;
+            $label = $isLoss ? 'Inventory shrinkage' : 'Inventory overage';
+
+            return $this->postBalancedEntry(
+                date: $movement->created_at ?? now(),
+                narration: "Stock recount adjustment ({$label}): {$item->localized_name} qty={$qty}",
+                source: $movement,
+                branchId: (int) $movement->branch_id,
+                lines: [
+                    ['account_id' => $debit->id, 'debit' => $amount, 'credit' => 0, 'description' => $label.': '.$item->localized_name, 'branch_id' => $movement->branch_id],
+                    ['account_id' => $credit->id, 'debit' => 0, 'credit' => $amount, 'description' => $label.': '.$item->localized_name, 'branch_id' => $movement->branch_id],
+                ],
+            );
+        } catch (\Throwable $e) {
+            Log::error('[AccountingService::recordStockAdjustment] error', [
                 'movement_id' => $movement->id,
                 'msg' => $e->getMessage(),
             ]);
@@ -328,8 +588,10 @@ class AccountingService
 
             $expenseAccount = $expense->account;
             // If payment_account_id is set the expense is paid (Dr Expense / Cr Cash or Bank).
-            // If null it accrues to Accounts Payable 2010 (Dr Expense / Cr AP).
+            // If null it accrues to Accounts Payable (Dr Expense / Cr AP) — honoring the
+            // vendor's own payable account when one is configured, else the default 2110.
             $creditAccount = $expense->paymentAccount
+                ?? $expense->vendor?->defaultPayableAccount
                 ?? $this->coa->resolve('2110');
 
             if (! $expenseAccount || ! $creditAccount) {
@@ -424,7 +686,9 @@ class AccountingService
                 $debitAccount = $this->coa->cashAccountFor('transfer', (int) $claim->branch_id);
             }
 
-            $arAccount = $this->coa->resolve('1140'); // AR - Patients / Insurance
+            // Credit the insurer's own AR account when configured, else default 1140.
+            $insurerId = (int) ($claim->patientPolicy?->insurer_id ?: 0) ?: null;
+            $arAccount = $this->coa->arAccountForInsurer($insurerId);
 
             if (! $debitAccount || ! $arAccount) {
                 Log::warning('[AccountingService] missing accounts for InsuranceClaimPayment', [
@@ -435,6 +699,12 @@ class AccountingService
 
                 return null;
             }
+
+            // Attribute the AR credit so it settles the right aging row: the
+            // patient (for insurers sharing the 1140 control account) and the
+            // insurer (for those with a dedicated AR account).
+            $patientId = (int) ($claim->patientPolicy?->patient_id ?: $claim->visit?->patient_id ?: 0) ?: null;
+            $insurerMeta = $insurerId ? ['insurer_id' => $insurerId] : null;
 
             return $this->postBalancedEntry(
                 date: $payment->paid_at ?? $payment->created_at ?? now(),
@@ -456,6 +726,8 @@ class AccountingService
                         'credit' => $amount,
                         'description' => "AR-Insurance settled: claim {$claim->claim_number}",
                         'branch_id' => $claim->branch_id,
+                        'patient_id' => $patientId,
+                        'meta' => $insurerMeta,
                     ],
                 ],
                 userId: $payment->received_by_user_id,
@@ -509,7 +781,8 @@ class AccountingService
             }
 
             $expenseAccount = $this->coa->resolve('6530'); // Misc Expenses (bad debt / write-off)
-            $arAccount = $this->coa->resolve('1140');      // AR - Patients / Insurance
+            // Credit the insurer's own AR account when configured, else default 1140.
+            $arAccount = $this->coa->arAccountForInsurer((int) ($claim->patientPolicy?->insurer_id ?: 0) ?: null);
 
             if (! $expenseAccount || ! $arAccount) {
                 Log::warning('[AccountingService] missing accounts for claim write-off', [
@@ -582,6 +855,50 @@ class AccountingService
     // -------------------------------------------------------------------------
 
     /**
+     * Split a receipt's inventory debit across each line item's inventory
+     * account (item override else default 1150), allocating landed cost
+     * proportional to goods value. Returns [accountId => amount] that always
+     * sums to goods + landed. Falls back to a single default-inventory debit
+     * when the receipt has no lines.
+     *
+     * @return array<int, float>
+     */
+    protected function allocateInventoryDebits(\App\Models\Purchasing\PurchaseReceipt $receipt, float $goods, float $landed, \App\Models\Accounting\Account $defaultInventory): array
+    {
+        $total = round($goods + $landed, 3);
+        $lines = $receipt->relationLoaded('lines') ? $receipt->lines : $receipt->lines()->get();
+
+        // Group goods value by the resolved inventory account.
+        $goodsByAcct = [];
+        foreach ($lines as $l) {
+            $acc = $this->coa->inventoryAccountForItem((int) $l->clinic_item_id) ?? $defaultInventory;
+            $goodsByAcct[$acc->id] = ($goodsByAcct[$acc->id] ?? 0) + (float) $l->line_total;
+        }
+
+        // No lines (or zero goods) — single bucket on the default account.
+        if (empty($goodsByAcct) || $goods <= 0) {
+            return [$defaultInventory->id => $total];
+        }
+
+        $acctIds = array_keys($goodsByAcct);
+        $sumGoods = array_sum($goodsByAcct);
+        $debits = [];
+        $allocated = 0.0;
+        $last = count($acctIds) - 1;
+        foreach ($acctIds as $i => $aid) {
+            if ($i === $last) {
+                $debits[$aid] = round($total - $allocated, 3); // last absorbs all rounding
+            } else {
+                $amt = round($total * ($goodsByAcct[$aid] / $sumGoods), 3);
+                $debits[$aid] = $amt;
+                $allocated = round($allocated + $amt, 3);
+            }
+        }
+
+        return $debits;
+    }
+
+    /**
      * Goods received against a purchase order: Dr Inventory (1200) /
      * Cr Accounts Payable (2010), at the PO unit cost. The stock movements
      * themselves use a 'purchase_in' type the stock observer ignores, so this
@@ -607,7 +924,9 @@ class AccountingService
             }
 
             $inventory = $this->coa->resolve('1150');
-            $payable = $this->coa->resolve('2110');
+            // Honor the vendor's own payable account when configured, else default 2110.
+            $payable = $receipt->purchaseOrder?->vendor?->defaultPayableAccount
+                ?? $this->coa->resolve('2110');
             $importPayable = $landed > 0 ? $this->coa->resolve('2190') : null;
             if (! $inventory || ! $payable || ($landed > 0 && ! $importPayable)) {
                 Log::warning('[AccountingService] missing accounts for PurchaseReceipt', [
@@ -619,21 +938,33 @@ class AccountingService
 
             $vendorName = $receipt->purchaseOrder?->vendor?->name ?? 'Vendor';
 
-            $lines = [
-                [
-                    'account_id' => $inventory->id,
-                    'debit' => $inventoryValue,
+            // Debit inventory PER receipt-line item account so the value enters the
+            // same account it will later be credited out of on consume (else an
+            // item with a custom inventory account would never reconcile). Landed
+            // cost is allocated across accounts proportional to each one's goods
+            // share; the last group absorbs any rounding so the entry stays
+            // balanced (sum of inventory debits == goods + landed).
+            $inventoryDebits = $this->allocateInventoryDebits($receipt, $goods, $landed, $inventory);
+
+            $lines = [];
+            foreach ($inventoryDebits as $accId => $amt) {
+                if ($amt <= 0) {
+                    continue;
+                }
+                $lines[] = [
+                    'account_id' => $accId,
+                    'debit' => $amt,
                     'credit' => 0,
                     'description' => 'Inventory in: '.$receipt->code,
                     'branch_id' => $receipt->branch_id,
-                ],
-                [
-                    'account_id' => $payable->id,
-                    'debit' => 0,
-                    'credit' => $goods,
-                    'description' => 'Payable to '.$vendorName,
-                    'branch_id' => $receipt->branch_id,
-                ],
+                ];
+            }
+            $lines[] = [
+                'account_id' => $payable->id,
+                'debit' => 0,
+                'credit' => $goods,
+                'description' => 'Payable to '.$vendorName,
+                'branch_id' => $receipt->branch_id,
             ];
             if ($landed > 0 && $importPayable) {
                 $lines[] = [
@@ -686,7 +1017,10 @@ class AccountingService
                 return null;
             }
 
-            $payable = $this->coa->resolve('2110');
+            // Debit the same payable account the receipt credited (vendor's own
+            // account when configured), so the payable clears cleanly.
+            $payable = $payment->vendor?->defaultPayableAccount
+                ?? $this->coa->resolve('2110');
             $credit = $payment->paymentAccount
                 ?? $this->coa->cashAccountFor($payment->method, (int) $payment->branch_id);
             if (! $payable || ! $credit) {
@@ -1036,6 +1370,140 @@ class AccountingService
             return $entry;
         } catch (\Throwable $e) {
             Log::error('[AccountingService::recordSettlementPayment] error', ['settlement_id' => $s->id, 'msg' => $e->getMessage()]);
+
+            return null;
+        }
+    }
+
+    /**
+     * Post one month of straight-line depreciation for a fixed asset:
+     *   Dr  Depreciation Expense (6610)
+     *     Cr  Accumulated Depreciation (asset's contra account, e.g. 1215)
+     *
+     * Idempotent per (asset, month) via the fixed_asset_depreciations ledger;
+     * rolls the asset's accumulated_depreciation forward and flips it to
+     * fully_depreciated once the depreciable base is exhausted.
+     */
+    public function recordDepreciation(\App\Models\Accounting\FixedAsset $asset, Carbon $monthEnd, ?int $userId = null): ?JournalEntry
+    {
+        try {
+            $periodCode = $monthEnd->format('Y-m');
+            $existing = \App\Models\Accounting\FixedAssetDepreciation::query()
+                ->where('fixed_asset_id', $asset->id)->where('period_code', $periodCode)->first();
+            if ($existing && $existing->journal_entry_id) {
+                return JournalEntry::find($existing->journal_entry_id);
+            }
+
+            $amount = $asset->chargeForMonth($monthEnd);
+            if ($amount <= 0) {
+                return null;
+            }
+
+            $expense = $asset->depreciationExpenseAccount ?? $this->coa->resolve('6610');
+            $accum = $asset->accumulatedDepreciationAccount;
+            if (! $expense || ! $accum) {
+                Log::warning('[AccountingService] missing accounts for depreciation', ['asset_id' => $asset->id]);
+
+                return null;
+            }
+
+            return DB::transaction(function () use ($asset, $monthEnd, $periodCode, $amount, $expense, $accum, $userId) {
+                $entry = $this->postBalancedEntry(
+                    date: $monthEnd,
+                    narration: "Depreciation {$periodCode}: {$asset->name} ({$asset->code})",
+                    source: null,
+                    branchId: $asset->branch_id,
+                    lines: [
+                        ['account_id' => $expense->id, 'debit' => $amount, 'credit' => 0, 'description' => 'Depreciation: '.$asset->name, 'branch_id' => $asset->branch_id],
+                        ['account_id' => $accum->id, 'debit' => 0, 'credit' => $amount, 'description' => 'Accum. depreciation: '.$asset->name, 'branch_id' => $asset->branch_id],
+                    ],
+                    userId: $userId,
+                );
+                $this->tagSource($entry, ['fixed_asset_id' => $asset->id, 'kind' => 'depreciation', 'period' => $periodCode]);
+
+                \App\Models\Accounting\FixedAssetDepreciation::updateOrCreate(
+                    ['fixed_asset_id' => $asset->id, 'period_code' => $periodCode],
+                    ['period_end' => $monthEnd->toDateString(), 'amount' => $amount, 'journal_entry_id' => $entry->id],
+                );
+
+                $asset->accumulated_depreciation = round((float) $asset->accumulated_depreciation + $amount, 3);
+                $asset->last_depreciated_on = $monthEnd->toDateString();
+                if ($asset->accumulated_depreciation >= $asset->depreciableBase() - 0.0005) {
+                    $asset->status = \App\Models\Accounting\FixedAsset::STATUS_FULLY_DEPRECIATED;
+                }
+                $asset->save();
+
+                return $entry;
+            });
+        } catch (\Throwable $e) {
+            Log::error('[AccountingService::recordDepreciation] error', ['asset_id' => $asset->id, 'msg' => $e->getMessage()]);
+
+            return null;
+        }
+    }
+
+    /**
+     * Release one month of a prepaid expense to the P&L:
+     *   Dr  Expense (e.g. 6210 Rent)
+     *     Cr  Prepaid Asset (e.g. 1160 Prepaid Rent)
+     *
+     * Idempotent per (schedule, month) via the prepaid_amortizations ledger;
+     * rolls amortized_amount forward and completes the schedule when fully
+     * released.
+     */
+    public function recordPrepaymentAmortization(\App\Models\Accounting\PrepaidSchedule $schedule, Carbon $monthEnd, ?int $userId = null): ?JournalEntry
+    {
+        try {
+            $periodCode = $monthEnd->format('Y-m');
+            $existing = \App\Models\Accounting\PrepaidAmortization::query()
+                ->where('prepaid_schedule_id', $schedule->id)->where('period_code', $periodCode)->first();
+            if ($existing && $existing->journal_entry_id) {
+                return JournalEntry::find($existing->journal_entry_id);
+            }
+
+            $amount = $schedule->sliceForMonth($monthEnd);
+            if ($amount <= 0) {
+                return null;
+            }
+
+            $expense = $schedule->expenseAccount;
+            $prepaid = $schedule->prepaidAccount;
+            if (! $expense || ! $prepaid) {
+                Log::warning('[AccountingService] missing accounts for prepayment amortization', ['schedule_id' => $schedule->id]);
+
+                return null;
+            }
+
+            return DB::transaction(function () use ($schedule, $monthEnd, $periodCode, $amount, $expense, $prepaid, $userId) {
+                $entry = $this->postBalancedEntry(
+                    date: $monthEnd,
+                    narration: "Prepaid amortization {$periodCode}: {$schedule->name} ({$schedule->code})",
+                    source: null,
+                    branchId: $schedule->branch_id,
+                    lines: [
+                        ['account_id' => $expense->id, 'debit' => $amount, 'credit' => 0, 'description' => 'Prepaid release: '.$schedule->name, 'branch_id' => $schedule->branch_id],
+                        ['account_id' => $prepaid->id, 'debit' => 0, 'credit' => $amount, 'description' => 'Prepaid asset reduced: '.$schedule->name, 'branch_id' => $schedule->branch_id],
+                    ],
+                    userId: $userId,
+                );
+                $this->tagSource($entry, ['prepaid_schedule_id' => $schedule->id, 'kind' => 'prepaid_amortization', 'period' => $periodCode]);
+
+                \App\Models\Accounting\PrepaidAmortization::updateOrCreate(
+                    ['prepaid_schedule_id' => $schedule->id, 'period_code' => $periodCode],
+                    ['period_end' => $monthEnd->toDateString(), 'amount' => $amount, 'journal_entry_id' => $entry->id],
+                );
+
+                $schedule->amortized_amount = round((float) $schedule->amortized_amount + $amount, 3);
+                $schedule->last_amortized_on = $monthEnd->toDateString();
+                if ($schedule->amortized_amount >= (float) $schedule->total_amount - 0.0005) {
+                    $schedule->status = \App\Models\Accounting\PrepaidSchedule::STATUS_COMPLETED;
+                }
+                $schedule->save();
+
+                return $entry;
+            });
+        } catch (\Throwable $e) {
+            Log::error('[AccountingService::recordPrepaymentAmortization] error', ['schedule_id' => $schedule->id, 'msg' => $e->getMessage()]);
 
             return null;
         }

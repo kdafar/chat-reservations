@@ -15,20 +15,20 @@ const isRtl = computed(() => locale.value === 'ar')
 
 const t = computed(() => isRtl.value ? {
     title: 'قائمة التدفقات النقدية', eyebrow: 'تقارير المحاسبة', desc: 'التدفقات النقدية التشغيلية والاستثمارية والتمويلية للفترة.', from: 'من', to: 'إلى', print: 'طباعة',
-    ops: 'التدفقات التشغيلية', netIncome: 'صافي الدخل',
+    ops: 'التدفقات التشغيلية', netIncome: 'صافي الدخل', deprec: 'إضافة الإهلاك (غير نقدي)', otherOp: 'تغيرات تشغيلية أخرى',
     deltaAP: 'التغير في الدائنين', deltaDoc: 'التغير في مستحقات الأطباء', deltaAR: 'التغير في المدينين', deltaInv: 'التغير في المخزون',
     cashOps: 'صافي النقد من التشغيل', investing: 'التدفقات الاستثمارية', deltaFA: 'شراء أصول ثابتة', cashInv: 'صافي النقد من الاستثمار',
     financing: 'التدفقات التمويلية', deltaCap: 'التغير في رأس المال', cashFin: 'صافي النقد من التمويل',
-    netChange: 'صافي التغير في النقد', cashStart: 'النقد أول المدة', cashEnd: 'النقد آخر المدة',
+    netChange: 'صافي التغير في النقد', cashStart: 'النقد أول المدة', cashEnd: 'النقد آخر المدة', unclassified: 'حركات غير مصنفة',
     reconciles: 'مطابق', notReconcile: 'غير مطابق',
     posting: 'حسابات الترحيل', postingHint: 'تتبع هذه الأرقام (النقد، المدينون، المخزون…) حسابات الترحيل التلقائي.',
 } : {
     title: 'Cash Flow', eyebrow: 'Accounting Reports', desc: 'Operating, investing, and financing cash flows for the period.', from: 'From', to: 'To', print: 'Print',
-    ops: 'Operating activities', netIncome: 'Net income',
+    ops: 'Operating activities', netIncome: 'Net income', deprec: 'Add back depreciation (non-cash)', otherOp: 'Other operating changes',
     deltaAP: 'Change in accounts payable', deltaDoc: 'Change in doctor payable', deltaAR: 'Change in receivables', deltaInv: 'Change in inventory',
     cashOps: 'Net cash from operations', investing: 'Investing activities', deltaFA: 'Purchase of fixed assets', cashInv: 'Net cash from investing',
     financing: 'Financing activities', deltaCap: 'Change in owner capital', cashFin: 'Net cash from financing',
-    netChange: 'Net change in cash', cashStart: 'Cash, beginning', cashEnd: 'Cash, ending',
+    netChange: 'Net change in cash', cashStart: 'Cash, beginning', cashEnd: 'Cash, ending', unclassified: 'Unclassified movements',
     reconciles: 'Reconciles', notReconcile: "Doesn't reconcile",
     posting: 'Posting accounts', postingHint: 'These figures (cash, receivables, inventory…) follow the auto-posting account mapping.',
 })
@@ -71,10 +71,12 @@ const signed = (n) => (Number(n) < 0 ? '−' : '') + fmt(Math.abs(Number(n ?? 0)
                     <tbody>
                         <tr class="sec"><td>{{ t.ops }}</td><td></td></tr>
                         <tr><td>{{ t.netIncome }}</td><td class="num mono" :class="report.net_income < 0 ? 'neg' : ''">{{ signed(report.net_income) }}</td></tr>
+                        <tr v-if="report.depreciation_addback"><td>{{ t.deprec }}</td><td class="num mono">{{ signed(report.depreciation_addback) }}</td></tr>
                         <tr><td>{{ t.deltaAP }}</td><td class="num mono" :class="report.delta_ap < 0 ? 'neg' : ''">{{ signed(report.delta_ap) }}</td></tr>
                         <tr><td>{{ t.deltaDoc }}</td><td class="num mono" :class="report.delta_doctor_payable < 0 ? 'neg' : ''">{{ signed(report.delta_doctor_payable) }}</td></tr>
                         <tr><td>{{ t.deltaAR }}</td><td class="num mono" :class="(-report.delta_ar) < 0 ? 'neg' : ''">{{ signed(-report.delta_ar) }}</td></tr>
                         <tr><td>{{ t.deltaInv }}</td><td class="num mono" :class="(-report.delta_inventory) < 0 ? 'neg' : ''">{{ signed(-report.delta_inventory) }}</td></tr>
+                        <tr v-if="report.delta_other_operating"><td>{{ t.otherOp }}</td><td class="num mono" :class="report.delta_other_operating < 0 ? 'neg' : ''">{{ signed(report.delta_other_operating) }}</td></tr>
                         <tr class="subtotal"><td>{{ t.cashOps }}</td><td class="num mono">{{ signed(report.cash_from_ops) }}</td></tr>
 
                         <tr class="sec"><td>{{ t.investing }}</td><td></td></tr>
@@ -85,6 +87,7 @@ const signed = (n) => (Number(n) < 0 ? '−' : '') + fmt(Math.abs(Number(n ?? 0)
                         <tr><td>{{ t.deltaCap }}</td><td class="num mono" :class="report.cash_from_financing < 0 ? 'neg' : ''">{{ signed(report.cash_from_financing) }}</td></tr>
                         <tr class="subtotal"><td>{{ t.cashFin }}</td><td class="num mono">{{ signed(report.cash_from_financing) }}</td></tr>
 
+                        <tr v-if="Math.abs(Number(report.unclassified || 0)) >= 0.001"><td class="muted">{{ t.unclassified }}</td><td class="num mono" :class="report.unclassified < 0 ? 'neg' : ''">{{ signed(report.unclassified) }}</td></tr>
                         <tr class="net"><td>{{ t.netChange }}</td><td class="num mono" :class="report.net_change < 0 ? 'neg' : 'pos'">{{ signed(report.net_change) }}</td></tr>
                         <tr><td class="muted">{{ t.cashStart }}</td><td class="num mono muted">{{ fmt(report.cash_start) }}</td></tr>
                         <tr class="total"><td>{{ t.cashEnd }}</td><td class="num mono">{{ fmt(report.cash_end) }}</td></tr>

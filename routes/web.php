@@ -519,6 +519,8 @@ Route::middleware([
 
     // Branches (clinic-focused v2 replacement for BranchResource). Admin only.
     Route::get('/branches',              [\App\Http\Controllers\V2\BranchesController::class, 'index'])->name('branches.index');
+    Route::get('/branches/create',       [\App\Http\Controllers\V2\BranchesController::class, 'create'])->name('branches.create');
+    Route::get('/branches/{branch}/edit', [\App\Http\Controllers\V2\BranchesController::class, 'edit'])->name('branches.edit');
     Route::post('/branches',             [\App\Http\Controllers\V2\BranchesController::class, 'store'])->name('branches.store');
     Route::put('/branches/{branch}',     [\App\Http\Controllers\V2\BranchesController::class, 'update'])->name('branches.update');
     Route::delete('/branches/{branch}',  [\App\Http\Controllers\V2\BranchesController::class, 'destroy'])->name('branches.destroy');
@@ -697,6 +699,22 @@ Route::middleware([
     Route::get('/accounting/posting-accounts', [\App\Http\Controllers\V2\PostingAccountsController::class, 'index'])->name('accounting.posting.index');
     Route::put('/accounting/posting-accounts', [\App\Http\Controllers\V2\PostingAccountsController::class, 'update'])->name('accounting.posting.update');
 
+    // Accounting — Fixed-asset register + straight-line depreciation.
+    Route::get('/accounting/fixed-assets',                 [\App\Http\Controllers\V2\FixedAssetsController::class, 'index'])->name('fixed-assets.index');
+    Route::get('/accounting/fixed-assets/create',          [\App\Http\Controllers\V2\FixedAssetsController::class, 'create'])->name('fixed-assets.create');
+    Route::post('/accounting/fixed-assets',                [\App\Http\Controllers\V2\FixedAssetsController::class, 'store'])->name('fixed-assets.store');
+    Route::post('/accounting/fixed-assets/run-depreciation', [\App\Http\Controllers\V2\FixedAssetsController::class, 'runDepreciation'])->name('fixed-assets.run-depreciation');
+    Route::get('/accounting/fixed-assets/{fixedAsset}/edit', [\App\Http\Controllers\V2\FixedAssetsController::class, 'edit'])->name('fixed-assets.edit');
+    Route::put('/accounting/fixed-assets/{fixedAsset}',    [\App\Http\Controllers\V2\FixedAssetsController::class, 'update'])->name('fixed-assets.update');
+
+    // Accounting — Prepaid-expense register + straight-line amortization.
+    Route::get('/accounting/prepaid-schedules',                  [\App\Http\Controllers\V2\PrepaidSchedulesController::class, 'index'])->name('prepaid-schedules.index');
+    Route::get('/accounting/prepaid-schedules/create',           [\App\Http\Controllers\V2\PrepaidSchedulesController::class, 'create'])->name('prepaid-schedules.create');
+    Route::post('/accounting/prepaid-schedules',                 [\App\Http\Controllers\V2\PrepaidSchedulesController::class, 'store'])->name('prepaid-schedules.store');
+    Route::post('/accounting/prepaid-schedules/run-amortization', [\App\Http\Controllers\V2\PrepaidSchedulesController::class, 'runAmortization'])->name('prepaid-schedules.run-amortization');
+    Route::get('/accounting/prepaid-schedules/{prepaidSchedule}/edit', [\App\Http\Controllers\V2\PrepaidSchedulesController::class, 'edit'])->name('prepaid-schedules.edit');
+    Route::put('/accounting/prepaid-schedules/{prepaidSchedule}', [\App\Http\Controllers\V2\PrepaidSchedulesController::class, 'update'])->name('prepaid-schedules.update');
+
     // Accounting — Expenses (v2 replacement for ExpenseResource).
     Route::get('/accounting/expenses',                 [\App\Http\Controllers\V2\ExpensesController::class, 'index'])->name('accounting.expenses.index');
     Route::get('/accounting/expenses/create',          [\App\Http\Controllers\V2\ExpensesController::class, 'create'])->name('accounting.expenses.create');
@@ -752,9 +770,12 @@ Route::middleware([
     Route::get('/reports/accounting/profit-loss',    [\App\Http\Controllers\V2\AccountingReportsController::class, 'profitAndLoss'])->name('reports.accounting.profit-loss');
     Route::get('/reports/accounting/balance-sheet',  [\App\Http\Controllers\V2\AccountingReportsController::class, 'balanceSheet'])->name('reports.accounting.balance-sheet');
     Route::get('/reports/accounting/cash-flow',      [\App\Http\Controllers\V2\AccountingReportsController::class, 'cashFlow'])->name('reports.accounting.cash-flow');
+    Route::get('/reports/accounting/aging',          [\App\Http\Controllers\V2\AccountingReportsController::class, 'aging'])->name('reports.accounting.aging');
 
     // Setup — Clinics (v2 replacement for PartnerResource). Admin only.
     Route::get('/partners',            [\App\Http\Controllers\V2\PartnersController::class, 'index'])->name('partners.index');
+    Route::get('/partners/create',     [\App\Http\Controllers\V2\PartnersController::class, 'create'])->name('partners.create');
+    Route::get('/partners/{partner}/edit', [\App\Http\Controllers\V2\PartnersController::class, 'edit'])->name('partners.edit');
     Route::post('/partners',           [\App\Http\Controllers\V2\PartnersController::class, 'store'])->name('partners.store');
     Route::put('/partners/{partner}',  [\App\Http\Controllers\V2\PartnersController::class, 'update'])->name('partners.update');
     Route::delete('/partners/{partner}', [\App\Http\Controllers\V2\PartnersController::class, 'destroy'])->name('partners.destroy');

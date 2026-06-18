@@ -14,6 +14,7 @@ class ClinicStockMovementAccountingObserver
         match ($movement->type) {
             'consume' => $this->accounting->recordStockConsume($movement),
             'restock' => $this->accounting->recordStockRestock($movement),
+            'adjust' => $this->accounting->recordStockAdjustment($movement),
             default => null,
         };
     }

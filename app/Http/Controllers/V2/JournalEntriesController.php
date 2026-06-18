@@ -68,7 +68,16 @@ class JournalEntriesController extends Controller
             'status' => $request->input('status', 'all'),
         ];
 
-        $query = JournalEntry::query()->with(['lines', 'branch:id,name']);
+        // Eager-load the lines (with account labels) and reversal/posted-by
+        // relations so the index can render each entry as a full General-Journal
+        // block — account-level debits/credits inline, no per-row fetch.
+        $query = JournalEntry::query()->with([
+            'lines.account:id,code,name',
+            'postedBy:id,name',
+            'reversedBy:id,code',
+            'reversalOf:id,code',
+            'branch:id,name',
+        ]);
 
         if ($filters['q'] !== '') {
             $q = $filters['q'];
@@ -82,6 +91,7 @@ class JournalEntriesController extends Controller
         $page->getCollection()->transform(function (JournalEntry $e) {
             $e->setAttribute('total_debit', round($e->totalDebit(), 3));
             $e->setAttribute('total_credit', round($e->totalCredit(), 3));
+            $e->setAttribute('is_balanced', $e->isBalanced());
             $e->setAttribute('source_label', $e->source_type ? class_basename($e->source_type) : null);
             return $e;
         });

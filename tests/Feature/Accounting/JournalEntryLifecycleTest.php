@@ -31,13 +31,13 @@ class JournalEntryLifecycleTest extends TestCase
 
         JournalEntryLine::create([
             'journal_entry_id' => $entry->id,
-            'account_id' => $this->account('1010')->id,
+            'account_id' => $this->account('1110')->id,
             'debit' => $amount,
             'credit' => 0,
         ]);
         JournalEntryLine::create([
             'journal_entry_id' => $entry->id,
-            'account_id' => $this->account('4010')->id,
+            'account_id' => $this->account('4110')->id,
             'debit' => 0,
             'credit' => $amount,
         ]);
@@ -69,12 +69,12 @@ class JournalEntryLifecycleTest extends TestCase
         ]);
         JournalEntryLine::create([
             'journal_entry_id' => $entry->id,
-            'account_id' => $this->account('1010')->id,
+            'account_id' => $this->account('1110')->id,
             'debit' => 50.000, 'credit' => 0,
         ]);
         JournalEntryLine::create([
             'journal_entry_id' => $entry->id,
-            'account_id' => $this->account('4010')->id,
+            'account_id' => $this->account('4110')->id,
             'debit' => 0, 'credit' => 30.000,
         ]);
         $entry->refresh();
@@ -145,7 +145,7 @@ class JournalEntryLifecycleTest extends TestCase
 
         // Net effect on the GL: zero (original Dr 100 / Cr 100 + reversal Cr 100 / Dr 100)
         $this->assertBooksBalance();
-        $this->assertEquals(0.0, $this->account('1010')->balanceAt(now()->toDateString()));
+        $this->assertEquals(0.0, $this->account('1110')->balanceAt(now()->toDateString()));
     }
 
     public function test_cannot_reverse_a_draft(): void
@@ -178,12 +178,12 @@ class JournalEntryLifecycleTest extends TestCase
         // 0.0001 difference — comfortably below storage precision; should be balanced.
         JournalEntryLine::create([
             'journal_entry_id' => $entry->id,
-            'account_id' => $this->account('1010')->id,
+            'account_id' => $this->account('1110')->id,
             'debit' => 100.0001, 'credit' => 0,
         ]);
         JournalEntryLine::create([
             'journal_entry_id' => $entry->id,
-            'account_id' => $this->account('4010')->id,
+            'account_id' => $this->account('4110')->id,
             'debit' => 0, 'credit' => 100.0000,
         ]);
         $entry->refresh();
@@ -192,5 +192,45 @@ class JournalEntryLifecycleTest extends TestCase
         $entry->post();
 
         $this->assertSame(JournalEntry::STATUS_POSTED, $entry->refresh()->status);
+    }
+
+    public function test_posted_entry_is_immutable_at_model_level(): void
+    {
+        $entry = $this->makeDraft(70.000);
+        $entry->post();
+
+        $this->expectException(\RuntimeException::class);
+        $entry->update(['narration' => 'tampered', 'entry_date' => now()->subDay()->toDateString()]);
+    }
+
+    public function test_posted_entry_cannot_be_deleted(): void
+    {
+        $entry = $this->makeDraft(70.000);
+        $entry->post();
+
+        $this->expectException(\RuntimeException::class);
+        $entry->delete();
+    }
+
+    public function test_posted_entry_lines_cannot_be_mutated(): void
+    {
+        $entry = $this->makeDraft(70.000);
+        $entry->post();
+
+        $line = $entry->lines()->first();
+        $this->expectException(\RuntimeException::class);
+        $line->update(['debit' => 9999]);
+    }
+
+    public function test_meta_tagging_still_allowed_on_posted_entry(): void
+    {
+        // Payroll/settlement/write-off flows stamp meta AFTER posting — that
+        // supplementary write must remain permitted by the immutability guard.
+        $entry = $this->makeDraft(70.000);
+        $entry->post();
+
+        $entry->forceFill(['meta' => ['payroll_run_id' => 5]])->save();
+
+        $this->assertSame(5, $entry->refresh()->meta['payroll_run_id']);
     }
 }

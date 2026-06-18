@@ -7,8 +7,9 @@ import Icon from '../../../Components/Icon.vue'
 import PrintHeader from '../../../Components/PrintHeader.vue'
 import Skeleton from '../../../Components/Skeleton.vue'
 import DateTimePicker from '../../../Components/DateTimePicker.vue'
+import SearchableSelect from '../../../Components/SearchableSelect.vue'
 
-const props = defineProps({ filters: Object, report: Object })
+const props = defineProps({ filters: Object, report: Object, branches: { type: Array, default: () => [] } })
 const pageProps = usePage()
 const locale = computed(() => pageProps.props.locale ?? 'en')
 const isRtl = computed(() => locale.value === 'ar')
@@ -17,17 +18,17 @@ const t = computed(() => isRtl.value ? {
     title: 'قائمة الدخل', eyebrow: 'تقارير المحاسبة', desc: 'الإيرادات والتكاليف والمصروفات وصافي الربح للفترة.', from: 'من', to: 'إلى', print: 'طباعة',
     revenue: 'الإيرادات', contraRevenue: 'خصومات الإيراد', netRevenue: 'صافي الإيراد',
     cogs: 'تكلفة البضاعة المباعة', grossProfit: 'مجمل الربح', expenses: 'المصروفات', netProfit: 'صافي الربح',
-    empty: 'لا يوجد',
+    empty: 'لا يوجد', branch: 'الفرع', allBranches: 'كل الفروع',
 } : {
     title: 'Profit & Loss', eyebrow: 'Accounting Reports', desc: 'Revenue, cost of goods, expenses, and net profit for the period.', from: 'From', to: 'To', print: 'Print',
     revenue: 'Revenue', contraRevenue: 'Revenue contra', netRevenue: 'Net revenue',
     cogs: 'Cost of goods sold', grossProfit: 'Gross profit', expenses: 'Operating expenses', netProfit: 'Net profit',
-    empty: 'None',
+    empty: 'None', branch: 'Branch', allBranches: 'All branches',
 })
 
-const f = reactive({ from: props.filters.from, to: props.filters.to })
+const f = reactive({ from: props.filters.from, to: props.filters.to, branch_id: props.filters.branch_id ?? '' })
 function apply() {
-    router.get(route('v2.reports.accounting.profit-loss'), { from: f.from, to: f.to }, { preserveState: true, preserveScroll: true, replace: true })
+    router.get(route('v2.reports.accounting.profit-loss'), { from: f.from, to: f.to, branch_id: f.branch_id || null }, { preserveState: true, preserveScroll: true, replace: true })
 }
 const fmt = (n) => Number(n ?? 0).toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 })
 const amount = (r) => r.is_parent ? r.rollup : r.own
@@ -49,6 +50,9 @@ const amount = (r) => r.is_parent ? r.rollup : r.own
         <div class="card no-print" style="padding:12px; margin-bottom:16px; display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;">
             <div><label class="label">{{ t.from }}</label><DateTimePicker v-model="f.from" :with-time="false" :width="170" :locale="locale" @update:model-value="apply" /></div>
             <div><label class="label">{{ t.to }}</label><DateTimePicker v-model="f.to" :with-time="false" :width="170" :locale="locale" @update:model-value="apply" /></div>
+            <div v-if="branches.length > 1"><label class="label">{{ t.branch }}</label>
+                <SearchableSelect v-model="f.branch_id" :items="branches" :null-label="t.allBranches" :search-placeholder="t.branch" :width="200" @update:model-value="apply" />
+            </div>
         </div>
 
         <Deferred data="report">

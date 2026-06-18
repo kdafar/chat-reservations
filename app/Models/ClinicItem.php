@@ -28,7 +28,22 @@ class ClinicItem extends Model
         'conversion_factor' => 'decimal:4',
         'consume_step' => 'decimal:4',
         'is_billable' => 'boolean',
+
+        'inventory_account_id' => 'integer',
+        'cogs_account_id' => 'integer',
     ];
+
+    /** This item's inventory (stock-value) account — see ChartOfAccounts. */
+    public function inventoryAccount(): BelongsTo
+    {
+        return $this->belongsTo(\App\Models\Accounting\Account::class, 'inventory_account_id');
+    }
+
+    /** This item's cost-of-goods account — see ChartOfAccounts. */
+    public function cogsAccount(): BelongsTo
+    {
+        return $this->belongsTo(\App\Models\Accounting\Account::class, 'cogs_account_id');
+    }
 
     /**
      * Safety net: if a row is saved with a branch but no clinic, derive the

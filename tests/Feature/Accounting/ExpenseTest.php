@@ -24,8 +24,8 @@ class ExpenseTest extends TestCase
     public function test_draft_expense_does_not_post(): void
     {
         $vendor = Vendor::create(['name' => 'Landlord', 'is_active' => true]);
-        $rent = $this->account('6030');
-        $cash = $this->account('1010');
+        $rent = $this->account('6210');
+        $cash = $this->account('1110');
 
         $before = JournalEntry::count();
         $expense = Expense::create([
@@ -46,8 +46,8 @@ class ExpenseTest extends TestCase
     public function test_post_creates_balanced_journal_entry(): void
     {
         $vendor = Vendor::create(['name' => 'Landlord', 'is_active' => true]);
-        $rent = $this->account('6030');
-        $cash = $this->account('1010');
+        $rent = $this->account('6210');
+        $cash = $this->account('1110');
 
         $expense = Expense::create([
             'expense_date' => now()->toDateString(),
@@ -73,8 +73,8 @@ class ExpenseTest extends TestCase
         // Rent expense debit, Cash credit
         $debitLine = $entry->lines->where('debit', '>', 0)->first();
         $creditLine = $entry->lines->where('credit', '>', 0)->first();
-        $this->assertSame('6030', $debitLine->account->code);
-        $this->assertSame('1010', $creditLine->account->code);
+        $this->assertSame('6210', $debitLine->account->code);
+        $this->assertSame('1110', $creditLine->account->code);
 
         $this->assertBooksBalance();
     }
@@ -82,7 +82,7 @@ class ExpenseTest extends TestCase
     public function test_post_without_payment_account_uses_accounts_payable(): void
     {
         $vendor = Vendor::create(['name' => 'Supplier', 'is_active' => true]);
-        $rent = $this->account('6030');
+        $rent = $this->account('6210');
 
         $expense = Expense::create([
             'expense_date' => now()->toDateString(),
@@ -98,7 +98,7 @@ class ExpenseTest extends TestCase
         $entry = JournalEntry::find($expense->journal_entry_id);
 
         $creditLine = $entry->lines->where('credit', '>', 0)->first();
-        $this->assertSame('2010', $creditLine->account->code, 'Unpaid expenses must credit AP (2010)');
+        $this->assertSame('2110', $creditLine->account->code, 'Unpaid expenses must credit AP (2010)');
     }
 
     public function test_post_is_idempotent(): void
@@ -107,8 +107,8 @@ class ExpenseTest extends TestCase
         $expense = Expense::create([
             'expense_date' => now()->toDateString(),
             'vendor_id' => $vendor->id,
-            'account_id' => $this->account('6030')->id,
-            'payment_account_id' => $this->account('1010')->id,
+            'account_id' => $this->account('6210')->id,
+            'payment_account_id' => $this->account('1110')->id,
             'amount' => 100.000,
             'description' => 'x',
             'status' => 'draft',
@@ -130,7 +130,7 @@ class ExpenseTest extends TestCase
         $expense = Expense::create([
             'expense_date' => '2026-05-20',
             'vendor_id' => $vendor->id,
-            'account_id' => $this->account('6030')->id,
+            'account_id' => $this->account('6210')->id,
             'amount' => 100.000,
             'description' => 'x',
             'status' => 'draft',
@@ -146,8 +146,8 @@ class ExpenseTest extends TestCase
         $expense = Expense::create([
             'expense_date' => now()->toDateString(),
             'vendor_id' => $vendor->id,
-            'account_id' => $this->account('6030')->id,
-            'payment_account_id' => $this->account('1010')->id,
+            'account_id' => $this->account('6210')->id,
+            'payment_account_id' => $this->account('1110')->id,
             'amount' => 150.000,
             'description' => 'will be voided',
             'status' => 'draft',
@@ -165,8 +165,8 @@ class ExpenseTest extends TestCase
         $this->assertSame(JournalEntry::STATUS_REVERSED, $original->status);
 
         // Net effect on the books: zero
-        $this->assertEqualsWithDelta(0.0, $this->account('6030')->balanceAt(now()->toDateString()), 0.001);
-        $this->assertEqualsWithDelta(0.0, $this->account('1010')->balanceAt(now()->toDateString()), 0.001);
+        $this->assertEqualsWithDelta(0.0, $this->account('6210')->balanceAt(now()->toDateString()), 0.001);
+        $this->assertEqualsWithDelta(0.0, $this->account('1110')->balanceAt(now()->toDateString()), 0.001);
 
         $this->assertBooksBalance();
     }

@@ -7,8 +7,9 @@ import Icon from '../../../Components/Icon.vue'
 import PrintHeader from '../../../Components/PrintHeader.vue'
 import Skeleton from '../../../Components/Skeleton.vue'
 import DateTimePicker from '../../../Components/DateTimePicker.vue'
+import SearchableSelect from '../../../Components/SearchableSelect.vue'
 
-const props = defineProps({ filters: Object, report: Object })
+const props = defineProps({ filters: Object, report: Object, branches: { type: Array, default: () => [] } })
 const pageProps = usePage()
 const locale = computed(() => pageProps.props.locale ?? 'en')
 const isRtl = computed(() => locale.value === 'ar')
@@ -18,18 +19,20 @@ const t = computed(() => isRtl.value ? {
     assets: 'الأصول', lessContra: 'ناقص: مجمع الإهلاك', totalAssets: 'إجمالي الأصول',
     liabilities: 'الخصوم', equity: 'حقوق الملكية', retained: 'أرباح محتجزة (الفترة)', totalLiab: 'إجمالي الخصوم',
     totalEquity: 'إجمالي حقوق الملكية', totalLE: 'إجمالي الخصوم وحقوق الملكية',
-    balanced: 'متوازنة', unbalanced: 'غير متوازنة', empty: 'لا يوجد',
+    balanced: 'متوازنة', unbalanced: 'غير متوازنة', empty: 'لا يوجد', branch: 'الفرع', allBranches: 'كل الفروع (المجموعة)',
+    branchNote: 'عرض الفرع: حقوق الملكية ورأس المال على مستوى المجموعة وقد لا تتوازن القائمة لفرع منفرد.',
 } : {
     title: 'Balance Sheet', eyebrow: 'Accounting Reports', desc: 'Assets, liabilities, and equity as of a chosen date.', asOf: 'As of', print: 'Print',
     assets: 'Assets', lessContra: 'Less: accumulated depreciation', totalAssets: 'Total assets',
     liabilities: 'Liabilities', equity: 'Equity', retained: 'Retained earnings (period)', totalLiab: 'Total liabilities',
     totalEquity: 'Total equity', totalLE: 'Total liabilities & equity',
-    balanced: 'Balanced', unbalanced: 'Out of balance', empty: 'None',
+    balanced: 'Balanced', unbalanced: 'Out of balance', empty: 'None', branch: 'Branch', allBranches: 'All branches (group)',
+    branchNote: 'Branch view: equity & capital are held at group level, so a single-branch sheet may not balance.',
 })
 
-const f = reactive({ as_of: props.filters.as_of })
+const f = reactive({ as_of: props.filters.as_of, branch_id: props.filters.branch_id ?? '' })
 function apply() {
-    router.get(route('v2.reports.accounting.balance-sheet'), { as_of: f.as_of }, { preserveState: true, preserveScroll: true, replace: true })
+    router.get(route('v2.reports.accounting.balance-sheet'), { as_of: f.as_of, branch_id: f.branch_id || null }, { preserveState: true, preserveScroll: true, replace: true })
 }
 const fmt = (n) => Number(n ?? 0).toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 })
 const amount = (r) => r.is_parent ? r.rollup : r.own
@@ -50,6 +53,10 @@ const amount = (r) => r.is_parent ? r.rollup : r.own
 
         <div class="card no-print" style="padding:12px; margin-bottom:16px; display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;">
             <div><label class="label">{{ t.asOf }}</label><DateTimePicker v-model="f.as_of" :with-time="false" :locale="locale" :width="170" @update:model-value="apply" /></div>
+            <div v-if="branches.length > 1"><label class="label">{{ t.branch }}</label>
+                <SearchableSelect v-model="f.branch_id" :items="branches" :null-label="t.allBranches" :search-placeholder="t.branch" :width="220" @update:model-value="apply" />
+            </div>
+            <p v-if="f.branch_id" style="flex-basis:100%; margin:4px 0 0; font-size:12px; color:var(--fg-muted);">{{ t.branchNote }}</p>
         </div>
 
         <Deferred data="report">

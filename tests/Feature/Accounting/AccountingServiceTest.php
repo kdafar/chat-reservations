@@ -121,8 +121,8 @@ class AccountingServiceTest extends TestCase
 
         // Net effect on the GL: zero, books still balanced.
         $this->assertBooksBalance();
-        $this->assertEqualsWithDelta(0.0, $this->account('1010')->balanceAt(now()->toDateString()), 0.001);
-        $this->assertEqualsWithDelta(0.0, $this->account('4010')->balanceAt(now()->toDateString()), 0.001);
+        $this->assertEqualsWithDelta(0.0, $this->account('1110')->balanceAt(now()->toDateString()), 0.001);
+        $this->assertEqualsWithDelta(0.0, $this->account('4110')->balanceAt(now()->toDateString()), 0.001);
     }
 
     public function test_zero_amount_payment_does_not_post(): void
@@ -165,32 +165,75 @@ class AccountingServiceTest extends TestCase
         $cashAccountId = $cashEntry->lines->where('debit', '>', 0)->first()->account_id;
         $knetAccountId = $knetEntry->lines->where('debit', '>', 0)->first()->account_id;
 
-        // Cash hits one of the cash accounts (1010 parent or 1010-X branch sub-account)
+        // Cash hits the cash account (1110), KNET the card/settlement clearing (1130)
         $this->assertNotEquals($cashAccountId, $knetAccountId, 'Cash and KNET must route to different accounts');
-        $this->assertContains(\App\Models\Accounting\Account::find($knetAccountId)->code, ['1020', '1020-'.$visit->branch_id]);
+        $this->assertContains(\App\Models\Accounting\Account::find($knetAccountId)->code, ['1130', '1130-'.$visit->branch_id]);
     }
 
-    public function test_kind_routes_to_correct_revenue_account(): void
+    public function test_visit_completion_accrual_splits_service_and_product_revenue(): void
     {
-        $visit = $this->makeVisit();
+        // Full-accrual model: revenue is recognised when the visit completes,
+        // split into clinical services (4110: fees + packages) and product /
+        // retail sales (4210: items), against Accounts Receivable (1140).
+        $visit = $this->makeVisit([
+            'fees_total' => 30.000,
+            'packages_price_total' => 0,
+            'items_price_total' => 20.000,
+            'discount_total' => 0,
+        ]);
 
-        $payConsult = VisitPayment::create([
-            'visit_id' => $visit->id, 'amount' => 10, 'method' => 'cash',
+        $entry = $this->svc->recordVisitRevenueAccrual($visit);
+
+        $this->assertNotNull($entry);
+        $this->assertSame(JournalEntry::STATUS_POSTED, $entry->status);
+
+        $arLine = $entry->lines->where('debit', '>', 0)->first();
+        $this->assertSame('1140', $arLine->account->code, 'Receivable should hit 1140');
+        $this->assertEqualsWithDelta(50.0, (float) $arLine->debit, 0.001);
+
+        $creditByCode = $entry->lines->where('credit', '>', 0)
+            ->mapWithKeys(fn ($l) => [$l->account->code => (float) $l->credit]);
+        $this->assertEqualsWithDelta(30.0, $creditByCode['4110'] ?? 0, 0.001, 'Service revenue should hit 4110');
+        $this->assertEqualsWithDelta(20.0, $creditByCode['4210'] ?? 0, 0.001, 'Product revenue should hit 4210');
+        $this->assertBooksBalance();
+    }
+
+    public function test_discount_books_as_contra_revenue_on_accrual(): void
+    {
+        $visit = $this->makeVisit([
+            'fees_total' => 100.000,
+            'items_price_total' => 0,
+            'discount_total' => 15.000,
+        ]);
+
+        $entry = $this->svc->recordVisitRevenueAccrual($visit);
+        $byCode = $entry->lines->mapWithKeys(fn ($l) => [$l->account->code => ['d' => (float) $l->debit, 'c' => (float) $l->credit]]);
+
+        $this->assertEqualsWithDelta(85.0, $byCode['1140']['d'], 0.001, 'AR = gross − discount');
+        $this->assertEqualsWithDelta(15.0, $byCode['4310']['d'], 0.001, 'Discount = contra-revenue debit');
+        $this->assertEqualsWithDelta(100.0, $byCode['4110']['c'], 0.001, 'Gross service revenue');
+        $this->assertBooksBalance();
+    }
+
+    public function test_payment_settles_receivable_not_revenue(): void
+    {
+        // Accrue revenue, then pay — the payment must hit AR (1140), never revenue.
+        $visit = $this->makeVisit(['fees_total' => 40.000]);
+        $this->svc->recordVisitRevenueAccrual($visit);
+
+        $pay = VisitPayment::create([
+            'visit_id' => $visit->id, 'amount' => 40.000, 'method' => 'cash',
             'status' => 'paid', 'kind' => 'consultation', 'paid_at' => now(),
         ]);
-        $paySvc = VisitPayment::create([
-            'visit_id' => $visit->id, 'amount' => 20, 'method' => 'cash',
-            'status' => 'paid', 'kind' => 'services', 'paid_at' => now(),
-        ]);
+        $entry = $this->svc->recordVisitPayment($pay);
 
-        $consultEntry = $this->svc->recordVisitPayment($payConsult);
-        $svcEntry = $this->svc->recordVisitPayment($paySvc);
+        $creditLine = $entry->lines->where('credit', '>', 0)->first();
+        $this->assertSame('1140', $creditLine->account->code, 'Payment must settle AR, not post revenue');
 
-        $consultRevAccount = $consultEntry->lines->where('credit', '>', 0)->first()->account;
-        $svcRevAccount = $svcEntry->lines->where('credit', '>', 0)->first()->account;
-
-        $this->assertSame('4010', $consultRevAccount->code, 'Consultation revenue should hit 4010');
-        $this->assertSame('4020', $svcRevAccount->code, 'Services revenue should hit 4020');
+        // After accrual + full payment, AR (1140) nets to zero for this visit.
+        $arBalance = $this->account('1140')->balanceAt();
+        $this->assertEqualsWithDelta(0.0, $arBalance, 0.001, 'Receivable fully settled');
+        $this->assertBooksBalance();
     }
 
     // ============================================================
@@ -225,11 +268,11 @@ class AccountingServiceTest extends TestCase
         $this->assertEqualsWithDelta(10.0, $entry->totalCredit(), 0.001);
         $this->assertBooksBalance();
 
-        // Inventory (1200) credit-decreased; COGS (5010) debit-increased.
+        // Inventory (1150) credit-decreased; COGS (5120) debit-increased.
         $cogs = $entry->lines->where('debit', '>', 0)->first();
         $inv = $entry->lines->where('credit', '>', 0)->first();
-        $this->assertSame('5010', $cogs->account->code);
-        $this->assertSame('1200', $inv->account->code);
+        $this->assertSame('5120', $cogs->account->code);
+        $this->assertSame('1150', $inv->account->code);
     }
 
     public function test_zero_cost_item_does_not_post_cogs(): void
@@ -286,7 +329,36 @@ class AccountingServiceTest extends TestCase
         $this->assertEqualsWithDelta(30.0, $entry->totalCredit(), 0.001);
 
         $inventory = $entry->lines->where('debit', '>', 0)->first();
-        $this->assertSame('1200', $inventory->account->code);
+        $this->assertSame('1150', $inventory->account->code);
+    }
+
+    public function test_stock_recount_shrinkage_posts_cogs_dr_inventory_cr(): void
+    {
+        $f = $this->seedClinicFixtures();
+        $item = ClinicItem::create([
+            'name' => ['en' => 'Filler vial'],
+            'default_cost' => 4.000, 'default_price' => 12.000,
+            'is_stockable' => true, 'is_billable' => true, 'is_active' => true, 'type' => 'consumable',
+        ]);
+        // Physical count found 3 fewer units than the book → shrinkage of 12.000.
+        $movement = ClinicStockMovement::create([
+            'branch_id' => $f['branch']->id,
+            'clinic_item_id' => $item->id,
+            'type' => 'adjust',
+            'qty_change_base' => -3,
+            'before_qty_base' => 10,
+            'after_qty_base' => 7,
+        ]);
+
+        $entry = $this->svc->recordStockAdjustment($movement);
+
+        $this->assertNotNull($entry);
+        $this->assertEqualsWithDelta(12.0, $entry->totalDebit(), 0.001);
+        $debit = $entry->lines->where('debit', '>', 0)->first();
+        $credit = $entry->lines->where('credit', '>', 0)->first();
+        $this->assertSame('5120', $debit->account->code, 'Shrinkage hits COGS');
+        $this->assertSame('1150', $credit->account->code, 'Inventory reduced');
+        $this->assertBooksBalance();
     }
 
     // ============================================================
@@ -312,8 +384,8 @@ class AccountingServiceTest extends TestCase
 
         $exp = $entry->lines->where('debit', '>', 0)->first();
         $pay = $entry->lines->where('credit', '>', 0)->first();
-        $this->assertSame('6010', $exp->account->code);
-        $this->assertSame('2020', $pay->account->code);
+        $this->assertSame('5130', $exp->account->code);
+        $this->assertSame('2130', $pay->account->code);
         $this->assertBooksBalance();
     }
 
@@ -400,7 +472,7 @@ class AccountingServiceTest extends TestCase
         $this->assertBooksBalance();
         $this->assertEqualsWithDelta(
             12.0,
-            $this->account('2020')->balanceAt(now()->toDateString()),
+            $this->account('2130')->balanceAt(now()->toDateString()),
             0.001,
             'Doctor Payable should reflect ONLY the corrected accrual'
         );
@@ -479,7 +551,7 @@ class AccountingServiceTest extends TestCase
             'status' => JournalEntry::STATUS_DRAFT,
             'currency' => 'KWD',
         ]);
-        $accountId = $this->account('1010')->id;
+        $accountId = $this->account('1110')->id;
 
         // Both sides > 0 — rejected.
         try {

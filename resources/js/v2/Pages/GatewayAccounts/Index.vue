@@ -15,6 +15,8 @@ const props = defineProps({
     partners: { type: Array, required: true },
     branches: { type: Array, required: true },
     services: { type: Array, required: true },
+    accounts: { type: Array, default: () => [] },
+    can_edit_accounting: { type: Boolean, default: false },
     counts: { type: Object, required: true },
 })
 
@@ -37,6 +39,7 @@ const t = computed(() => isRtl.value ? {
         method: 'طريقة الدفع اليدوية', gatewaySel: 'البوابة', displayName: 'اسم العرض', currency: 'العملة',
         active: 'فعّال', default: 'افتراضي', ownerLabel: 'المالك', credentials: 'بيانات الاعتماد (مفتاح/قيمة)',
         addCred: 'إضافة مفتاح', key: 'المفتاح', value: 'القيمة', credHelp: 'مثل: api_key, mode, country_iso',
+        account: 'حساب التسوية / المقاصة', accountHelp: 'الحساب الذي تُرحَّل إليه مقبوضات هذه البوابة (للطرق اليدوية). يُترك للنظام إن لم يُحدَّد.', accountNone: 'افتراضي النظام',
         save: 'حفظ', cancel: 'إلغاء', deleteConfirm: 'حذف هذا الحساب؟',
     },
 } : {
@@ -54,6 +57,7 @@ const t = computed(() => isRtl.value ? {
         method: 'Manual payment method', gatewaySel: 'Gateway', displayName: 'Display name', currency: 'Currency',
         active: 'Active', default: 'Default', ownerLabel: 'Owner', credentials: 'Credentials (key / value)',
         addCred: 'Add key', key: 'Key', value: 'Value', credHelp: 'e.g. api_key, mode, country_iso',
+        account: 'Settlement / clearing account', accountHelp: "The account this gateway's receipts settle into (for manual methods). Leave as system default if unset.", accountNone: 'System default',
         save: 'Save', cancel: 'Cancel', deleteConfirm: 'Delete this account?',
     },
 })
@@ -83,7 +87,7 @@ const editing = ref(null)
 const blank = () => ({
     kind: 'manual', method: 'knet', gateway_id: '', display_name: '', currency: 'KWD',
     is_active: true, is_default: false, owner_type: 'system', partner_id: '', branch_id: '', service_id: '',
-    extra_credentials: [],
+    account_id: '', extra_credentials: [],
 })
 const form = reactive(blank())
 const errors = ref({})
@@ -96,7 +100,7 @@ function openEdit(row) {
         kind: row.kind || 'gateway', method: row.method || 'knet', gateway_id: row.gateway_id || '',
         display_name: row.display_name || '', currency: row.currency || 'KWD', is_active: !!row.is_active, is_default: !!row.is_default,
         owner_type: row.owner_type || 'system', partner_id: row.partner_id || '', branch_id: row.branch_id || '', service_id: row.service_id || '',
-        extra_credentials: (row.extra_credentials || []).map(p => ({ ...p })),
+        account_id: row.account_id ?? '', extra_credentials: (row.extra_credentials || []).map(p => ({ ...p })),
     })
     errors.value = {}; modalOpen.value = true
 }
@@ -272,6 +276,14 @@ const ownerColor = (o) => ({ system: 'var(--accent, #2563eb)', partner: 'var(--w
                     <input v-model="c.key" type="text" class="input" :placeholder="t.modal.key" style="flex:1;" />
                     <input v-model="c.value" type="text" class="input" :placeholder="t.modal.value" style="flex:2;" />
                     <button type="button" class="btn btn-ghost btn-sm btn-icon" @click="removeCred(i)"><Icon name="trash-2" :size="14" /></button>
+                </div>
+
+                <!-- Settlement / clearing account (accountant only) -->
+                <div v-if="can_edit_accounting" style="margin-top:16px; padding-top:12px; border-top:1px solid var(--line);">
+                    <label class="label">{{ t.modal.account }}</label>
+                    <SearchableSelect v-model="form.account_id" :items="accounts" :null-label="t.modal.accountNone" />
+                    <div style="font-size:13px; color:var(--fg-subtle); margin-top:3px;">{{ t.modal.accountHelp }}</div>
+                    <div v-if="errors.account_id" class="err">{{ errors.account_id }}</div>
                 </div>
 
                 <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px; padding-top:12px; border-top:1px solid var(--line);">

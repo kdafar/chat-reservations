@@ -18,6 +18,9 @@ const props = defineProps({
     types: Array,
     counts: Object,
     can_edit: Boolean,
+    can_edit_accounting: { type: Boolean, default: false },
+    inventoryAccounts: { type: Array, default: () => [] },
+    cogsAccounts: { type: Array, default: () => [] },
 })
 
 const pageProps = usePage()
@@ -33,7 +36,7 @@ const t = computed(() => isRtl.value ? {
     col: { name: 'الاسم', branch: 'الفرع', type: 'النوع', stockable: 'قابل للتخزين', cost: 'التكلفة', price: 'السعر', status: 'الحالة' },
     empty: 'لا توجد أصناف', showing: 'عرض', of: 'من',
     modal: { createTitle: 'صنف جديد', editTitle: 'تحرير الصنف', save: 'حفظ', cancel: 'إلغاء', deleteConfirm: 'حذف هذا الصنف؟', inventory: 'إعدادات المخزون', delete: 'حذف' },
-    fields: { branch: 'الفرع', type: 'النوع', name_en: 'الاسم (إنجليزي)', name_ar: 'الاسم (عربي)', is_active: 'فعّال', is_stockable: 'قابل للتخزين', stock_unit: 'وحدة التخزين', usage_unit: 'وحدة الاستهلاك', conversion_factor: 'معامل التحويل', consume_step: 'خطوة الاستهلاك', is_billable: 'قابل للفوترة', default_cost: 'التكلفة الافتراضية', default_price: 'السعر الافتراضي', global: '— عام (كل الفروع) —' },
+    fields: { branch: 'الفرع', type: 'النوع', name_en: 'الاسم (إنجليزي)', name_ar: 'الاسم (عربي)', is_active: 'فعّال', is_stockable: 'قابل للتخزين', stock_unit: 'وحدة التخزين', usage_unit: 'وحدة الاستهلاك', conversion_factor: 'معامل التحويل', consume_step: 'خطوة الاستهلاك', is_billable: 'قابل للفوترة', default_cost: 'التكلفة الافتراضية', default_price: 'السعر الافتراضي', global: '— عام (كل الفروع) —', inventory_account: 'حساب المخزون', cogs_account: 'حساب تكلفة البضاعة', accountNone: 'افتراضي النظام', accountHelp: 'الحسابات التي تُرحَّل إليها قيمة مخزون هذا الصنف وتكلفته. تُترك للنظام إن لم تُحدَّد.' },
     bom: { title: 'المستهلكات المستخدمة لكل خدمة', hint: 'أصناف تُخصم من المخزون في كل مرة تُؤدّى فيها هذه الخدمة.', add: 'إضافة مستهلك', item: 'الصنف', qty: 'الكمية (أساس)', optional: 'اختياري (لا يُخصم تلقائيًا)', empty: 'لا توجد مستهلكات بعد.', selectItem: '— اختر صنفًا —' },
     stats: { total: 'الكل', active: 'فعّال' },
 } : {
@@ -46,7 +49,7 @@ const t = computed(() => isRtl.value ? {
     empty: 'No items', showing: 'Showing', of: 'of',
     modal: { createTitle: 'New item', editTitle: 'Edit item', save: 'Save', cancel: 'Cancel', deleteConfirm: 'Delete this item?', inventory: 'Inventory settings', delete: 'Delete' },
     bom: { title: 'Consumables used per service', hint: 'Items deducted from stock each time this service is performed.', add: 'Add consumable', item: 'Item', qty: 'Qty (base)', optional: 'Optional (not auto-deducted)', empty: 'No consumables yet.', selectItem: '— Select an item —' },
-    fields: { branch: 'Branch', type: 'Type', name_en: 'Name (English)', name_ar: 'Name (Arabic)', is_active: 'Active', is_stockable: 'Stockable', stock_unit: 'Stock unit', usage_unit: 'Usage unit', conversion_factor: 'Conversion factor', consume_step: 'Consume step', is_billable: 'Billable', default_cost: 'Default cost', default_price: 'Default price', global: '— Global (all branches) —' },
+    fields: { branch: 'Branch', type: 'Type', name_en: 'Name (English)', name_ar: 'Name (Arabic)', is_active: 'Active', is_stockable: 'Stockable', stock_unit: 'Stock unit', usage_unit: 'Usage unit', conversion_factor: 'Conversion factor', consume_step: 'Consume step', is_billable: 'Billable', default_cost: 'Default cost', default_price: 'Default price', global: '— Global (all branches) —', inventory_account: 'Inventory account', cogs_account: 'COGS account', accountNone: 'System default', accountHelp: "Accounts this item's stock value and cost of goods post to. Leave as system default if unset." },
     stats: { total: 'Total', active: 'Active' },
 })
 
@@ -65,7 +68,7 @@ function clearFilters() { f.q = ''; f.type = 'all'; f.active = 'all'; apply() }
 const modalOpen = ref(false)
 const modalMode = ref('create')
 const editing = ref(null)
-const blank = () => ({ branch_id: null, type: 'consumable', name_en: '', name_ar: '', is_active: true, is_stockable: false, stock_unit: '', usage_unit: '', conversion_factor: 1, consume_step: 1, is_billable: true, default_cost: 0, default_price: 0, components: [] })
+const blank = () => ({ branch_id: null, type: 'consumable', name_en: '', name_ar: '', is_active: true, is_stockable: false, stock_unit: '', usage_unit: '', conversion_factor: 1, consume_step: 1, is_billable: true, default_cost: 0, default_price: 0, inventory_account_id: null, cogs_account_id: null, components: [] })
 const form = reactive(blank())
 const errors = ref({})
 const saving = ref(false)
@@ -94,6 +97,7 @@ function openEdit(row) {
         is_active: !!row.is_active, is_stockable: !!row.is_stockable, stock_unit: row.stock_unit || '',
         usage_unit: row.usage_unit || '', conversion_factor: row.conversion_factor || 1, consume_step: row.consume_step || 1,
         is_billable: !!row.is_billable, default_cost: row.default_cost ?? 0, default_price: row.default_price ?? 0,
+        inventory_account_id: row.inventory_account_id ?? null, cogs_account_id: row.cogs_account_id ?? null,
         components: (row.bom_lines || []).map((c) => ({ component_item_id: c.component_item_id, qty_base: c.qty_base, is_optional: !!c.is_optional })),
     })
     errors.value = {}; modalOpen.value = true
@@ -234,6 +238,19 @@ onMounted(() => { if (props.open_record) openEdit(props.open_record) })
                         <input v-model.number="form.default_price" type="number" step="any" min="0" class="input" required />
                         <div v-if="errors.default_price" class="err">{{ errors.default_price }}</div>
                     </div>
+                    <template v-if="can_edit_accounting && form.type !== 'service'">
+                        <div>
+                            <label class="label">{{ t.fields.inventory_account }}</label>
+                            <SearchableSelect v-model="form.inventory_account_id" :items="inventoryAccounts" :null-label="t.fields.accountNone" />
+                            <div v-if="errors.inventory_account_id" class="err">{{ errors.inventory_account_id }}</div>
+                        </div>
+                        <div>
+                            <label class="label">{{ t.fields.cogs_account }}</label>
+                            <SearchableSelect v-model="form.cogs_account_id" :items="cogsAccounts" :null-label="t.fields.accountNone" />
+                            <div v-if="errors.cogs_account_id" class="err">{{ errors.cogs_account_id }}</div>
+                        </div>
+                        <div style="grid-column:span 2; font-size:13px; color:var(--fg-subtle); margin-top:-4px;">{{ t.fields.accountHelp }}</div>
+                    </template>
                     <div style="display:flex; align-items:center; gap:8px;">
                         <input id="ci_active" v-model="form.is_active" type="checkbox" />
                         <label for="ci_active" style="font-size:13px;">{{ t.fields.is_active }}</label>

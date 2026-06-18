@@ -24,7 +24,44 @@ class ChartOfAccounts
      */
     protected array $overrideByCode = [];
 
+    /**
+     * Per-entity account links the accountant set on individual branches /
+     * partners / gateway accounts (most-specific wins over the global map).
+     *
+     * @var array<int, Account>        branch_id  => branch cash/operating account
+     */
+    protected array $branchAccount = [];
+
+    /** @var array<int, int>           branch_id  => partner_id (to resolve partner-level links) */
+    protected array $branchPartner = [];
+
+    /** @var array<int, Account>       partner_id => default (services) revenue account */
+    protected array $partnerAccount = [];
+
+    /**
+     * Active gateway-account settlement links, used to route the debit side of a
+     * card/cash receipt to the clearing account that gateway settles into.
+     *
+     * @var array<int, array{method:string, owner_type:string, partner_id:?int, branch_id:?int, account:Account}>
+     */
+    protected array $gatewaySettlements = [];
+
+    /** @var array<int, Account>  insurer_id => that insurer's AR account */
+    protected array $insurerAr = [];
+
+    /** @var array<int, Account>  clinic_item id => that item's inventory account */
+    protected array $itemInventory = [];
+
+    /** @var array<int, Account>  clinic_item id => that item's COGS account */
+    protected array $itemCogs = [];
+
+    /** @var array<int, Account>  service id => that service's revenue account */
+    protected array $serviceRevenue = [];
+
     protected bool $loaded = false;
+
+    /** Default cash-on-hand code; a branch's operating account replaces the branch variant of this. */
+    protected const CASH_CODE = '1110';
 
     public function resolve(string $code): ?Account
     {
@@ -53,15 +90,27 @@ class ChartOfAccounts
             'knet', 'visa', 'mada', 'myfatoorah', 'tap', 'stripe', 'link', 'card' => '1130', // KNET/Card clearing
             'transfer' => '1120', // Bank — CBK
             'insurance' => '1140', // Patient/Insurance receivable
-            default => '1110', // Cash on Hand / Petty Cash
+            default => self::CASH_CODE, // Cash on Hand / Petty Cash
         };
 
-        // An explicit accountant override on this role wins over everything.
+        // 1. Most specific: a gateway account configured for this method+scope
+        //    routes its receipts to a chosen settlement/clearing account.
+        if ($settlement = $this->gatewaySettlementFor($method, $branchId)) {
+            return $settlement;
+        }
+
+        // 2. An explicit accountant override on this role (global posting map).
         if (isset($this->overrideByCode[$primaryCode])) {
             return $this->overrideByCode[$primaryCode];
         }
 
-        // Prefer a branch-scoped sub-account of $primaryCode (e.g. "1110-4")
+        // 3. The branch's own cash/operating account (replaces the "1110-<branch>"
+        //    convention) for physical-cash receipts.
+        if ($primaryCode === self::CASH_CODE && isset($this->branchAccount[$branchId])) {
+            return $this->branchAccount[$branchId];
+        }
+
+        // 4. A branch-scoped sub-account of $primaryCode (e.g. "1110-4").
         $branchVariant = $primaryCode.'-'.$branchId;
         if (isset($this->byCode[$branchVariant])) {
             return $this->byCode[$branchVariant];
@@ -71,11 +120,59 @@ class ChartOfAccounts
     }
 
     /**
+     * Settlement account for a card/cash receipt taken through a gateway account
+     * configured for this payment method in scope. Picks the most specific
+     * active gateway account with a linked account: branch > partner > system.
+     */
+    protected function gatewaySettlementFor(string $method, int $branchId): ?Account
+    {
+        // Map the payment method to the manual gateway method a gateway account
+        // is configured under. Bank transfers / insurance never settle here.
+        $manual = match ($method) {
+            'knet' => 'knet',
+            'visa', 'mada', 'card' => 'visa',
+            'link', 'myfatoorah', 'tap', 'stripe' => 'link',
+            'cash' => 'cash',
+            default => null,
+        };
+        if ($manual === null || empty($this->gatewaySettlements)) {
+            return null;
+        }
+
+        $partnerId = $this->branchPartner[$branchId] ?? null;
+        $best = null;
+        $bestRank = -1;
+        foreach ($this->gatewaySettlements as $row) {
+            if ($row['method'] !== $manual) {
+                continue;
+            }
+            $rank = match (true) {
+                $row['owner_type'] === 'branch' && (int) $row['branch_id'] === $branchId => 3,
+                $row['owner_type'] === 'partner' && $partnerId !== null && (int) $row['partner_id'] === $partnerId => 2,
+                $row['owner_type'] === 'system' => 1,
+                default => -1, // a branch/partner row for a different scope — ignore
+            };
+            if ($rank > $bestRank) {
+                $bestRank = $rank;
+                $best = $row['account'];
+            }
+        }
+
+        return $best;
+    }
+
+    /**
      * Pick a revenue account based on payment kind (consultation / services / medicines / other).
      */
-    public function revenueAccountFor(string $kind): ?Account
+    public function revenueAccountFor(string $kind, ?int $branchId = null, ?int $serviceId = null): ?Account
     {
         $this->loadIfNeeded();
+
+        // A service pinned to its own revenue account wins (most specific). Only
+        // applies where a service context is available — see revenueAccountForService.
+        if ($serviceId !== null && ($svc = $this->revenueAccountForService($serviceId))) {
+            return $svc;
+        }
 
         $code = match (strtolower($kind)) {
             'consultation' => '4110',          // Dermatology & Aesthetics
@@ -85,7 +182,61 @@ class ChartOfAccounts
             default => '4110',
         };
 
+        // The clinic's default revenue link applies to services/consultation
+        // income (the default 4110 bucket); product & other revenue keep their
+        // own codes. Partner link wins over the global map (more specific).
+        if ($code === '4110' && $branchId !== null) {
+            $partnerId = $this->branchPartner[$branchId] ?? null;
+            if ($partnerId !== null && isset($this->partnerAccount[$partnerId])) {
+                return $this->partnerAccount[$partnerId];
+            }
+        }
+
         return $this->resolve($code);
+    }
+
+    /** Accounts-receivable account for an insurer (its own, else default 1140). */
+    public function arAccountForInsurer(?int $insurerId): ?Account
+    {
+        $this->loadIfNeeded();
+
+        if ($insurerId !== null && isset($this->insurerAr[$insurerId])) {
+            return $this->insurerAr[$insurerId];
+        }
+
+        return $this->resolve('1140');
+    }
+
+    /** Inventory account for a stock item (its own, else default 1150). */
+    public function inventoryAccountForItem(?int $itemId): ?Account
+    {
+        $this->loadIfNeeded();
+
+        if ($itemId !== null && isset($this->itemInventory[$itemId])) {
+            return $this->itemInventory[$itemId];
+        }
+
+        return $this->resolve('1150');
+    }
+
+    /** Cost-of-goods account for a stock item (its own, else default 5120). */
+    public function cogsAccountForItem(?int $itemId): ?Account
+    {
+        $this->loadIfNeeded();
+
+        if ($itemId !== null && isset($this->itemCogs[$itemId])) {
+            return $this->itemCogs[$itemId];
+        }
+
+        return $this->resolve('5120');
+    }
+
+    /** Revenue account a service is pinned to, or null to fall back to revenueAccountFor(). */
+    public function revenueAccountForService(?int $serviceId): ?Account
+    {
+        $this->loadIfNeeded();
+
+        return $serviceId !== null ? ($this->serviceRevenue[$serviceId] ?? null) : null;
     }
 
     /**
@@ -116,6 +267,14 @@ class ChartOfAccounts
     {
         $this->byCode = [];
         $this->overrideByCode = [];
+        $this->branchAccount = [];
+        $this->branchPartner = [];
+        $this->partnerAccount = [];
+        $this->gatewaySettlements = [];
+        $this->insurerAr = [];
+        $this->itemInventory = [];
+        $this->itemCogs = [];
+        $this->serviceRevenue = [];
         $this->loaded = false;
         $this->loadIfNeeded();
     }
@@ -146,6 +305,75 @@ class ChartOfAccounts
             }
         } catch (\Throwable $e) {
             // table not present yet / migration pending — defaults apply.
+        }
+
+        // Per-entity account links (branch cash, partner revenue, gateway
+        // settlement). Wrapped defensively so a missing column on a fresh
+        // install never breaks posting.
+        try {
+            $byId = $accounts->keyBy('id');
+
+            foreach (\App\Models\Branch::query()->get(['id', 'partner_id', 'account_id']) as $b) {
+                if ($b->partner_id) {
+                    $this->branchPartner[(int) $b->id] = (int) $b->partner_id;
+                }
+                if ($b->account_id && ($acc = $byId->get($b->account_id))) {
+                    $this->branchAccount[(int) $b->id] = $acc;
+                }
+            }
+
+            foreach (\App\Models\Partner::query()->whereNotNull('account_id')->get(['id', 'account_id']) as $p) {
+                if ($acc = $byId->get($p->account_id)) {
+                    $this->partnerAccount[(int) $p->id] = $acc;
+                }
+            }
+
+            $gateways = \App\Models\GatewayAccount::query()
+                ->where('is_active', true)
+                ->whereNotNull('account_id')
+                ->get(['owner_type', 'partner_id', 'branch_id', 'credentials', 'account_id']);
+            foreach ($gateways as $g) {
+                $cred = is_array($g->credentials) ? $g->credentials : [];
+                if (($cred['kind'] ?? null) !== 'manual') {
+                    continue; // only manual (cash/knet/visa/link) methods settle by method
+                }
+                $acc = $byId->get($g->account_id);
+                if (! $acc) {
+                    continue;
+                }
+                $this->gatewaySettlements[] = [
+                    'method' => (string) ($cred['method'] ?? ''),
+                    'owner_type' => (string) $g->owner_type,
+                    'partner_id' => $g->partner_id,
+                    'branch_id' => $g->branch_id,
+                    'account' => $acc,
+                ];
+            }
+
+            foreach (\App\Models\Insurance\Insurer::query()->whereNotNull('ar_account_id')->get(['id', 'ar_account_id']) as $ins) {
+                if ($acc = $byId->get($ins->ar_account_id)) {
+                    $this->insurerAr[(int) $ins->id] = $acc;
+                }
+            }
+
+            foreach (\App\Models\ClinicItem::query()
+                ->where(fn ($q) => $q->whereNotNull('inventory_account_id')->orWhereNotNull('cogs_account_id'))
+                ->get(['id', 'inventory_account_id', 'cogs_account_id']) as $it) {
+                if ($it->inventory_account_id && ($acc = $byId->get($it->inventory_account_id))) {
+                    $this->itemInventory[(int) $it->id] = $acc;
+                }
+                if ($it->cogs_account_id && ($acc = $byId->get($it->cogs_account_id))) {
+                    $this->itemCogs[(int) $it->id] = $acc;
+                }
+            }
+
+            foreach (\App\Models\Service::query()->whereNotNull('revenue_account_id')->get(['id', 'revenue_account_id']) as $svc) {
+                if ($acc = $byId->get($svc->revenue_account_id)) {
+                    $this->serviceRevenue[(int) $svc->id] = $acc;
+                }
+            }
+        } catch (\Throwable $e) {
+            // column/table not present yet — per-entity links simply don't apply.
         }
 
         $this->loaded = true;

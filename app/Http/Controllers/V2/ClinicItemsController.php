@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\V2;
 
 use App\Http\Controllers\Controller;
+use App\Models\Accounting\Account;
 use App\Models\ClinicItem;
+use App\Services\Accounting\ChartOfAccounts;
 use App\Support\ResolvesAccessibleClinics;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
@@ -108,6 +110,9 @@ class ClinicItemsController extends Controller
                 'active' => ClinicItem::query()->where('is_active', true)->count(),
             ],
             'can_edit' => $this->canEdit($request),
+            'can_edit_accounting' => (bool) $request->user()?->can('update_accounting_accounts'),
+            'inventoryAccounts' => Account::postableOptions([Account::TYPE_ASSET]),
+            'cogsAccounts' => Account::postableOptions([Account::TYPE_COGS, Account::TYPE_EXPENSE]),
         ]);
     }
 
@@ -119,6 +124,7 @@ class ClinicItemsController extends Controller
         $data['partner_id'] = $this->defaultPartnerId($data['branch_id'] ?? null); // clinic-owned
         $item = ClinicItem::create($data);
         $this->syncComponents($request, $item);
+        $this->refreshAccountingIfPermitted($request);
         return back()->with('flash', ['type' => 'success', 'message' => 'Item added.']);
     }
 
@@ -128,7 +134,16 @@ class ClinicItemsController extends Controller
         if (! $this->canEdit($request)) abort(403);
         $clinicItem->update($this->validated($request));
         $this->syncComponents($request, $clinicItem);
+        $this->refreshAccountingIfPermitted($request);
         return back()->with('flash', ['type' => 'success', 'message' => 'Item updated.']);
+    }
+
+    /** Drop the ChartOfAccounts cache so an inventory/COGS-account change applies at once. */
+    protected function refreshAccountingIfPermitted(Request $request): void
+    {
+        if ($request->user()?->can('update_accounting_accounts')) {
+            app(ChartOfAccounts::class)->refresh();
+        }
     }
 
     public function destroy(Request $request, ClinicItem $clinicItem): RedirectResponse
@@ -159,6 +174,8 @@ class ClinicItemsController extends Controller
             'is_billable' => ['sometimes', 'boolean'],
             'default_cost' => ['required', 'numeric', 'min:0'],
             'default_price' => ['required', 'numeric', 'min:0'],
+            'inventory_account_id' => ['nullable', 'integer', 'exists:chart_of_accounts,id'],
+            'cogs_account_id' => ['nullable', 'integer', 'exists:chart_of_accounts,id'],
         ]);
 
         $isService = $data['type'] === 'service';
@@ -172,7 +189,7 @@ class ClinicItemsController extends Controller
             ]);
         }
 
-        return [
+        $out = [
             'branch_id' => $data['branch_id'] ?? null,
             'type' => $data['type'],
             'name' => ['en' => $data['name_en'], 'ar' => $data['name_ar']],
@@ -186,6 +203,14 @@ class ClinicItemsController extends Controller
             'default_cost' => $data['default_cost'],
             'default_price' => $data['default_price'],
         ];
+
+        // Only an accountant may set the inventory/COGS account links; others leave them as-is.
+        if ($request->user()?->can('update_accounting_accounts')) {
+            $out['inventory_account_id'] = $data['inventory_account_id'] ?? null;
+            $out['cogs_account_id'] = $data['cogs_account_id'] ?? null;
+        }
+
+        return $out;
     }
 
     protected function branchOptions(): array

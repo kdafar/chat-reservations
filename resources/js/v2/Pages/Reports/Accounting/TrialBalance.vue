@@ -7,25 +7,26 @@ import Icon from '../../../Components/Icon.vue'
 import PrintHeader from '../../../Components/PrintHeader.vue'
 import Skeleton from '../../../Components/Skeleton.vue'
 import DateTimePicker from '../../../Components/DateTimePicker.vue'
+import SearchableSelect from '../../../Components/SearchableSelect.vue'
 
-const props = defineProps({ filters: Object, report: Object })
+const props = defineProps({ filters: Object, report: Object, branches: { type: Array, default: () => [] } })
 const pageProps = usePage()
 const locale = computed(() => pageProps.props.locale ?? 'en')
 const isRtl = computed(() => locale.value === 'ar')
 
 const t = computed(() => isRtl.value ? {
     title: 'ميزان المراجعة', eyebrow: 'تقارير المحاسبة', desc: 'أرصدة المدين والدائن لكل حساب للفترة المحددة.', from: 'من', to: 'إلى', print: 'طباعة',
-    balanced: 'متوازن', unbalanced: 'غير متوازن',
+    balanced: 'متوازن', unbalanced: 'غير متوازن', branch: 'الفرع', allBranches: 'كل الفروع',
     col: { code: 'الرمز', account: 'الحساب', debit: 'مدين', credit: 'دائن' }, total: 'الإجمالي', empty: 'لا توجد حركات في هذه الفترة',
 } : {
     title: 'Trial Balance', eyebrow: 'Accounting Reports', desc: 'Debit and credit balances for every account over the selected period.', from: 'From', to: 'To', print: 'Print',
-    balanced: 'Balanced', unbalanced: 'Out of balance',
+    balanced: 'Balanced', unbalanced: 'Out of balance', branch: 'Branch', allBranches: 'All branches',
     col: { code: 'Code', account: 'Account', debit: 'Debit', credit: 'Credit' }, total: 'Total', empty: 'No activity in this period',
 })
 
-const f = reactive({ from: props.filters.from, to: props.filters.to })
+const f = reactive({ from: props.filters.from, to: props.filters.to, branch_id: props.filters.branch_id ?? '' })
 function apply() {
-    router.get(route('v2.reports.accounting.trial-balance'), { from: f.from, to: f.to }, { preserveState: true, preserveScroll: true, replace: true })
+    router.get(route('v2.reports.accounting.trial-balance'), { from: f.from, to: f.to, branch_id: f.branch_id || null }, { preserveState: true, preserveScroll: true, replace: true })
 }
 const fmt = (n) => Number(n ?? 0).toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 })
 </script>
@@ -46,6 +47,9 @@ const fmt = (n) => Number(n ?? 0).toLocaleString('en-US', { minimumFractionDigit
         <div class="card no-print" style="padding:12px; margin-bottom:16px; display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;">
             <div><label class="label">{{ t.from }}</label><DateTimePicker v-model="f.from" :with-time="false" :width="170" :locale="locale" @update:model-value="apply" /></div>
             <div><label class="label">{{ t.to }}</label><DateTimePicker v-model="f.to" :with-time="false" :width="170" :locale="locale" @update:model-value="apply" /></div>
+            <div v-if="branches.length > 1"><label class="label">{{ t.branch }}</label>
+                <SearchableSelect v-model="f.branch_id" :items="branches" :null-label="t.allBranches" :search-placeholder="t.branch" :width="200" @update:model-value="apply" />
+            </div>
         </div>
 
         <Deferred data="report">

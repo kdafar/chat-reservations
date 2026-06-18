@@ -3,10 +3,12 @@
 namespace App\Http\Controllers\V2;
 
 use App\Http\Controllers\Controller;
+use App\Models\Accounting\Account;
 use App\Models\Gateway;
 use App\Models\GatewayAccount;
 use App\Models\Partner;
 use App\Models\Service;
+use App\Services\Accounting\ChartOfAccounts;
 use App\Support\ResolvesAccessibleClinics;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -48,7 +50,7 @@ class GatewayAccountsController extends Controller
             'owner_type' => $request->input('owner_type', 'all'),
         ];
 
-        $query = GatewayAccount::query()->with(['gateway', 'partner:id,name', 'branch:id,name', 'service:id,name']);
+        $query = GatewayAccount::query()->with(['gateway', 'partner:id,name', 'branch:id,name', 'service:id,name', 'account:id,code,name']);
 
         if ($filters['q'] !== '') {
             $query->where('display_name', 'like', "%{$filters['q']}%");
@@ -74,6 +76,8 @@ class GatewayAccountsController extends Controller
             'branches' => $this->accessibleBranches()->all(),
             'services' => Service::query()->orderBy('id')->get(['id', 'name'])
                 ->map(fn ($s) => ['id' => $s->id, 'name' => (string) $s->getTranslation('name', $locale)])->all(),
+            'accounts' => Account::postableOptions([Account::TYPE_ASSET]),
+            'can_edit_accounting' => (bool) $request->user()?->can('update_accounting_accounts'),
             'counts' => [
                 'total' => GatewayAccount::query()->count(),
                 'active' => GatewayAccount::query()->where('is_active', true)->count(),
@@ -88,7 +92,11 @@ class GatewayAccountsController extends Controller
 
         $account = new GatewayAccount();
         $this->fillFromData($account, $data);
+        $changed = $this->applyAccountLink($account, $request, $data);
         $account->save();
+        if ($changed) {
+            app(ChartOfAccounts::class)->refresh();
+        }
 
         return back()->with('flash', ['type' => 'success', 'message' => 'Gateway account created.']);
     }
@@ -99,9 +107,28 @@ class GatewayAccountsController extends Controller
         $data = $this->validateData($request);
 
         $this->fillFromData($gatewayAccount, $data);
+        $changed = $this->applyAccountLink($gatewayAccount, $request, $data);
         $gatewayAccount->save();
+        if ($changed) {
+            app(ChartOfAccounts::class)->refresh();
+        }
 
         return back()->with('flash', ['type' => 'success', 'message' => 'Gateway account updated.']);
+    }
+
+    /**
+     * Set the gateway account's settlement/clearing account link — only an
+     * accountant (update_accounting_accounts) may change it; other admins leave
+     * it as-is. Returns true when the link actually changed.
+     */
+    protected function applyAccountLink(GatewayAccount $account, Request $request, array $data): bool
+    {
+        if (! $request->user()?->can('update_accounting_accounts')) {
+            return false;
+        }
+        $account->account_id = $data['account_id'] ?: null;
+
+        return $account->isDirty('account_id');
     }
 
     public function destroy(Request $request, GatewayAccount $gatewayAccount): RedirectResponse
@@ -126,6 +153,7 @@ class GatewayAccountsController extends Controller
             'partner_id' => ['nullable', 'required_if:owner_type,partner', 'integer', 'exists:partners,id'],
             'branch_id' => ['nullable', 'required_if:owner_type,branch', 'integer', 'exists:branches,id'],
             'service_id' => ['nullable', 'required_if:owner_type,service', 'integer', 'exists:services,id'],
+            'account_id' => ['nullable', 'integer', 'exists:chart_of_accounts,id'],
             'extra_credentials' => ['array'],
             'extra_credentials.*.key' => ['nullable', 'string', 'max:191'],
             'extra_credentials.*.value' => ['nullable', 'string', 'max:2000'],
@@ -189,6 +217,8 @@ class GatewayAccountsController extends Controller
             'partner_id' => $g->partner_id,
             'branch_id' => $g->branch_id,
             'service_id' => $g->service_id,
+            'account_id' => $g->account_id,
+            'account_label' => $g->account ? $g->account->code.' — '.$g->account->name : null,
             'extra_credentials' => $extra,
         ];
     }

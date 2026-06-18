@@ -3,6 +3,7 @@
 namespace App\Models\Insurance;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -24,12 +25,20 @@ class Insurer extends Model
         'is_active',
         'notes',
         'meta',
+        'ar_account_id',
     ];
 
     protected $casts = [
         'meta' => 'array',
         'is_active' => 'bool',
+        'ar_account_id' => 'integer',
     ];
+
+    /** This insurer's accounts-receivable account — see ChartOfAccounts. */
+    public function arAccount(): BelongsTo
+    {
+        return $this->belongsTo(\App\Models\Accounting\Account::class, 'ar_account_id');
+    }
 
     public function plans(): HasMany
     {

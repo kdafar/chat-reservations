@@ -22,13 +22,14 @@ class AccountingReportService
     // ---------------------------------------------------------------------
     // Trial Balance
     // ---------------------------------------------------------------------
-    public function trialBalance(string $from, string $to): array
+    public function trialBalance(string $from, string $to, ?int $branchId = null): array
     {
         $rows = DB::table('journal_entry_lines as l')
             ->join('journal_entries as e', 'e.id', '=', 'l.journal_entry_id')
             ->join('chart_of_accounts as a', 'a.id', '=', 'l.account_id')
             ->where('e.status', JournalEntry::STATUS_POSTED)
             ->whereBetween('e.entry_date', [$from, $to])
+            ->when($branchId, fn ($q) => $q->where('l.branch_id', $branchId))
             ->groupBy('a.id', 'a.code', 'a.name', 'a.type')
             ->orderBy('a.code')
             ->select('a.code', 'a.name', 'a.type', DB::raw('SUM(l.debit) as debit_sum'), DB::raw('SUM(l.credit) as credit_sum'))
@@ -153,12 +154,12 @@ class AccountingReportService
     // ---------------------------------------------------------------------
     // Profit & Loss
     // ---------------------------------------------------------------------
-    public function profitAndLoss(string $from, string $to): array
+    public function profitAndLoss(string $from, string $to, ?int $branchId = null): array
     {
-        $revenue = $this->section([Account::TYPE_REVENUE], $this->balancesForTypes([Account::TYPE_REVENUE], $from, $to));
-        $contraRevenue = $this->section([Account::TYPE_CONTRA_REVENUE], $this->balancesForTypes([Account::TYPE_CONTRA_REVENUE], $from, $to));
-        $cogs = $this->section([Account::TYPE_COGS], $this->balancesForTypes([Account::TYPE_COGS], $from, $to));
-        $expenses = $this->section([Account::TYPE_EXPENSE], $this->balancesForTypes([Account::TYPE_EXPENSE], $from, $to));
+        $revenue = $this->section([Account::TYPE_REVENUE], $this->balancesForTypes([Account::TYPE_REVENUE], $from, $to, $branchId));
+        $contraRevenue = $this->section([Account::TYPE_CONTRA_REVENUE], $this->balancesForTypes([Account::TYPE_CONTRA_REVENUE], $from, $to, $branchId));
+        $cogs = $this->section([Account::TYPE_COGS], $this->balancesForTypes([Account::TYPE_COGS], $from, $to, $branchId));
+        $expenses = $this->section([Account::TYPE_EXPENSE], $this->balancesForTypes([Account::TYPE_EXPENSE], $from, $to, $branchId));
 
         $netRevenue = $revenue['total'] - $contraRevenue['total'];
         $grossProfit = $netRevenue - $cogs['total'];
@@ -170,13 +171,13 @@ class AccountingReportService
     // ---------------------------------------------------------------------
     // Balance Sheet (as of a date)
     // ---------------------------------------------------------------------
-    public function balanceSheet(string $asOf): array
+    public function balanceSheet(string $asOf, ?int $branchId = null): array
     {
-        $assetBalances = $this->balancesAt([Account::TYPE_ASSET], $asOf);
-        $contraAssetBalances = $this->balancesAt([Account::TYPE_CONTRA_ASSET], $asOf);
-        $liabilityBalances = $this->balancesAt([Account::TYPE_LIABILITY], $asOf);
-        $contraLiabilityBalances = $this->balancesAt([Account::TYPE_CONTRA_LIABILITY], $asOf);
-        $equityBalances = $this->balancesAt([Account::TYPE_EQUITY], $asOf);
+        $assetBalances = $this->balancesAt([Account::TYPE_ASSET], $asOf, $branchId);
+        $contraAssetBalances = $this->balancesAt([Account::TYPE_CONTRA_ASSET], $asOf, $branchId);
+        $liabilityBalances = $this->balancesAt([Account::TYPE_LIABILITY], $asOf, $branchId);
+        $contraLiabilityBalances = $this->balancesAt([Account::TYPE_CONTRA_LIABILITY], $asOf, $branchId);
+        $equityBalances = $this->balancesAt([Account::TYPE_EQUITY], $asOf, $branchId);
 
         $totalAssetsGross = array_sum($assetBalances);
         $totalContraAssets = array_sum($contraAssetBalances);
@@ -187,8 +188,8 @@ class AccountingReportService
         $totalLiabilities = $totalLiabilitiesGross - $totalContraLiabilities;
 
         $totalEquityBooked = array_sum($equityBalances);
-        $fiscalStart = Carbon::parse($asOf)->startOfYear()->toDateString();
-        $retainedEarnings = $this->netIncome($fiscalStart, $asOf);
+        $fiscalStart = $this->fiscalYearStart($asOf);
+        $retainedEarnings = $this->netIncome($fiscalStart, $asOf, $branchId);
 
         $totalEquity = $totalEquityBooked + $retainedEarnings;
         $totalLE = $totalLiabilities + $totalEquity;
@@ -228,46 +229,93 @@ class AccountingReportService
         // so history under the old code is still counted).
         $coa = app(ChartOfAccounts::class);
 
+        // Working-capital movements (natural direction: assets Dr−Cr, liabs Cr−Dr).
         $deltaAP = $this->deltaForCodes($coa->effectiveCodes(['2110']), $from, $to);
         $deltaDoctorPayable = $this->deltaForCodes($coa->effectiveCodes(['2130']), $from, $to);
         $deltaAR = $this->deltaForCodes($coa->effectiveCodes(['1140']), $from, $to);
         $deltaInventory = $this->deltaForCodes($coa->effectiveCodes(['1150']), $from, $to);
 
-        $cashFromOps = $netIncome + $deltaAP + $deltaDoctorPayable - $deltaAR - $deltaInventory;
+        // Non-cash add-back: depreciation/amortization credited to the
+        // accumulated contra-asset accounts (cash impact = credit − debit).
+        $depreciationAddback = $this->cashImpactDelta(['1215', '1225', '1235', '1245', '1315', '1325'], $from, $to);
 
-        $deltaFixedAssets = $this->deltaForCodes(['1210', '1220', '1230', '1240'], $from, $to);
+        // Every OTHER operating balance-sheet account so the statement is
+        // complete (prepaids, staff advances, accrued/other payables, deposits,
+        // leave & end-of-service provisions). Cash impact = credit − debit.
+        $deltaOtherOperating = $this->cashImpactDelta(
+            ['1160', '1170', '1180', '2140', '2150', '2160', '2170', '2180', '2190', '2220'],
+            $from, $to
+        );
+
+        $cashFromOps = $netIncome + $depreciationAddback
+            + $deltaAP + $deltaDoctorPayable - $deltaAR - $deltaInventory
+            + $deltaOtherOperating;
+
+        // Investing: capex into gross non-current asset accounts (a purchase
+        // debits the asset → uses cash).
+        $deltaFixedAssets = $this->deltaForCodes(['1210', '1220', '1230', '1240', '1310', '1320', '1330'], $from, $to);
         $cashFromInvesting = -$deltaFixedAssets;
 
+        // Financing: owner capital / current accounts / drawings (equity, but
+        // NOT retained earnings or current-year profit — that is net income,
+        // already in operating) plus equipment-installment liabilities.
         $deltaOwnerCapital = $this->deltaForCodes(['3100', '3110'], $from, $to);
-        $cashFromFinancing = $deltaOwnerCapital;
-
-        $netChange = $cashFromOps + $cashFromInvesting + $cashFromFinancing;
+        $cashFromFinancing = $this->cashImpactDelta(['3100', '3110', '3200', '3210', '3300', '2120', '2210'], $from, $to);
 
         // Cash & cash-equivalents = petty cash + bank + card settlement clearing.
         $cashCodes = $coa->effectiveCodes(['1110', '1120', '1130']);
         $cashStart = $this->balanceAtByCodes($cashCodes, Carbon::parse($from)->subDay()->toDateString());
         $cashEnd = $this->balanceAtByCodes($cashCodes, $to);
-        $cashEndComputed = $cashStart + $netChange;
-        $verificationDelta = $cashEnd - $cashEndComputed;
+        $netChange = round($cashEnd - $cashStart, 3); // the actual movement (truth)
+
+        // Anything the three buckets didn't classify shows up here, so the
+        // statement always ties out and any gap is visible rather than hidden.
+        $modelled = round($cashFromOps + $cashFromInvesting + $cashFromFinancing, 3);
+        $unclassified = round($netChange - $modelled, 3);
 
         return [
             'net_income' => $netIncome,
+            'depreciation_addback' => $depreciationAddback,
             'delta_ap' => $deltaAP,
             'delta_doctor_payable' => $deltaDoctorPayable,
             'delta_ar' => $deltaAR,
             'delta_inventory' => $deltaInventory,
-            'cash_from_ops' => $cashFromOps,
+            'delta_other_operating' => $deltaOtherOperating,
+            'cash_from_ops' => round($cashFromOps, 3),
             'delta_fixed_assets' => $deltaFixedAssets,
-            'cash_from_investing' => $cashFromInvesting,
+            'cash_from_investing' => round($cashFromInvesting, 3),
             'delta_owner_capital' => $deltaOwnerCapital,
-            'cash_from_financing' => $cashFromFinancing,
+            'cash_from_financing' => round($cashFromFinancing, 3),
+            'unclassified' => $unclassified,
             'net_change' => $netChange,
             'cash_start' => $cashStart,
             'cash_end' => $cashEnd,
-            'cash_end_computed' => $cashEndComputed,
-            'verification_delta' => $verificationDelta,
-            'reconciles' => abs($verificationDelta) < 0.01,
+            'cash_end_computed' => round($cashStart + $modelled + $unclassified, 3),
+            'verification_delta' => $unclassified,
+            'reconciles' => abs($unclassified) < 0.01,
         ];
+    }
+
+    /**
+     * Period cash-flow contribution of a set of accounts = Σ(credit − debit)
+     * over posted lines in range. By double-entry this equals how much those
+     * accounts' movement added to (or, if negative, drained from) cash.
+     */
+    protected function cashImpactDelta(array $codePrefixes, string $from, string $to): float
+    {
+        $ids = $this->idsForCodes($codePrefixes);
+        if (empty($ids)) {
+            return 0.0;
+        }
+        $r = DB::table('journal_entry_lines as l')
+            ->join('journal_entries as e', 'e.id', '=', 'l.journal_entry_id')
+            ->where('e.status', JournalEntry::STATUS_POSTED)
+            ->whereBetween('e.entry_date', [$from, $to])
+            ->whereIn('l.account_id', $ids)
+            ->select(DB::raw('SUM(l.debit) as d'), DB::raw('SUM(l.credit) as c'))
+            ->first();
+
+        return round((float) ($r->c ?? 0) - (float) ($r->d ?? 0), 3);
     }
 
     // ---------------------------------------------------------------------
@@ -275,13 +323,14 @@ class AccountingReportService
     // ---------------------------------------------------------------------
 
     /** Per-account net balance (natural direction) for a period. [id => float] */
-    protected function balancesForTypes(array $types, string $from, string $to): array
+    protected function balancesForTypes(array $types, string $from, string $to, ?int $branchId = null): array
     {
         $rows = DB::table('journal_entry_lines as l')
             ->join('journal_entries as e', 'e.id', '=', 'l.journal_entry_id')
             ->join('chart_of_accounts as a', 'a.id', '=', 'l.account_id')
             ->where('e.status', JournalEntry::STATUS_POSTED)
             ->whereBetween('e.entry_date', [$from, $to])
+            ->when($branchId, fn ($q) => $q->where('l.branch_id', $branchId))
             ->whereIn('a.type', $types)
             ->groupBy('a.id', 'a.type')
             ->select('a.id', 'a.type', DB::raw('SUM(l.debit) as debit_sum'), DB::raw('SUM(l.credit) as credit_sum'))
@@ -291,13 +340,14 @@ class AccountingReportService
     }
 
     /** Per-account net balance (natural direction) cumulative through a date. [id => float] */
-    protected function balancesAt(array $types, string $asOf): array
+    protected function balancesAt(array $types, string $asOf, ?int $branchId = null): array
     {
         $rows = DB::table('journal_entry_lines as l')
             ->join('journal_entries as e', 'e.id', '=', 'l.journal_entry_id')
             ->join('chart_of_accounts as a', 'a.id', '=', 'l.account_id')
             ->where('e.status', JournalEntry::STATUS_POSTED)
             ->whereDate('e.entry_date', '<=', $asOf)
+            ->when($branchId, fn ($q) => $q->where('l.branch_id', $branchId))
             ->whereIn('a.type', $types)
             ->groupBy('a.id', 'a.type')
             ->select('a.id', 'a.type', DB::raw('SUM(l.debit) as debit_sum'), DB::raw('SUM(l.credit) as credit_sum'))
@@ -377,15 +427,32 @@ class AccountingReportService
         return $rows;
     }
 
-    /** Net income (P&L bottom line) for a period. */
-    protected function netIncome(string $from, string $to): float
+    /**
+     * First day of the fiscal year containing $asOf, honoring the configured
+     * fiscal_year_start_month (1 = January / calendar year by default).
+     */
+    public function fiscalYearStart(string $asOf): string
     {
-        $sum = function (array $types) use ($from, $to): array {
+        $month = max(1, min(12, (int) config('accounting.fiscal_year_start_month', 1)));
+        $d = Carbon::parse($asOf);
+        $start = $d->copy()->month($month)->startOfMonth();
+        if ($start->greaterThan($d)) {
+            $start->subYear();
+        }
+
+        return $start->toDateString();
+    }
+
+    /** Net income (P&L bottom line) for a period. */
+    protected function netIncome(string $from, string $to, ?int $branchId = null): float
+    {
+        $sum = function (array $types) use ($from, $to, $branchId): array {
             $r = DB::table('journal_entry_lines as l')
                 ->join('journal_entries as e', 'e.id', '=', 'l.journal_entry_id')
                 ->join('chart_of_accounts as a', 'a.id', '=', 'l.account_id')
                 ->where('e.status', JournalEntry::STATUS_POSTED)
                 ->whereBetween('e.entry_date', [$from, $to])
+                ->when($branchId, fn ($q) => $q->where('l.branch_id', $branchId))
                 ->whereIn('a.type', $types)
                 ->select(DB::raw('SUM(l.debit) as d'), DB::raw('SUM(l.credit) as c'))
                 ->first();

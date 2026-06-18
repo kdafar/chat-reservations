@@ -43,6 +43,47 @@ class JournalEntry extends Model
         'meta' => 'array',
     ];
 
+    /**
+     * Fields that are frozen once an entry is posted/reversed. The controlled
+     * lifecycle transitions (post() flips draft→posted; reverse() flips
+     * posted→reversed and stamps reversed_by_id) and supplementary `meta`
+     * tagging are deliberately NOT in this list, so they remain permitted.
+     */
+    protected const IMMUTABLE_WHEN_POSTED = [
+        'entry_date', 'narration', 'code', 'source_type', 'source_id', 'branch_id', 'currency',
+    ];
+
+    /**
+     * Model-level immutability lock (audit follow-up). Posted/reversed entries
+     * are read-only at the database layer too, not just in the UI/service — a
+     * stray $entry->update() or delete() can no longer mutate the ledger.
+     * Correction is exclusively via reverse().
+     */
+    protected static function booted(): void
+    {
+        static::updating(function (self $entry) {
+            $original = $entry->getOriginal('status');
+            if (! in_array($original, [self::STATUS_POSTED, self::STATUS_REVERSED], true)) {
+                return; // drafts are freely editable
+            }
+            $blocked = array_intersect(array_keys($entry->getDirty()), self::IMMUTABLE_WHEN_POSTED);
+            if (! empty($blocked)) {
+                throw new \RuntimeException(
+                    "Journal entry {$entry->code} is {$original} and immutable; cannot modify ["
+                    .implode(', ', $blocked).']. Use reverse() to correct it.'
+                );
+            }
+        });
+
+        static::deleting(function (self $entry) {
+            if (in_array($entry->status, [self::STATUS_POSTED, self::STATUS_REVERSED], true)) {
+                throw new \RuntimeException(
+                    "Journal entry {$entry->code} is {$entry->status} and cannot be deleted; reverse it instead."
+                );
+            }
+        });
+    }
+
     public function lines(): HasMany
     {
         return $this->hasMany(JournalEntryLine::class, 'journal_entry_id');

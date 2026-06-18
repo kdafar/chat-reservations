@@ -11,13 +11,14 @@ class GatewayAccount extends Model
     use \App\Models\Concerns\BelongsToBranchScope;
 
     protected $fillable = [
-        'gateway_id', 'owner_type', 'partner_id', 'branch_id', 'service_id', 'display_name', 'credentials', 'currency', 'is_active', 'is_default',
+        'gateway_id', 'owner_type', 'partner_id', 'branch_id', 'service_id', 'display_name', 'credentials', 'currency', 'is_active', 'is_default', 'account_id',
     ];
 
     protected $casts = [
         'credentials' => 'array',
         'is_active' => 'boolean',
         'is_default' => 'boolean',
+        'account_id' => 'integer',
     ];
 
     protected static function booted(): void
@@ -64,6 +65,12 @@ class GatewayAccount extends Model
     public function gateway()
     {
         return $this->belongsTo(Gateway::class);
+    }
+
+    /** Settlement / clearing account this gateway's receipts land in — see ChartOfAccounts. */
+    public function account()
+    {
+        return $this->belongsTo(\App\Models\Accounting\Account::class, 'account_id');
     }
 
     public function partner()

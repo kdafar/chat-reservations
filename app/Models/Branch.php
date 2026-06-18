@@ -22,7 +22,7 @@ class Branch extends Model
         'rating_avg', 'rating_count',
         'delivery_fee', 'min_order_amount', 'max_booking_days',
         'is_available', 'open_for_delivery', 'open_for_pickup',
-        'is_hub',
+        'is_hub', 'account_id',
     ];
 
     protected $appends = [
@@ -44,9 +44,16 @@ class Branch extends Model
         'open_for_delivery' => 'boolean',
         'open_for_pickup' => 'boolean',
         'max_booking_days' => 'integer',
+        'account_id' => 'integer',
     ];
 
     public $translatable = ['name'];
+
+    /** The branch's cash / operating account — see ChartOfAccounts. */
+    public function account(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(\App\Models\Accounting\Account::class, 'account_id');
+    }
 
     protected static function booted(): void
     {

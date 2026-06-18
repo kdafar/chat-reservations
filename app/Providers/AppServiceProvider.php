@@ -7,6 +7,7 @@ use App\Models\Booking;
 use App\Models\ClinicStockMovement;
 use App\Models\Doctor;
 use App\Models\DoctorCompensationLedger;
+use App\Models\Insurance\InsuranceClaim;
 use App\Models\Insurance\InsuranceClaimPayment;
 use App\Models\PatientFile;
 use App\Models\Visit;
@@ -14,6 +15,7 @@ use App\Models\VisitPayment;
 use App\Observers\Accounting\ClinicStockMovementAccountingObserver;
 use App\Observers\Accounting\DoctorCompensationLedgerAccountingObserver;
 use App\Observers\Accounting\ExpenseAccountingObserver;
+use App\Observers\Accounting\InsuranceClaimAccountingObserver;
 use App\Observers\Accounting\InsuranceClaimPaymentAccountingObserver;
 use App\Observers\Accounting\VisitPaymentAccountingObserver;
 use App\Observers\Clinic\ClinicStockMovementObserver;
@@ -129,6 +131,7 @@ class AppServiceProvider extends ServiceProvider
         DoctorCompensationLedger::observe(DoctorCompensationLedgerAccountingObserver::class);
         Expense::observe(ExpenseAccountingObserver::class);
         InsuranceClaimPayment::observe(InsuranceClaimPaymentAccountingObserver::class);
+        InsuranceClaim::observe(InsuranceClaimAccountingObserver::class);
 
         // Patient files: log every upload/delete to the access audit table.
         PatientFile::observe(PatientFileObserver::class);

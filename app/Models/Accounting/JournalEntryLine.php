@@ -48,6 +48,25 @@ class JournalEntryLine extends Model
                 throw new \RuntimeException('JournalEntryLine: at least one of debit/credit must be > 0.');
             }
         });
+
+        // Immutability lock: lines of a posted/reversed entry cannot be added,
+        // changed or removed (audit follow-up). Lines are only ever written
+        // while the parent entry is still a draft — postBalancedEntry() and
+        // reverse() both build their lines before calling post().
+        static::creating(fn (self $line) => self::assertParentMutable($line, 'add a line to'));
+        static::updating(fn (self $line) => self::assertParentMutable($line, 'modify a line of'));
+        static::deleting(fn (self $line) => self::assertParentMutable($line, 'delete a line of'));
+    }
+
+    protected static function assertParentMutable(self $line, string $verb): void
+    {
+        if (! $line->journal_entry_id) {
+            return;
+        }
+        $status = JournalEntry::query()->whereKey($line->journal_entry_id)->value('status');
+        if (in_array($status, [JournalEntry::STATUS_POSTED, JournalEntry::STATUS_REVERSED], true)) {
+            throw new \RuntimeException("Cannot {$verb} a journal entry that is {$status}; reverse the entry instead.");
+        }
     }
 
     public function entry(): BelongsTo

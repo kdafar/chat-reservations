@@ -91,6 +91,34 @@ class Account extends Model
         return $q->where('is_active', true);
     }
 
+    /**
+     * Postable accounts for an account-picker: active, and not a parent/header
+     * row (you never post to a header). Returns [{value,label}] sorted by code.
+     * Shared by the posting-accounts page and the per-entity account links on
+     * partners / branches / gateway accounts / insurers / items.
+     *
+     * Pass $types to restrict by account type (e.g. ['asset'] for a cash/AR/
+     * inventory picker), so the accountant can't link a nonsensical account.
+     *
+     * @param  array<string>|null  $types
+     * @return array<int, array{value:int, label:string}>
+     */
+    public static function postableOptions(?array $types = null): array
+    {
+        $accounts = static::query()
+            ->when($types, fn ($q) => $q->whereIn('type', $types))
+            ->get(['id', 'code', 'name', 'type', 'parent_id', 'is_active']);
+        // Header rows = any account that is some account's parent (computed across
+        // ALL accounts so the set is correct even when $types narrows the list).
+        $headerIds = static::query()->whereNotNull('parent_id')->distinct()->pluck('parent_id')->flip();
+
+        return $accounts
+            ->filter(fn ($a) => $a->is_active && ! $headerIds->has($a->id))
+            ->sortBy('code')
+            ->map(fn ($a) => ['value' => $a->id, 'label' => $a->code.' — '.$a->name])
+            ->values()->all();
+    }
+
     public function scopeOfType(Builder $q, string|array $type): Builder
     {
         return $q->whereIn('type', (array) $type);

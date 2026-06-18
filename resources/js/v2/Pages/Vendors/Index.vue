@@ -102,7 +102,7 @@ function archive(row) {
                         <th>{{ t.col.phone }}</th>
                         <th>{{ t.col.account }}</th>
                         <th>{{ t.col.status }}</th>
-                        <th style="width:60px;"></th>
+                        <th style="width:88px;"></th>
                     </tr>
                 </thead>
                 <tbody>
@@ -120,8 +120,10 @@ function archive(row) {
                         <td style="font-size:12px; color:var(--fg-subtle);">{{ row.default_account_label || '—' }}</td>
                         <td><span :class="row.is_active ? 'badge-ok' : 'badge-muted'">{{ row.is_active ? t.status.active : t.status.inactive }}</span></td>
                         <td @click.stop>
-                            <Link class="btn btn-ghost btn-sm btn-icon" :href="route('v2.accounting.vendors.edit', { vendor: row.id })"><Icon name="pencil" :size="14" /></Link>
-                            <button class="btn btn-ghost btn-sm btn-icon" :title="t.archive" @click="archive(row)"><Icon name="archive" :size="14" /></button>
+                            <div style="display:flex; gap:4px; flex-wrap:nowrap; justify-content:flex-end;">
+                                <Link class="btn btn-ghost btn-sm btn-icon" :href="route('v2.accounting.vendors.edit', { vendor: row.id })"><Icon name="pencil" :size="14" /></Link>
+                                <button class="btn btn-ghost btn-sm btn-icon" :title="t.archive" @click="archive(row)"><Icon name="archive" :size="14" /></button>
+                            </div>
                         </td>
                     </tr>
                 </tbody>

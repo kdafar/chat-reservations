@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\V2;
 
 use App\Http\Controllers\Controller;
+use App\Models\Accounting\Account;
 use App\Models\Partner;
 use App\Models\Service;
+use App\Services\Accounting\ChartOfAccounts;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -61,7 +63,7 @@ class PartnersController extends Controller
             'status' => $request->input('status', 'all'),
         ];
 
-        $query = Partner::query()->withCount('branches')->with('services:id,name');
+        $query = Partner::query()->withCount('branches')->with(['services:id,name', 'account:id,code,name']);
 
         if ($filters['q'] !== '') {
             $q = $filters['q'];
@@ -84,14 +86,48 @@ class PartnersController extends Controller
         return Inertia::render('Partners/Index', [
             'filters' => $filters,
             'page' => $page,
-            'services' => Service::query()->orderBy("name->{$locale}")->get(['id', 'name'])
-                ->map(fn ($s) => ['id' => $s->id, 'name' => (string) $s->getTranslation('name', $locale)])->all(),
             'counts' => [
                 'total' => Partner::query()->count(),
                 'active' => Partner::query()->where('is_active', true)->count(),
                 'inactive' => Partner::query()->where('is_active', false)->count(),
             ],
         ]);
+    }
+
+    /** Dedicated create page (replaces the old popup modal). */
+    public function create(Request $request): Response
+    {
+        $this->authorizeAccess($request);
+
+        return Inertia::render('Partners/Form', array_merge(
+            ['mode' => 'create', 'partner' => null],
+            $this->formSupport($request),
+        ));
+    }
+
+    /** Dedicated edit page (replaces the old popup modal). */
+    public function edit(Request $request, Partner $partner): Response
+    {
+        $this->authorizeAccess($request);
+        $partner->load('account:id,code,name', 'services:id');
+
+        return Inertia::render('Partners/Form', array_merge(
+            ['mode' => 'edit', 'partner' => $this->present($partner, app()->getLocale())],
+            $this->formSupport($request),
+        ));
+    }
+
+    /** Shared select/options + permission flags for the create & edit pages. */
+    protected function formSupport(Request $request): array
+    {
+        $locale = app()->getLocale();
+
+        return [
+            'services' => Service::query()->orderBy("name->{$locale}")->get(['id', 'name'])
+                ->map(fn ($s) => ['id' => $s->id, 'name' => (string) $s->getTranslation('name', $locale)])->all(),
+            'accounts' => Account::postableOptions([Account::TYPE_REVENUE]),
+            'can_edit_accounting' => (bool) $request->user()?->can('update_accounting_accounts'),
+        ];
     }
 
     public function store(Request $request): RedirectResponse
@@ -101,10 +137,15 @@ class PartnersController extends Controller
 
         $partner = new Partner();
         $this->fillFromData($partner, $data);
+        $changed = $this->applyAccountLink($partner, $request, $data);
         $partner->save();
         $partner->services()->sync($data['services'] ?? []);
+        if ($changed) {
+            app(ChartOfAccounts::class)->refresh();
+        }
 
-        return back()->with('flash', ['type' => 'success', 'message' => 'Clinic created.']);
+        return redirect()->route('v2.partners.index')
+            ->with('flash', ['type' => 'success', 'message' => 'Clinic created.']);
     }
 
     public function update(Request $request, Partner $partner): RedirectResponse
@@ -113,10 +154,31 @@ class PartnersController extends Controller
         $data = $this->validateData($request, $partner);
 
         $this->fillFromData($partner, $data);
+        $changed = $this->applyAccountLink($partner, $request, $data);
         $partner->save();
         $partner->services()->sync($data['services'] ?? []);
+        if ($changed) {
+            app(ChartOfAccounts::class)->refresh();
+        }
 
-        return back()->with('flash', ['type' => 'success', 'message' => 'Clinic updated.']);
+        return redirect()->route('v2.partners.index')
+            ->with('flash', ['type' => 'success', 'message' => 'Clinic updated.']);
+    }
+
+    /**
+     * Set the partner's default-revenue account link — only an accountant
+     * (update_accounting_accounts) may change it; other admins leave it as-is.
+     * Returns true when the link actually changed (so the caller can drop the
+     * ChartOfAccounts cache after saving).
+     */
+    protected function applyAccountLink(Partner $partner, Request $request, array $data): bool
+    {
+        if (! $request->user()?->can('update_accounting_accounts')) {
+            return false;
+        }
+        $partner->account_id = $data['account_id'] ?: null;
+
+        return $partner->isDirty('account_id');
     }
 
     public function destroy(Request $request, Partner $partner): RedirectResponse
@@ -142,6 +204,7 @@ class PartnersController extends Controller
             'license_number' => ['nullable', 'string', 'max:255'],
             'footer_text' => ['nullable', 'string', 'max:2000'],
             'is_active' => ['boolean'],
+            'account_id' => ['nullable', 'integer', 'exists:chart_of_accounts,id'],
             'services' => ['array'],
             'services.*' => ['integer', 'exists:services,id'],
         ]);
@@ -172,6 +235,8 @@ class PartnersController extends Controller
             'license_number' => $p->license_number,
             'footer_text' => $p->footer_text,
             'is_active' => (bool) $p->is_active,
+            'account_id' => $p->account_id,
+            'account_label' => $p->account ? $p->account->code.' — '.$p->account->name : null,
             'branches_count' => $p->branches_count,
             'service_ids' => $p->services->pluck('id')->all(),
             'specialties' => $p->services->map(fn ($s) => (string) $s->getTranslation('name', $locale))->all(),

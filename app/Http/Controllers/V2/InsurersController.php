@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\V2;
 
 use App\Http\Controllers\Controller;
+use App\Models\Accounting\Account;
 use App\Models\Insurance\Insurer;
+use App\Services\Accounting\ChartOfAccounts;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -66,6 +68,7 @@ class InsurersController extends Controller
 
         $query = Insurer::query()
             ->withoutGlobalScopes([\Illuminate\Database\Eloquent\SoftDeletingScope::class])
+            ->with('arAccount:id,code,name')
             ->withCount('plans');
 
         if ($filters['q'] !== '') {
@@ -86,6 +89,9 @@ class InsurersController extends Controller
         }
 
         $page = $query->orderBy('name')->paginate(25)->withQueryString();
+        $page->getCollection()->each(function (Insurer $ins) {
+            $ins->ar_account_label = $ins->arAccount ? $ins->arAccount->code.' — '.$ins->arAccount->name : null;
+        });
 
         $counts = [
             'total' => Insurer::query()->withoutGlobalScopes([\Illuminate\Database\Eloquent\SoftDeletingScope::class])->count(),
@@ -97,6 +103,8 @@ class InsurersController extends Controller
             'page' => $page,
             'counts' => $counts,
             'can_edit' => $this->canEdit($request),
+            'can_edit_accounting' => (bool) $request->user()?->can('update_accounting_accounts'),
+            'accounts' => Account::postableOptions([Account::TYPE_ASSET]),
         ]);
     }
 
@@ -105,6 +113,7 @@ class InsurersController extends Controller
         $this->authorizeAccess($request);
         if (! $this->canEdit($request)) abort(403);
         Insurer::create($this->validated($request));
+        $this->refreshAccountingIfPermitted($request);
         return back()->with('flash', ['type' => 'success', 'message' => 'Insurer added.']);
     }
 
@@ -113,7 +122,16 @@ class InsurersController extends Controller
         $this->authorizeAccess($request);
         if (! $this->canEdit($request)) abort(403);
         $insurer->update($this->validated($request, $insurer->id));
+        $this->refreshAccountingIfPermitted($request);
         return back()->with('flash', ['type' => 'success', 'message' => 'Insurer updated.']);
+    }
+
+    /** Drop the ChartOfAccounts cache so an AR-account change applies at once. */
+    protected function refreshAccountingIfPermitted(Request $request): void
+    {
+        if ($request->user()?->can('update_accounting_accounts')) {
+            app(ChartOfAccounts::class)->refresh();
+        }
     }
 
     public function destroy(Request $request, Insurer $insurer): RedirectResponse
@@ -177,7 +195,7 @@ class InsurersController extends Controller
 
     protected function validated(Request $request, ?int $exceptId = null): array
     {
-        return $request->validate([
+        $data = $request->validate([
             'name' => ['required', 'string', 'max:191'],
             'name_ar' => ['nullable', 'string', 'max:191'],
             'code' => ['required', 'string', 'max:32', Rule::unique('insurers', 'code')->ignore($exceptId)->whereNull('deleted_at')],
@@ -188,8 +206,16 @@ class InsurersController extends Controller
             'payment_terms_days' => ['nullable', 'integer', 'min:0', 'max:365'],
             'is_active' => ['sometimes', 'boolean'],
             'notes' => ['nullable', 'string', 'max:2000'],
+            'ar_account_id' => ['nullable', 'integer', 'exists:chart_of_accounts,id'],
         ]) + [
             'is_active' => (bool) $request->input('is_active', true),
         ];
+
+        // Only an accountant may set the AR-account link; otherwise leave it untouched.
+        if (! $request->user()?->can('update_accounting_accounts')) {
+            unset($data['ar_account_id']);
+        }
+
+        return $data;
     }
 }

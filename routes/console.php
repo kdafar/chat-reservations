@@ -25,3 +25,18 @@ Schedule::command('clinic:accrue-admission-charges')
     ->timezone(config('app.timezone'))
     ->withoutOverlapping()
     ->onOneServer();
+
+// Monthly straight-line depreciation + prepayment amortization. Run near
+// month-end (the commands clamp to the current month and are idempotent per
+// asset/schedule-month, so an extra fire is harmless).
+Schedule::command('accounting:run-depreciation')
+    ->monthlyOn(28, '01:00')
+    ->timezone(config('app.timezone'))
+    ->withoutOverlapping()
+    ->onOneServer();
+
+Schedule::command('accounting:amortize-prepayments')
+    ->monthlyOn(28, '01:10')
+    ->timezone(config('app.timezone'))
+    ->withoutOverlapping()
+    ->onOneServer();

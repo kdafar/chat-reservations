@@ -66,7 +66,7 @@ class AutoPostingObserverTest extends TestCase
 
         $this->assertBooksBalance();
         // Net cash account balance should be zero
-        $this->assertEqualsWithDelta(0.0, $this->account('1010')->balanceAt(now()->toDateString()), 0.001);
+        $this->assertEqualsWithDelta(0.0, $this->account('1110')->balanceAt(now()->toDateString()), 0.001);
     }
 
     public function test_stock_consume_movement_auto_posts(): void

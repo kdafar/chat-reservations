@@ -1,17 +1,14 @@
 <script setup>
-import { computed, reactive, ref, watch } from 'vue'
-import { Head, router, usePage } from '@inertiajs/vue3'
+import { computed, reactive, watch } from 'vue'
+import { Head, Link, router, usePage } from '@inertiajs/vue3'
 import AppLayout from '../../Layouts/AppLayout.vue'
 defineOptions({ layout: AppLayout })
 import Icon from '../../Components/Icon.vue'
-import SearchableSelect from '../../Components/SearchableSelect.vue'
 import { confirm } from '../../Composables/useConfirm.js'
 
 const props = defineProps({
     filters: { type: Object, required: true },
     page: { type: Object, required: true },
-    partners: { type: Array, required: true },
-    cities: { type: Array, required: true },
     counts: { type: Object, required: true },
 })
 
@@ -35,6 +32,7 @@ const t = computed(() => isRtl.value
             slug: 'الاسم اللطيف (slug)', slugHelp: 'يُولّد تلقائيًا إن تُرك فارغًا.',
             phone: 'الهاتف', email: 'البريد', license: 'رقم الترخيص', address: 'العنوان', city: 'المدينة',
             bookingDays: 'أقصى أيام للحجز المسبق', available: 'متاح للحجز',
+            account: 'الحساب المحاسبي (النقد/التشغيل)', accountHelp: 'الحساب الذي تُرحَّل إليه مقبوضات هذا الفرع النقدية. يُترك للنظام إن لم يُحدَّد.', accountNone: 'افتراضي النظام',
             save: 'حفظ', cancel: 'إلغاء',
             deleteConfirm: 'سيتم وضع علامة "غير متاح" على هذا الفرع. متابعة؟',
         },
@@ -54,6 +52,7 @@ const t = computed(() => isRtl.value
             slug: 'Slug', slugHelp: 'Auto-generated if left empty.',
             phone: 'Phone', email: 'Email', license: 'License number', address: 'Address', city: 'City',
             bookingDays: 'Max advance booking days', available: 'Available for booking',
+            account: 'Accounting account (cash / operating)', accountHelp: "The account this branch's cash receipts post to. Leave as system default if unset.", accountNone: 'System default',
             save: 'Save', cancel: 'Cancel',
             deleteConfirm: 'Mark this branch unavailable?',
         },
@@ -71,49 +70,7 @@ function apply() {
 }
 function clearFilters() { f.q = ''; f.status = 'all'; apply() }
 
-const modalOpen = ref(false)
-const modalMode = ref('create')
-const editing = ref(null)
-const form = reactive({
-    partner_id: '', name_en: '', name_ar: '', slug: '', phone: '', email: '',
-    license_number: '', address: '', city_id: '', max_booking_days: 60, is_available: true, is_hub: false,
-})
-const errors = ref({})
-const saving = ref(false)
-
-function openCreate() {
-    modalMode.value = 'create'; editing.value = null
-    Object.assign(form, {
-        partner_id: props.partners[0]?.id ?? '', name_en: '', name_ar: '', slug: '', phone: '', email: '',
-        license_number: '', address: '', city_id: '', max_booking_days: 60, is_available: true, is_hub: false,
-    })
-    errors.value = {}; modalOpen.value = true
-}
-function openEdit(row) {
-    modalMode.value = 'edit'; editing.value = row
-    Object.assign(form, {
-        partner_id: row.partner_id ?? '', name_en: row.name_en || '', name_ar: row.name_ar || '',
-        slug: row.slug || '', phone: row.phone || '', email: row.email || '',
-        license_number: row.license_number || '', address: row.address || '', city_id: row.city_id ?? '',
-        max_booking_days: row.max_booking_days ?? 60, is_available: !!row.is_available, is_hub: !!row.is_hub,
-    })
-    errors.value = {}; modalOpen.value = true
-}
-function closeModal() { modalOpen.value = false; saving.value = false }
-
-function submit() {
-    saving.value = true; errors.value = {}
-    const url = modalMode.value === 'create'
-        ? route('v2.branches.store')
-        : route('v2.branches.update', { branch: editing.value.id })
-    const method = modalMode.value === 'create' ? 'post' : 'put'
-    router[method](url, { ...form }, {
-        preserveScroll: true,
-        onSuccess: () => closeModal(),
-        onError: (errs) => { errors.value = errs; saving.value = false },
-        onFinish: () => { saving.value = false },
-    })
-}
+function openEdit(row) { router.visit(route('v2.branches.edit', { branch: row.id })) }
 function deactivate(row) {
     confirm({ body: t.value.modal.deleteConfirm, tone: 'destructive', onConfirm: () => {
         router.delete(route('v2.branches.destroy', { branch: row.id }), { preserveScroll: true })
@@ -131,7 +88,7 @@ function deactivate(row) {
                 <h1 style="margin:4px 0 0; font-size:22px; font-weight:700; color:var(--fg);">{{ t.title }}</h1>
                 <p style="margin:6px 0 0; font-size:13px; color:var(--fg-subtle); max-width:640px;">{{ t.desc }}</p>
             </div>
-            <button class="btn btn-primary" @click="openCreate"><Icon name="plus" :size="14" /><span>{{ t.new }}</span></button>
+            <Link class="btn btn-primary" :href="route('v2.branches.create')"><Icon name="plus" :size="14" /><span>{{ t.new }}</span></Link>
         </div>
 
         <div style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;">
@@ -204,77 +161,6 @@ function deactivate(row) {
                    :class="['btn', 'btn-sm', link.active ? 'btn-primary' : 'btn-ghost', !link.url ? 'is-disabled' : '']"
                    style="min-width:32px;" />
             </div>
-        </div>
-    </div>
-
-    <div v-if="modalOpen" class="modal-backdrop" @click.self="closeModal">
-        <div class="modal-panel" role="dialog" aria-modal="true">
-            <div style="display:flex; justify-content:space-between; align-items:center; padding:14px 16px; border-bottom:1px solid var(--line);">
-                <h3 style="margin:0; font-size:15px; font-weight:600;">{{ modalMode === 'create' ? t.modal.createTitle : t.modal.editTitle }}</h3>
-                <button class="btn btn-ghost btn-sm btn-icon" @click="closeModal"><Icon name="x" :size="14" /></button>
-            </div>
-            <form @submit.prevent="submit" class="rgrid-2" style="padding:16px; display:grid; grid-template-columns:1fr 1fr; gap:12px; max-height:75vh; overflow-y:auto;">
-                <div style="grid-column:span 2;">
-                    <label class="label">{{ t.modal.clinic }} <span class="req">*</span></label>
-                    <SearchableSelect v-model="form.partner_id" :items="partners" :nullable="false" />
-                    <div v-if="errors.partner_id" class="err">{{ errors.partner_id }}</div>
-                </div>
-                <div>
-                    <label class="label">{{ t.modal.nameEn }} <span class="req">*</span></label>
-                    <input v-model="form.name_en" type="text" class="input" required maxlength="255" />
-                    <div v-if="errors.name_en" class="err">{{ errors.name_en }}</div>
-                </div>
-                <div>
-                    <label class="label">{{ t.modal.nameAr }}</label>
-                    <input v-model="form.name_ar" type="text" class="input" maxlength="255" dir="rtl" />
-                </div>
-                <div>
-                    <label class="label">{{ t.modal.slug }}</label>
-                    <input v-model="form.slug" type="text" class="input" maxlength="255" :placeholder="t.modal.slugHelp" />
-                    <div v-if="errors.slug" class="err">{{ errors.slug }}</div>
-                </div>
-                <div>
-                    <label class="label">{{ t.modal.city }}</label>
-                    <SearchableSelect v-model="form.city_id" :items="cities" null-label="—" />
-                </div>
-                <div>
-                    <label class="label">{{ t.modal.phone }}</label>
-                    <input v-model="form.phone" type="text" class="input" maxlength="32" />
-                </div>
-                <div>
-                    <label class="label">{{ t.modal.email }}</label>
-                    <input v-model="form.email" type="email" class="input" maxlength="191" />
-                    <div v-if="errors.email" class="err">{{ errors.email }}</div>
-                </div>
-                <div>
-                    <label class="label">{{ t.modal.license }}</label>
-                    <input v-model="form.license_number" type="text" class="input" maxlength="191" />
-                </div>
-                <div>
-                    <label class="label">{{ t.modal.bookingDays }} <span class="req">*</span></label>
-                    <input v-model.number="form.max_booking_days" type="number" min="1" max="365" class="input" required />
-                    <div v-if="errors.max_booking_days" class="err">{{ errors.max_booking_days }}</div>
-                </div>
-                <div style="grid-column:span 2;">
-                    <label class="label">{{ t.modal.address }}</label>
-                    <textarea v-model="form.address" class="input" rows="2" maxlength="1000"></textarea>
-                </div>
-                <div style="grid-column:span 2; display:flex; flex-direction:column; gap:8px;">
-                    <label class="role-check" style="width:fit-content;">
-                        <input type="checkbox" v-model="form.is_available" />
-                        <span>{{ t.modal.available }}</span>
-                    </label>
-                    <label class="role-check" style="width:fit-content;">
-                        <input type="checkbox" v-model="form.is_hub" />
-                        <span>{{ locale === 'ar' ? 'المركز الرئيسي (مستودع يوزّع للفروع)' : 'Central hub (warehouse that dispatches to branches)' }}</span>
-                    </label>
-                </div>
-
-                <div style="grid-column:span 2; display:flex; justify-content:flex-end; gap:8px; margin-top:8px; padding-top:12px; border-top:1px solid var(--line);">
-                    <button type="button" class="btn btn-ghost" @click="closeModal">{{ t.modal.cancel }}</button>
-                    <button type="submit" class="btn btn-primary" :disabled="saving">{{ saving ? '…' : t.modal.save }}</button>
-                </div>
-            </form>
         </div>
     </div>
 </template>

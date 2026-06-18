@@ -51,9 +51,9 @@ class PeriodCloseServiceTest extends TestCase
         $period = AccountingPeriod::forDate('2026-04-15');
 
         // Post some April activity: revenue + expense
-        $cash = $this->account('1010');
-        $revenue = $this->account('4010');
-        $expense = $this->account('6030'); // Rent
+        $cash = $this->account('1110');
+        $revenue = $this->account('4110');
+        $expense = $this->account('6210'); // Rent
 
         $this->postEntry('2026-04-10', $cash->id, $revenue->id, 1000.000, 'April revenue');
         $this->postEntry('2026-04-15', $expense->id, $cash->id, 300.000, 'April rent');
@@ -72,7 +72,7 @@ class PeriodCloseServiceTest extends TestCase
         $this->assertEqualsWithDelta(0.0, $expense->balanceAt('2026-04-30'), 0.001);
 
         // Retained Earnings should carry net profit (1000 - 300 = 700)
-        $re = $this->account('3020');
+        $re = $this->account('3400');
         $this->assertEqualsWithDelta(700.0, $re->balanceAt('2026-04-30'), 0.001);
 
         // Period is closed
@@ -85,8 +85,8 @@ class PeriodCloseServiceTest extends TestCase
     {
         $period = AccountingPeriod::forDate('2026-04-15');
 
-        $cash = $this->account('1010');
-        $revenue = $this->account('4010');
+        $cash = $this->account('1110');
+        $revenue = $this->account('4110');
 
         // Post one entry, leave one as draft
         $this->postEntry('2026-04-10', $cash->id, $revenue->id, 100.000);
@@ -127,8 +127,8 @@ class PeriodCloseServiceTest extends TestCase
     {
         $period = AccountingPeriod::forDate('2026-04-15');
 
-        $cash = $this->account('1010');
-        $revenue = $this->account('4010');
+        $cash = $this->account('1110');
+        $revenue = $this->account('4110');
 
         $this->postEntry('2026-04-10', $cash->id, $revenue->id, 500.000);
         $closingEntry = $this->svc->close($period);
@@ -168,8 +168,8 @@ class PeriodCloseServiceTest extends TestCase
     {
         $period = AccountingPeriod::forDate('2026-04-15');
 
-        $cash = $this->account('1010');
-        $revenue = $this->account('4010');
+        $cash = $this->account('1110');
+        $revenue = $this->account('4110');
 
         $this->postEntry('2026-04-10', $cash->id, $revenue->id, 100.000);
         $entry = $this->svc->close($period);

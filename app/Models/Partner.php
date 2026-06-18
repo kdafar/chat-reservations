@@ -13,14 +13,21 @@ class Partner extends Model
 {
     use HasTranslations;
 
-    protected $fillable = ['name', 'slug', 'logo_path', 'is_active', 'website', 'email', 'license_number', 'footer_text'];
+    protected $fillable = ['name', 'slug', 'logo_path', 'is_active', 'website', 'email', 'license_number', 'footer_text', 'account_id'];
 
     public $translatable = ['name'];
 
     protected $casts = [
         'name' => 'array',
         'is_active' => 'boolean',
+        'account_id' => 'integer',
     ];
+
+    /** The clinic's default (services) revenue account — see ChartOfAccounts. */
+    public function account(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(\App\Models\Accounting\Account::class, 'account_id');
+    }
 
     /**
      * SAFE SCOPE: Filters Partners based on User Access.

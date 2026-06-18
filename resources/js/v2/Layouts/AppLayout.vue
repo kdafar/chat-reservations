@@ -146,6 +146,8 @@ const navGates = {
     'leave-balances':       { roles: ['admin', 'super_admin', 'clinic_admin', 'accountant'], perm: 'view_any_staff_leave_entitlements' },
     accounts:               { perm: 'view_any_accounting_accounts' },
     'posting-accounts':     { perm: 'view_any_accounting_accounts' },
+    'fixed-assets':         { perm: 'view_any_accounting_accounts' },
+    'prepaid-schedules':    { perm: 'view_any_accounting_accounts' },
     'journal-entries':      { perm: 'view_any_accounting_journal_entries' },
     expenses:               { perm: 'view_any_accounting_expenses' },
     vendors:                { perm: 'view_any_accounting_vendors' },
@@ -156,6 +158,7 @@ const navGates = {
     'profit-loss':          { perm: 'view_accounting_profit_and_loss' },
     'balance-sheet':        { perm: 'view_accounting_balance_sheet' },
     'cash-flow':            { perm: 'view_accounting_cash_flow' },
+    'aging':                { perm: 'view_accounting_general_ledger' },
     reports:                { perm: 'view_clinic_reports' },
     'daily-closing':        { perm: 'view_clinic_closing_reports' },
     'daily-reconciliation': { perm: 'view_daily_reconciliation' },
@@ -448,6 +451,8 @@ const navSections = computed(() => ([
         items: [
             { id: 'accounts',         icon: 'book',          label: locale.value === 'ar' ? 'دليل الحسابات' : 'Chart of Accounts', href: '/admin/v2/accounting/chart-of-accounts', v2: true },
             { id: 'posting-accounts', icon: 'settings',      label: locale.value === 'ar' ? 'حسابات الترحيل التلقائي' : 'Auto-Posting Accounts', href: '/admin/v2/accounting/posting-accounts', v2: true },
+            { id: 'fixed-assets',     icon: 'package',       label: locale.value === 'ar' ? 'الأصول الثابتة' : 'Fixed Assets', href: '/admin/v2/accounting/fixed-assets', v2: true },
+            { id: 'prepaid-schedules', icon: 'calendar',     label: locale.value === 'ar' ? 'المصاريف المقدمة' : 'Prepaid Expenses', href: '/admin/v2/accounting/prepaid-schedules', v2: true },
             { id: 'general-ledger',   icon: 'book-open',     label: locale.value === 'ar' ? 'دفتر الأستاذ' : 'General Ledger', href: '/admin/v2/reports/accounting/general-ledger', v2: true },
             { id: 'journal-entries',  icon: 'book-open',     label: locale.value === 'ar' ? 'القيود اليومية' : 'Journal Entries', href: '/admin/v2/accounting/journal-entries', v2: true },
             { id: 'expenses',         icon: 'minus-circle',  label: locale.value === 'ar' ? 'المصروفات' : 'Expenses',             href: '/admin/v2/accounting/expenses', v2: true },
@@ -458,6 +463,7 @@ const navSections = computed(() => ([
             { id: 'profit-loss',      icon: 'trending-up',   label: locale.value === 'ar' ? 'قائمة الدخل' : 'Profit & Loss', href: '/admin/v2/reports/accounting/profit-loss', v2: true },
             { id: 'balance-sheet',    icon: 'scale',         label: locale.value === 'ar' ? 'الميزانية العمومية' : 'Balance Sheet', href: '/admin/v2/reports/accounting/balance-sheet', v2: true },
             { id: 'cash-flow',        icon: 'banknote',      label: locale.value === 'ar' ? 'التدفقات النقدية' : 'Cash Flow', href: '/admin/v2/reports/accounting/cash-flow', v2: true },
+            { id: 'aging',            icon: 'clock',         label: locale.value === 'ar' ? 'أعمار الذمم' : 'AR / AP Aging', href: '/admin/v2/reports/accounting/aging', v2: true },
         ],
     },
     {
@@ -641,6 +647,8 @@ const navDescriptions = {
     'doctor-earnings':{ en: "What each doctor has earned and is owed, based on their compensation rules.", ar: 'ما كسبه كل طبيب وما له من مستحقات، بناءً على قواعد تعويضه.' },
     // Accounting
     accounts:         { en: "The chart of accounts — the backbone of the books grouping all assets, liabilities, income and expenses.", ar: 'دليل الحسابات — العمود الفقري للدفاتر الذي يجمع كل الأصول والخصوم والإيرادات والمصروفات.' },
+    'fixed-assets':     { en: "Register capitalised assets (equipment, fit-out, IT) and depreciate them straight-line. The monthly run posts depreciation expense against accumulated depreciation; capitalisation itself is booked when you buy the asset.", ar: 'سجّل الأصول المرسملة (المعدات، التجهيزات، التقنية) وأهلِكها بالقسط الثابت. التشغيل الشهري يسجّل مصروف الإهلاك مقابل مجمع الإهلاك؛ أما رسملة الأصل فتُسجّل عند شرائه.' },
+    'prepaid-schedules': { en: "Track expenses paid in advance (rent, insurance, licences) and release them to the P&L straight-line over their term. The monthly run moves one slice from the prepaid asset to expense.", ar: 'تابع المصاريف المدفوعة مقدماً (الإيجار، التأمين، التراخيص) وأطفئها على قائمة الدخل بالقسط الثابت على مدى مدتها. التشغيل الشهري ينقل شريحة من الأصل المقدم إلى المصروف.' },
     'posting-accounts': { en: "Control which account every automated posting uses — cash, bank, receivables, inventory, COGS, payables, revenue and payroll. Leave a row on 'Default' to use the built-in setup, or point it at another account without any code change.", ar: 'تحكّم في الحساب الذي تستخدمه كل عملية ترحيل تلقائي — النقد والبنك والذمم والمخزون وتكلفة المبيعات والذمم الدائنة والإيرادات والرواتب. اترك السطر على «الافتراضي» لاستخدام الإعداد الجاهز، أو وجّهه إلى حساب آخر دون أي تعديل برمجي.' },
     'journal-entries':{ en: "Post manual double-entry transactions directly into the ledger when needed.", ar: 'سجّل قيود اليومية المزدوجة يدويًا مباشرة في الدفتر عند الحاجة.' },
     expenses:         { en: "Record what the clinic spends, categorise it, and link it to the right vendor.", ar: 'سجّل ما تنفقه العيادة، صنّفه، واربطه بالمورد الصحيح.' },
@@ -652,6 +660,7 @@ const navDescriptions = {
     'profit-loss':    { en: "Income statement showing revenue, costs and profit over a chosen period.", ar: 'قائمة الدخل التي تعرض الإيرادات والتكاليف والربح خلال فترة محددة.' },
     'balance-sheet':  { en: "A point-in-time view of what the clinic owns, owes and is worth.", ar: 'عرض في لحظة محددة لما تملكه العيادة وما عليها وصافي قيمتها.' },
     'cash-flow':      { en: "Where cash came from and where it went over a period.", ar: 'من أين جاء النقد وإلى أين ذهب خلال فترة.' },
+    'aging':          { en: "Outstanding receivables (patients/insurers) and payables (vendors) bucketed by how overdue they are.", ar: 'الذمم المدينة (المرضى/التأمين) والدائنة (الموردون) المستحقة موزعة حسب مدة التأخر.' },
     // Reports
     reports:          { en: "Operational reports on visits, revenue, doctors and items to see how the clinic is performing.", ar: 'تقارير تشغيلية عن الزيارات والإيرادات والأطباء والأصناف لمعرفة أداء العيادة.' },
     'daily-closing':  { en: "Close out the day — reconcile cash, payments and revenue before handover.", ar: 'أقفل اليوم — طابق النقد والمدفوعات والإيرادات قبل التسليم.' },

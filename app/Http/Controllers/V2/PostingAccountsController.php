@@ -79,14 +79,9 @@ class PostingAccountsController extends Controller
 
         $accounts = Account::query()->get(['id', 'code', 'name', 'type', 'parent_id', 'is_active']);
         $byCode = $accounts->keyBy('code');
-        $parentIds = $accounts->pluck('parent_id')->filter()->unique()->flip(); // accounts that are headers
 
         // Postable accounts for the picker: active, and not a parent/header row.
-        $picker = $accounts
-            ->filter(fn ($a) => $a->is_active && ! $parentIds->has($a->id))
-            ->sortBy('code')
-            ->map(fn ($a) => ['value' => $a->id, 'label' => $a->code.' — '.$a->name])
-            ->values()->all();
+        $picker = Account::postableOptions();
 
         $maps = PostingAccountMap::query()->get()->keyBy('role');
 

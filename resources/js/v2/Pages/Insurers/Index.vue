@@ -6,11 +6,14 @@ defineOptions({ layout: AppLayout })
 import Icon from '../../Components/Icon.vue'
 import ImportButton from '../../Components/ImportButton.vue'
 import BulkBar from '../../Components/BulkBar.vue'
+import SearchableSelect from '../../Components/SearchableSelect.vue'
 import { useTableSelect } from '../../Composables/useTableSelect.js'
 import { confirm } from '../../Composables/useConfirm.js'
 
 const props = defineProps({
     filters: Object, page: Object, counts: Object, can_edit: Boolean,
+    can_edit_accounting: { type: Boolean, default: false },
+    accounts: { type: Array, default: () => [] },
 })
 const pageProps = usePage()
 const locale = computed(() => pageProps.props.locale ?? 'en')
@@ -34,7 +37,7 @@ const t = computed(() => isRtl.value ? {
     empty: 'لا توجد شركات', emptyDesc: 'أضف شركة تأمين لتبدأ.',
     clear: 'مسح', showing: 'عرض', of: 'من',
     modal: { createTitle: 'شركة جديدة', editTitle: 'تحرير الشركة', save: 'حفظ', cancel: 'إلغاء', archiveConfirm: 'أرشفة الشركة؟' },
-    fields: { name: 'الاسم', name_ar: 'الاسم بالعربية', code: 'الكود', tax_id: 'الرقم الضريبي', contact_email: 'البريد', contact_phone: 'الهاتف', address: 'العنوان', payment_terms_days: 'مدة الدفع (أيام)', is_active: 'فعّالة', notes: 'ملاحظات' },
+    fields: { name: 'الاسم', name_ar: 'الاسم بالعربية', code: 'الكود', tax_id: 'الرقم الضريبي', contact_email: 'البريد', contact_phone: 'الهاتف', address: 'العنوان', payment_terms_days: 'مدة الدفع (أيام)', is_active: 'فعّالة', notes: 'ملاحظات', ar_account: 'حساب الذمم المدينة (التأمين)', accountHelp: 'حساب الذمم الذي تُسجَّل عليه مستحقات هذه الشركة. يُترك للنظام إن لم يُحدَّد.', accountNone: 'افتراضي النظام (1140)' },
     stats: { total: 'الكل', active: 'فعّالة' },
 } : {
     title: 'Insurers', eyebrow: 'Insurance',
@@ -46,7 +49,7 @@ const t = computed(() => isRtl.value ? {
     empty: 'No insurers', emptyDesc: 'Add an insurance company to get started.',
     clear: 'Clear', showing: 'Showing', of: 'of',
     modal: { createTitle: 'New insurer', editTitle: 'Edit insurer', save: 'Save', cancel: 'Cancel', archiveConfirm: 'Archive this insurer?' },
-    fields: { name: 'Name', name_ar: 'Arabic name', code: 'Code', tax_id: 'Tax ID', contact_email: 'Email', contact_phone: 'Phone', address: 'Address', payment_terms_days: 'Payment terms (days)', is_active: 'Active', notes: 'Notes' },
+    fields: { name: 'Name', name_ar: 'Arabic name', code: 'Code', tax_id: 'Tax ID', contact_email: 'Email', contact_phone: 'Phone', address: 'Address', payment_terms_days: 'Payment terms (days)', is_active: 'Active', notes: 'Notes', ar_account: 'Receivable (AR) account', accountHelp: "The AR account this insurer's receivables post to. Leave as system default if unset.", accountNone: 'System default (1140)' },
     stats: { total: 'Total', active: 'Active' },
 })
 
@@ -64,11 +67,11 @@ function clearFilters() { f.q = ''; f.active = 'all'; apply() }
 const modalOpen = ref(false)
 const modalMode = ref('create')
 const editing = ref(null)
-const form = reactive({ name: '', name_ar: '', code: '', tax_id: '', contact_email: '', contact_phone: '', address: '', payment_terms_days: 30, is_active: true, notes: '' })
+const form = reactive({ name: '', name_ar: '', code: '', tax_id: '', contact_email: '', contact_phone: '', address: '', payment_terms_days: 30, is_active: true, notes: '', ar_account_id: '' })
 const errors = ref({}); const saving = ref(false)
 
-function openCreate() { if (!props.can_edit) return; modalMode.value = 'create'; editing.value = null; Object.assign(form, { name: '', name_ar: '', code: '', tax_id: '', contact_email: '', contact_phone: '', address: '', payment_terms_days: 30, is_active: true, notes: '' }); errors.value = {}; modalOpen.value = true }
-function openEdit(row) { if (!props.can_edit) return; modalMode.value = 'edit'; editing.value = row; Object.assign(form, { name: row.name || '', name_ar: row.name_ar || '', code: row.code || '', tax_id: row.tax_id || '', contact_email: row.contact_email || '', contact_phone: row.contact_phone || '', address: row.address || '', payment_terms_days: row.payment_terms_days ?? 30, is_active: !!row.is_active, notes: row.notes || '' }); errors.value = {}; modalOpen.value = true }
+function openCreate() { if (!props.can_edit) return; modalMode.value = 'create'; editing.value = null; Object.assign(form, { name: '', name_ar: '', code: '', tax_id: '', contact_email: '', contact_phone: '', address: '', payment_terms_days: 30, is_active: true, notes: '', ar_account_id: '' }); errors.value = {}; modalOpen.value = true }
+function openEdit(row) { if (!props.can_edit) return; modalMode.value = 'edit'; editing.value = row; Object.assign(form, { name: row.name || '', name_ar: row.name_ar || '', code: row.code || '', tax_id: row.tax_id || '', contact_email: row.contact_email || '', contact_phone: row.contact_phone || '', address: row.address || '', payment_terms_days: row.payment_terms_days ?? 30, is_active: !!row.is_active, notes: row.notes || '', ar_account_id: row.ar_account_id ?? '' }); errors.value = {}; modalOpen.value = true }
 function close() { modalOpen.value = false; saving.value = false }
 function submit() {
     saving.value = true; errors.value = {}
@@ -165,6 +168,12 @@ const rowArchived = row => !!row.deleted_at || !row.is_active
                     <div><label class="label">{{ t.fields.payment_terms_days }}</label><input v-model.number="form.payment_terms_days" type="number" min="0" max="365" class="input" /></div>
                     <div style="display:flex; align-items:flex-end; gap:8px;"><input id="ins_act" v-model="form.is_active" type="checkbox" /><label for="ins_act" style="font-size:13px;">{{ t.fields.is_active }}</label></div>
                     <div style="grid-column:span 2;"><label class="label">{{ t.fields.notes }}</label><textarea v-model="form.notes" rows="2" class="input" maxlength="2000"></textarea></div>
+                    <div v-if="can_edit_accounting" style="grid-column:span 2;">
+                        <label class="label">{{ t.fields.ar_account }}</label>
+                        <SearchableSelect v-model="form.ar_account_id" :items="accounts" :null-label="t.fields.accountNone" />
+                        <div style="font-size:13px; color:var(--fg-subtle); margin-top:3px;">{{ t.fields.accountHelp }}</div>
+                        <div v-if="errors.ar_account_id" class="err">{{ errors.ar_account_id }}</div>
+                    </div>
                     <div style="grid-column:span 2; display:flex; justify-content:flex-end; gap:8px; margin-top:8px; padding-top:12px; border-top:1px solid var(--line);">
                         <button type="button" class="btn btn-ghost" @click="close">{{ t.modal.cancel }}</button>
                         <button type="submit" class="btn btn-primary" :disabled="saving">{{ saving ? '…' : t.modal.save }}</button>

@@ -25,8 +25,8 @@ class BankReconciliationTest extends TestCase
     /** Posts a balanced Dr Bank / Cr Revenue entry on a given date. */
     private function postBankReceipt(string $date, float $amount): JournalEntry
     {
-        $bank = $this->account('1020');
-        $revenue = $this->account('4010');
+        $bank = $this->account('1120');
+        $revenue = $this->account('4110');
 
         $entry = JournalEntry::create([
             'entry_date' => $date,
@@ -50,7 +50,7 @@ class BankReconciliationTest extends TestCase
 
     public function test_recompute_book_balances_matches_gl(): void
     {
-        $bank = $this->account('1020');
+        $bank = $this->account('1120');
 
         $this->postBankReceipt('2026-05-05', 100.000);
         $this->postBankReceipt('2026-05-10', 200.000);
@@ -73,7 +73,7 @@ class BankReconciliationTest extends TestCase
 
     public function test_recon_code_is_auto_generated(): void
     {
-        $bank = $this->account('1020');
+        $bank = $this->account('1120');
 
         $rec = BankReconciliation::create([
             'account_id' => $bank->id,
@@ -90,7 +90,7 @@ class BankReconciliationTest extends TestCase
 
     public function test_match_pairs_statement_line_with_je_line(): void
     {
-        $bank = $this->account('1020');
+        $bank = $this->account('1120');
         $je = $this->postBankReceipt('2026-05-10', 100.000);
         $bankJeLine = $je->lines->where('debit', '>', 0)->first(); // The bank-side line
 
@@ -123,7 +123,7 @@ class BankReconciliationTest extends TestCase
 
     public function test_unmatch_removes_link(): void
     {
-        $bank = $this->account('1020');
+        $bank = $this->account('1120');
         $je = $this->postBankReceipt('2026-05-10', 75.000);
         $line = $je->lines->where('debit', '>', 0)->first();
 
@@ -154,7 +154,7 @@ class BankReconciliationTest extends TestCase
 
     public function test_match_rejects_amount_mismatch(): void
     {
-        $bank = $this->account('1020');
+        $bank = $this->account('1120');
         $je = $this->postBankReceipt('2026-05-10', 100.000);
         $line = $je->lines->where('debit', '>', 0)->first();
 
@@ -188,7 +188,7 @@ class BankReconciliationTest extends TestCase
      */
     public function test_same_gl_line_cannot_match_two_bank_lines(): void
     {
-        $bank = $this->account('1020');
+        $bank = $this->account('1120');
         $je = $this->postBankReceipt('2026-05-10', 100.000);
         $bankJeLine = $je->lines->where('debit', '>', 0)->first();
 
