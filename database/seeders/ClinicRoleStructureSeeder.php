@@ -48,7 +48,8 @@ class ClinicRoleStructureSeeder extends Seeder
         $grants = [
             'clinic_admin' => $this->verbs(['view', 'create', 'update', 'delete'], ['stock_transfers']),
             'clinic_reception' => $this->verbs(['view', 'create', 'update', 'delete'], ['stock_transfers']),
-            'clinic_doctor' => $this->verbs(['view', 'create'], ['stock_transfers']),
+            // Doctors do NOT manage stock transfers (revoked below in
+            // pruneLegacyOverGrants for already-seeded DBs).
             'clinic_nurse' => $this->verbs(['view', 'create'], ['stock_transfers']),
         ];
 
@@ -82,8 +83,7 @@ class ClinicRoleStructureSeeder extends Seeder
             // Reception/storekeeper: raise + operate (send/receive/cancel) but
             // CANNOT approve POs or pay vendors (separation of duties).
             'clinic_reception' => $this->verbs(['view', 'create', 'update'], ['purchase_orders']),
-            // Doctor: read-only.
-            'clinic_doctor' => $this->verbs(['view'], ['purchase_orders']),
+            // Doctors get NO purchasing visibility (revoked below for already-seeded DBs).
             // Accountant: read + settle vendor payments (finance), no approval/ops.
             'accountant' => $this->verbs(['view'], ['purchase_orders'])
                 ->push('pay_purchase_orders'),
@@ -129,10 +129,16 @@ class ClinicRoleStructureSeeder extends Seeder
             }
         };
 
-        // Doctor: no staff pay-data, no destructive catalog ops.
+        // Doctor: no staff pay-data, no destructive catalog ops, and no
+        // back-office stock/purchasing surfaces (purchase orders, packages,
+        // stock transfers). Doctors keep read-only Items + Stock so they can
+        // check availability during a visit.
         $doctorRevoke = [
             'view_any_doctor_compensation_ledgers', 'view_doctor_compensation_ledgers',
             'view_any_doctor_compensation_profiles', 'view_doctor_compensation_profiles',
+            'view_any_purchase_orders', 'view_purchase_orders',
+            'view_any_clinic_packages', 'view_clinic_packages',
+            'view_any_stock_transfers', 'view_stock_transfers', 'create_stock_transfers',
         ];
         foreach (['medications', 'clinical_phrases'] as $r) {
             $doctorRevoke[] = "delete_{$r}";
