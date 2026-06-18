@@ -749,6 +749,26 @@ watch(activeSectionId, (id) => {
 })
 
 // -----------------------------------------------------------------------------
+// Sidebar quick-search: filter nav links by label (across all sections).
+// While searching, matching sections render expanded regardless of accordion
+// state; clearing the box restores the normal accordion. Navigation resets it.
+// -----------------------------------------------------------------------------
+const navSearch = ref('')
+const searching = computed(() => navSearch.value.trim().length > 0)
+const displaySections = computed(() => {
+    if (!searching.value) return navSections.value
+    const q = navSearch.value.trim().toLowerCase()
+    const out = []
+    for (const s of navSections.value) {
+        if (!s.items || !s.items.length) continue // skip separators / rails
+        const items = s.items.filter(it => String(it.label ?? '').toLowerCase().includes(q))
+        if (items.length) out.push({ ...s, items })
+    }
+    return out
+})
+watch(currentPath, () => { navSearch.value = '' })
+
+// -----------------------------------------------------------------------------
 // Collapsed rail flyout: hovering / clicking a section icon shows its items in a
 // teleported, fixed-position panel beside the rail (so it's never clipped by the
 // sidebar's overflow). Closes on mouse-out, outside click, or navigation.
@@ -907,8 +927,25 @@ onMounted(() => {
                     </button>
                 </div>
 
+                <div v-if="!collapsed || isMobile" class="nav-search-sticky">
+                    <div class="nav-search">
+                        <Icon name="search" :size="15" class="nav-search-icon" />
+                        <input
+                            v-model="navSearch"
+                            type="text"
+                            class="nav-search-input"
+                            :placeholder="isRtl ? 'بحث في القائمة…' : 'Search menu…'"
+                            :aria-label="isRtl ? 'بحث في القائمة' : 'Search menu'"
+                            @keydown.esc="navSearch = ''"
+                        />
+                        <button v-if="navSearch" type="button" class="nav-search-clear" :aria-label="isRtl ? 'مسح' : 'Clear'" @click="navSearch = ''">
+                            <Icon name="x" :size="13" />
+                        </button>
+                    </div>
+                </div>
+
                 <nav class="nav-root" :class="{ 'is-collapsed': collapsed && !isMobile }">
-                    <template v-for="section in navSections" :key="section.id">
+                    <template v-for="section in displaySections" :key="section.id">
                         <div v-if="section.sep" class="nav-sep" aria-hidden="true"></div>
 
                         <!-- Collapsed rail: one icon per section; hover/click shows a flyout. -->
@@ -940,7 +977,7 @@ onMounted(() => {
                                 <Icon name="chevron-down" :size="13" class="nav-group-chev" :class="{ 'is-open': isExpanded(section.id) }" />
                             </button>
 
-                            <div v-show="isExpanded(section.id)" class="nav-group-items">
+                            <div v-show="searching || isExpanded(section.id)" class="nav-group-items">
                                 <Link
                                     v-for="it in section.items"
                                     :key="it.id"
@@ -958,6 +995,7 @@ onMounted(() => {
                             </div>
                         </div>
                     </template>
+                    <div v-if="searching && !displaySections.length" class="nav-empty">{{ isRtl ? 'لا نتائج' : 'No results' }}</div>
                 </nav>
             </aside>
 
@@ -1214,6 +1252,63 @@ onMounted(() => {
 }
 
 /* Nav container */
+.nav-search-sticky {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    padding: 8px 10px 6px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--line);
+}
+.nav-search {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+.nav-search-icon {
+    position: absolute;
+    inset-inline-start: 9px;
+    color: var(--fg-faint);
+    pointer-events: none;
+}
+.nav-search-input {
+    width: 100%;
+    height: 34px;
+    padding: 0 30px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--bg-card, var(--bg));
+    color: var(--fg);
+    font-size: 13px;
+    outline: none;
+}
+.nav-search-input:focus {
+    border-color: var(--primary);
+}
+.nav-search-clear {
+    position: absolute;
+    inset-inline-end: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--fg-faint);
+    cursor: pointer;
+}
+.nav-search-clear:hover {
+    background: var(--bg-hover);
+    color: var(--fg);
+}
+.nav-empty {
+    padding: 18px 12px;
+    text-align: center;
+    font-size: 12.5px;
+    color: var(--fg-faint);
+}
 .nav-root {
     padding: 10px 8px;
     display: flex;
