@@ -2,6 +2,8 @@
 
 namespace App\Models\Accounting;
 
+use App\Models\Concerns\LogsClinicActivity;
+
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -14,6 +16,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class PostingAccountMap extends Model
 {
+    use LogsClinicActivity;
+
     protected $fillable = ['role', 'default_code', 'account_id'];
 
     /**

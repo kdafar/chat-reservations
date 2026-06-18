@@ -2,6 +2,8 @@
 
 namespace App\Models\Accounting;
 
+use App\Models\Concerns\LogsClinicActivity;
+
 use App\Models\Branch;
 use App\Models\User;
 use App\Services\Accounting\AccountingService;
@@ -23,6 +25,8 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  */
 class Expense extends Model
 {
+    use LogsClinicActivity;
+
     use SoftDeletes;
 
     protected $table = 'expenses';

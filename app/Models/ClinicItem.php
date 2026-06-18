@@ -2,11 +2,15 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\LogsClinicActivity;
+
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ClinicItem extends Model
 {
+    use LogsClinicActivity;
+
     // Clinic isolation: the catalog is owned by the CLINIC (partner) and shared
     // across that clinic's branches. Non-admins only see their clinic's items
     // (plus global rows where partner_id is null). Admin/super_admin bypass.

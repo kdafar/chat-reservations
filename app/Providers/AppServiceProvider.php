@@ -80,6 +80,23 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->registerExcelExports();
 
+        // Stamp the actor's IP + browser onto every activity-log entry (trait-based
+        // and manual alike) so the audit trail records *where* a change came from.
+        // Only in real HTTP requests — console/seeders/queue have no meaningful IP.
+        \Spatie\Activitylog\Models\Activity::creating(function (\Spatie\Activitylog\Models\Activity $activity) {
+            if (app()->runningInConsole() || ! request()->hasHeader('host')) {
+                return;
+            }
+            $props = $activity->properties ?? collect();
+            if (! ($props instanceof \Illuminate\Support\Collection)) {
+                $props = collect($props);
+            }
+            $activity->properties = $props->merge([
+                'ip' => request()->ip(),
+                'user_agent' => \Illuminate\Support\Str::limit((string) request()->userAgent(), 255, ''),
+            ]);
+        });
+
         // Inject the editable public-site contact details (managed in v2
         // Settings → Public Website) into the clinic React app shell, so the
         // front-end reads them from the server instead of hardcoded values.

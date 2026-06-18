@@ -19,6 +19,9 @@ class ClinicalPhrase extends Model
     use BelongsToBranchScope;
     use LogsClinicActivity;
 
+    /** Routine usage-counter bumps aren't audit-worthy noise. */
+    protected array $activityLogExcept = ['usage_count'];
+
     protected $guarded = [];
 
     protected $activityLogName = 'clinical_phrases';

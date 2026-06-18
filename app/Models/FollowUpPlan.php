@@ -2,11 +2,15 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\LogsClinicActivity;
+
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class FollowUpPlan extends Model
 {
+    use LogsClinicActivity;
+
     use \App\Models\Concerns\BelongsToBranchScope;
 
     protected $guarded = [];

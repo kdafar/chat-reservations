@@ -2,6 +2,8 @@
 
 namespace App\Models\Purchasing;
 
+use App\Models\Concerns\LogsClinicActivity;
+
 use App\Models\Accounting\JournalEntry;
 use App\Models\Branch;
 use App\Models\Concerns\BelongsToBranchScope;
@@ -17,6 +19,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  */
 class PurchaseReceipt extends Model
 {
+    use LogsClinicActivity;
+
     use BelongsToBranchScope;
 
     protected $guarded = [];

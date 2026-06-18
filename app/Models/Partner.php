@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\LogsClinicActivity;
+
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -11,6 +13,8 @@ use Spatie\Translatable\HasTranslations;
 
 class Partner extends Model
 {
+    use LogsClinicActivity;
+
     use HasTranslations;
 
     protected $fillable = ['name', 'slug', 'logo_path', 'is_active', 'website', 'email', 'license_number', 'footer_text', 'account_id'];

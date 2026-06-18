@@ -2,6 +2,8 @@
 
 namespace App\Models\Accounting;
 
+use App\Models\Concerns\LogsClinicActivity;
+
 use App\Models\Branch;
 use App\Models\User;
 use Carbon\Carbon;
@@ -15,6 +17,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  */
 class PrepaidSchedule extends Model
 {
+    use LogsClinicActivity;
+
     public const STATUS_ACTIVE = 'active';
 
     public const STATUS_COMPLETED = 'completed';

@@ -2,6 +2,8 @@
 
 namespace App\Models\Accounting;
 
+use App\Models\Concerns\LogsClinicActivity;
+
 use App\Models\Branch;
 use App\Models\User;
 use Carbon\Carbon;
@@ -16,6 +18,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  */
 class FixedAsset extends Model
 {
+    use LogsClinicActivity;
+
     public const STATUS_ACTIVE = 'active';
 
     public const STATUS_FULLY_DEPRECIATED = 'fully_depreciated';

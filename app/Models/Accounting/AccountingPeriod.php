@@ -2,6 +2,8 @@
 
 namespace App\Models\Accounting;
 
+use App\Models\Concerns\LogsClinicActivity;
+
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
@@ -9,6 +11,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class AccountingPeriod extends Model
 {
+    use LogsClinicActivity;
+
     public const STATUS_OPEN = 'open';
 
     public const STATUS_CLOSED = 'closed';

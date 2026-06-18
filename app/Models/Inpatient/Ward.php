@@ -2,6 +2,8 @@
 
 namespace App\Models\Inpatient;
 
+use App\Models\Concerns\LogsClinicActivity;
+
 use App\Models\Branch;
 use App\Models\Concerns\BelongsToBranchScope;
 use Illuminate\Database\Eloquent\Model;
@@ -10,6 +12,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Ward extends Model
 {
+    use LogsClinicActivity;
+
     use BelongsToBranchScope;
 
     protected $guarded = [];

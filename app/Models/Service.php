@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\LogsClinicActivity;
+
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -9,6 +11,8 @@ use Spatie\Translatable\HasTranslations;
 
 class Service extends Model
 {
+    use LogsClinicActivity;
+
     use HasTranslations;
 
     protected $fillable = ['name', 'slug', 'icon', 'is_active', 'revenue_account_id'];

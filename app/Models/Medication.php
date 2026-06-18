@@ -18,6 +18,9 @@ class Medication extends Model
     use BelongsToBranchScope;
     use LogsClinicActivity;
 
+    /** Routine usage-counter bumps aren't audit-worthy noise. */
+    protected array $activityLogExcept = ['usage_count'];
+
     protected $guarded = [];
 
     protected $activityLogName = 'medications';

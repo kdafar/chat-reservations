@@ -2,6 +2,8 @@
 
 namespace App\Models\Purchasing;
 
+use App\Models\Concerns\LogsClinicActivity;
+
 use App\Models\Accounting\Account;
 use App\Models\Accounting\JournalEntry;
 use App\Models\Accounting\Vendor;
@@ -19,6 +21,8 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  */
 class PurchasePayment extends Model
 {
+    use LogsClinicActivity;
+
     use BelongsToBranchScope;
     use SoftDeletes;
 

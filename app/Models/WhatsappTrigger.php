@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\LogsClinicActivity;
+
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
@@ -18,6 +20,8 @@ use Illuminate\Support\Facades\Cache;
  */
 class WhatsappTrigger extends Model
 {
+    use LogsClinicActivity;
+
     use HasFactory;
 
     protected static function booted()

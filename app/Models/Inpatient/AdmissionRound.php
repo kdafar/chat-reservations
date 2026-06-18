@@ -2,6 +2,8 @@
 
 namespace App\Models\Inpatient;
 
+use App\Models\Concerns\LogsClinicActivity;
+
 use App\Models\Doctor;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
@@ -9,6 +11,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class AdmissionRound extends Model
 {
+    use LogsClinicActivity;
+
     protected $guarded = [];
 
     protected $casts = [

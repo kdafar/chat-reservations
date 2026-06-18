@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\LogsClinicActivity;
+
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -11,6 +13,11 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class ClinicCoupon extends Model
 {
+    use LogsClinicActivity;
+
+    /** Routine redemption-counter bumps aren't audit-worthy noise. */
+    protected array $activityLogExcept = ['uses_count'];
+
     // Branch isolation: non-admins only see coupons for their accessible
     // branches (plus global rows where branch_id is null). Admin/super_admin bypass.
     use \App\Models\Concerns\BelongsToBranchScope;

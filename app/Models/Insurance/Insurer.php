@@ -2,6 +2,8 @@
 
 namespace App\Models\Insurance;
 
+use App\Models\Concerns\LogsClinicActivity;
+
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -9,6 +11,8 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Insurer extends Model
 {
+    use LogsClinicActivity;
+
     use SoftDeletes;
 
     protected $table = 'insurers';

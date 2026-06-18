@@ -2,12 +2,16 @@
 
 namespace App\Models\Inpatient;
 
+use App\Models\Concerns\LogsClinicActivity;
+
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class AdmissionCharge extends Model
 {
+    use LogsClinicActivity;
+
     protected $guarded = [];
 
     public const SOURCE_BED_DAY = 'bed_day';

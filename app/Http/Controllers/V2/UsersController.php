@@ -123,6 +123,17 @@ class UsersController extends Controller
 
         $user->syncRoles($data['roles'] ?? []);
 
+        // Role assignment is a pivot write (no model event); audit it explicitly.
+        $roles = $user->getRoleNames()->sort()->values()->all();
+        if ($roles) {
+            activity('user')
+                ->performedOn($user)
+                ->causedBy($request->user())
+                ->event('updated')
+                ->withProperties(['attributes' => ['roles' => $roles], 'old' => ['roles' => []]])
+                ->log("Roles assigned to {$user->name}");
+        }
+
         return back()->with('flash', ['type' => 'success', 'message' => 'User created.']);
     }
 
@@ -149,8 +160,21 @@ class UsersController extends Controller
         if (! empty($data['password'])) {
             $update['password'] = Hash::make($data['password']);
         }
+        $oldRoles = $user->getRoleNames()->sort()->values()->all();
         $user->update($update);
         $user->syncRoles($data['roles'] ?? []);
+
+        // The user-attribute changes log via the model trait; role changes are a
+        // pivot write, so diff and audit them separately.
+        $newRoles = $user->getRoleNames()->sort()->values()->all();
+        if ($oldRoles !== $newRoles) {
+            activity('user')
+                ->performedOn($user)
+                ->causedBy($request->user())
+                ->event('updated')
+                ->withProperties(['attributes' => ['roles' => $newRoles], 'old' => ['roles' => $oldRoles]])
+                ->log("Roles updated for {$user->name}");
+        }
 
         return back()->with('flash', ['type' => 'success', 'message' => 'User updated.']);
     }

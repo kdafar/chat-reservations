@@ -2,6 +2,8 @@
 
 namespace App\Models\Accounting;
 
+use App\Models\Concerns\LogsClinicActivity;
+
 use App\Models\Branch;
 use App\Models\User;
 use Carbon\Carbon;
@@ -22,6 +24,8 @@ use Illuminate\Support\Facades\DB;
  */
 class JournalEntry extends Model
 {
+    use LogsClinicActivity;
+
     public const STATUS_DRAFT = 'draft';
 
     public const STATUS_POSTED = 'posted';

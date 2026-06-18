@@ -2,6 +2,8 @@
 
 namespace App\Models\Accounting;
 
+use App\Models\Concerns\LogsClinicActivity;
+
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Collection;
@@ -23,6 +25,8 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  */
 class BankReconciliation extends Model
 {
+    use LogsClinicActivity;
+
     use SoftDeletes;
 
     protected $table = 'bank_reconciliations';

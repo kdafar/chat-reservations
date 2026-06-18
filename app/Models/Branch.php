@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\LogsClinicActivity;
+
 use App\Models\Concerns\HasImageUrl;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
@@ -13,6 +15,8 @@ use Spatie\Translatable\HasTranslations;
 
 class Branch extends Model
 {
+    use LogsClinicActivity;
+
     use HasImageUrl, HasTranslations;
 
     protected $fillable = [

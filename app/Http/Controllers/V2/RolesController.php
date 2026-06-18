@@ -84,6 +84,17 @@ class RolesController extends Controller
         $role = Role::create(['name' => $data['name'], 'guard_name' => 'web']);
         $role->syncPermissions($data['permissions'] ?? []);
 
+        // Permission sync is a pivot write (no model event), so audit it explicitly.
+        activity('role')
+            ->performedOn($role)
+            ->causedBy($request->user())
+            ->event('created')
+            ->withProperties(['attributes' => [
+                'name' => $role->name,
+                'permissions' => $role->getPermissionNames()->sort()->values()->all(),
+            ]])
+            ->log("Role created: {$role->name}");
+
         return back()->with('flash', ['type' => 'success', 'message' => 'Role created.']);
     }
 
@@ -100,11 +111,29 @@ class RolesController extends Controller
             'permissions.*' => ['string', 'exists:permissions,name'],
         ]);
 
+        $oldName = $role->name;
+        $oldPerms = $role->getPermissionNames()->sort()->values()->all();
+
         if (! $isProtected) {
             $role->update(['name' => $data['name']]);
         }
 
         $role->syncPermissions($data['permissions'] ?? []);
+
+        // Diff name + permissions and audit only if something actually changed.
+        $newPerms = $role->getPermissionNames()->sort()->values()->all();
+        $attributes = [];
+        $old = [];
+        if ($oldName !== $role->name) { $attributes['name'] = $role->name; $old['name'] = $oldName; }
+        if ($oldPerms !== $newPerms) { $attributes['permissions'] = $newPerms; $old['permissions'] = $oldPerms; }
+        if ($attributes) {
+            activity('role')
+                ->performedOn($role)
+                ->causedBy($request->user())
+                ->event('updated')
+                ->withProperties(['attributes' => $attributes, 'old' => $old])
+                ->log("Role updated: {$role->name}");
+        }
 
         return back()->with('flash', ['type' => 'success', 'message' => 'Role updated.']);
     }
@@ -120,7 +149,18 @@ class RolesController extends Controller
             return back()->with('flash', ['type' => 'error', 'message' => 'This role is still assigned to users. Reassign them first.']);
         }
 
+        $snapshot = [
+            'name' => $role->name,
+            'permissions' => $role->getPermissionNames()->sort()->values()->all(),
+        ];
         $role->delete();
+
+        activity('role')
+            ->performedOn($role)
+            ->causedBy($request->user())
+            ->event('deleted')
+            ->withProperties(['old' => $snapshot])
+            ->log("Role deleted: {$snapshot['name']}");
 
         return back()->with('flash', ['type' => 'success', 'message' => 'Role deleted.']);
     }

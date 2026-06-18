@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\LogsClinicActivity;
+
 use App\Models\Concerns\BelongsToPartnerScope;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -15,6 +17,8 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  */
 class StockTransfer extends Model
 {
+    use LogsClinicActivity;
+
     use BelongsToPartnerScope;
     use SoftDeletes;
 

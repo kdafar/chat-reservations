@@ -2,6 +2,8 @@
 
 namespace App\Models\Inpatient;
 
+use App\Models\Concerns\LogsClinicActivity;
+
 use App\Models\Branch;
 use App\Models\Concerns\BelongsToBranchScope;
 use Illuminate\Database\Eloquent\Model;
@@ -11,6 +13,8 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Bed extends Model
 {
+    use LogsClinicActivity;
+
     use BelongsToBranchScope;
 
     protected $guarded = [];

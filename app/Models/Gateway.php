@@ -2,12 +2,16 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\LogsClinicActivity;
+
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Translatable\HasTranslations;
 
 class Gateway extends Model
 {
+    use LogsClinicActivity;
+
     use HasTranslations;
 
     protected $fillable = [

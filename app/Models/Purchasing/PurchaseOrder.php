@@ -2,6 +2,8 @@
 
 namespace App\Models\Purchasing;
 
+use App\Models\Concerns\LogsClinicActivity;
+
 use App\Models\Accounting\Vendor;
 use App\Models\Branch;
 use App\Models\Concerns\BelongsToBranchScope;
@@ -25,6 +27,8 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  */
 class PurchaseOrder extends Model
 {
+    use LogsClinicActivity;
+
     use BelongsToBranchScope;
     use SoftDeletes;
 

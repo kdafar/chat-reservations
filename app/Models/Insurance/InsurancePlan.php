@@ -2,12 +2,16 @@
 
 namespace App\Models\Insurance;
 
+use App\Models\Concerns\LogsClinicActivity;
+
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class InsurancePlan extends Model
 {
+    use LogsClinicActivity;
+
     protected $table = 'insurance_plans';
 
     protected $fillable = [

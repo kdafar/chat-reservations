@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\LogsClinicActivity;
+
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -12,6 +14,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class StaffLeaveEntitlement extends Model
 {
+    use LogsClinicActivity;
+
     protected $guarded = [];
 
     protected $casts = [

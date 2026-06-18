@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\LogsClinicActivity;
+
 use App\Models\Concerns\BelongsToPartnerScope;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -9,6 +11,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class ClinicPackage extends Model
 {
+    use LogsClinicActivity;
+
     // Clinic-owned catalog: scoped by partner (shared across the clinic's
     // branches; partner_id null = global). branch_id is an optional override.
     use BelongsToPartnerScope;

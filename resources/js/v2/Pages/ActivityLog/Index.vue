@@ -21,17 +21,19 @@ const isRtl = computed(() => locale.value === 'ar')
 
 const t = computed(() => isRtl.value ? {
     title: 'سجل النشاط', eyebrow: 'المنصة',
-    desc: 'سجل تدقيق غير قابل للتعديل لكل تغيير في النظام — من فعل ماذا ومتى.',
-    searchPh: 'ابحث في الوصف أو الكيان…', clear: 'مسح', logAll: 'كل السجلات', eventAll: 'كل الأحداث', from: 'من', until: 'إلى',
-    ev: { created: 'إنشاء', updated: 'تعديل', deleted: 'حذف', restored: 'استرجاع' },
-    col: { when: 'التاريخ', log: 'السجل', event: 'الحدث', subject: 'الكيان', causer: 'المنفّذ', desc: 'الوصف', changes: 'التغييرات' },
+    desc: 'سجلّ بكل التغييرات في النظام — من قام بالتغيير، وماذا غيّر، ومتى.',
+    searchPh: 'ابحث…', clear: 'مسح', logAll: 'كل الأنواع', eventAll: 'كل الإجراءات', from: 'من', until: 'إلى',
+    ev: { created: 'إضافة', updated: 'تعديل', deleted: 'حذف', restored: 'استرجاع' },
+    col: { when: 'التاريخ', activity: 'النشاط', by: 'بواسطة', changes: 'ما الذي تغيّر' },
+    system: 'النظام', noChanges: 'لا تفاصيل إضافية',
     empty: 'لا توجد أنشطة', showing: 'عرض', of: 'من', stats: { total: 'الكل' },
 } : {
     title: 'Activity Log', eyebrow: 'Platform',
-    desc: 'Immutable audit trail of every system change — who did what and when.',
-    searchPh: 'Search description or subject…', clear: 'Clear', logAll: 'All logs', eventAll: 'All events', from: 'From', until: 'Until',
-    ev: { created: 'Created', updated: 'Updated', deleted: 'Deleted', restored: 'Restored' },
-    col: { when: 'When', log: 'Log', event: 'Event', subject: 'Subject', causer: 'By', desc: 'Description', changes: 'Changes' },
+    desc: 'A history of every change in the system — who changed what, and when.',
+    searchPh: 'Search…', clear: 'Clear', logAll: 'All types', eventAll: 'All actions', from: 'From', until: 'Until',
+    ev: { created: 'Added', updated: 'Updated', deleted: 'Deleted', restored: 'Restored' },
+    col: { when: 'When', activity: 'Activity', by: 'By', changes: 'What changed' },
+    system: 'System', noChanges: 'No extra details',
     empty: 'No activity', showing: 'Showing', of: 'of', stats: { total: 'Total' },
 })
 
@@ -82,35 +84,46 @@ const hasFilters = computed(() => f.q || f.log_name || f.event || f.from || f.un
                 <table class="table">
                     <thead>
                         <tr>
-                            <th>{{ t.col.when }}</th>
-                            <th>{{ t.col.log }}</th>
-                            <th>{{ t.col.event }}</th>
-                            <th>{{ t.col.subject }}</th>
-                            <th>{{ t.col.causer }}</th>
+                            <th style="width:120px;">{{ t.col.when }}</th>
+                            <th>{{ t.col.activity }}</th>
+                            <th style="width:160px;">{{ t.col.by }}</th>
                             <th>{{ t.col.changes }}</th>
                         </tr>
                     </thead>
                     <tbody>
                         <tr v-if="page.data.length === 0">
-                            <td colspan="6" style="text-align:center; padding:48px; color:var(--fg-faint);">
+                            <td colspan="4" style="text-align:center; padding:48px; color:var(--fg-faint);">
                                 <Icon name="history" :size="32" style="margin-bottom:8px; opacity:0.4;" />
                                 <div style="font-weight:600;">{{ t.empty }}</div>
                             </td>
                         </tr>
                         <tr v-for="row in page.data" :key="row.id">
-                            <td style="font-size:12px; color:var(--fg-subtle); white-space:nowrap;">{{ row.created_at }}</td>
-                            <td><span class="badge">{{ row.log_name || '—' }}</span></td>
-                            <td><span :class="eventBadge(row.event)">{{ t.ev[row.event] ?? row.event }}</span></td>
-                            <td style="font-size:12px;">{{ row.subject_label }}</td>
-                            <td style="font-size:12px;">{{ row.causer_name }}</td>
-                            <td>
-                                <div v-if="!row.changes.length" style="color:var(--fg-faint); font-size:12px;">{{ row.description }}</div>
-                                <div v-else style="font-size:11px; line-height:1.5;">
-                                    <div v-for="c in row.changes" :key="c.field" class="mono">
-                                        <span style="color:var(--fg-faint);">{{ c.field }}:</span>
-                                        <span v-if="c.old !== null" style="color:var(--err, #dc2626);">{{ c.old }}</span>
-                                        <span v-if="c.old !== null && c.new !== null"> → </span>
-                                        <span v-if="c.new !== null" style="color:var(--ok);">{{ c.new }}</span>
+                            <td style="white-space:nowrap; vertical-align:top;">
+                                <div style="font-size:13px; color:var(--fg);">{{ row.created_at }}</div>
+                                <div style="font-size:11px; color:var(--fg-faint);">{{ row.created_time }}</div>
+                            </td>
+                            <td style="vertical-align:top;">
+                                <div style="display:flex; align-items:center; gap:8px;">
+                                    <span :class="eventBadge(row.event)">{{ t.ev[row.event] ?? row.event }}</span>
+                                    <span style="font-weight:600; font-size:13px;">{{ row.summary }}</span>
+                                </div>
+                            </td>
+                            <td style="vertical-align:top; font-size:13px;">
+                                <div :style="row.is_system ? 'color:var(--fg-faint); font-style:italic;' : ''">{{ row.is_system ? t.system : row.causer_name }}</div>
+                                <div v-if="row.ip" class="mono" style="font-size:11px; color:var(--fg-faint); margin-top:2px;">{{ row.ip }}</div>
+                            </td>
+                            <td style="vertical-align:top;">
+                                <div v-if="!row.changes.length" style="color:var(--fg-faint); font-size:12px;">{{ t.noChanges }}</div>
+                                <div v-else style="display:flex; flex-direction:column; gap:3px;">
+                                    <div v-for="c in row.changes" :key="c.field" style="font-size:12px; line-height:1.45;">
+                                        <span style="color:var(--fg-subtle); font-weight:500;">{{ c.field }}:</span>
+                                        <template v-if="c.old !== null && c.new !== null">
+                                            <span style="color:var(--err, #dc2626); text-decoration:line-through; opacity:0.7;">{{ c.old }}</span>
+                                            <span style="color:var(--fg-faint);"> → </span>
+                                            <span style="color:var(--ok, #16a34a); font-weight:500;">{{ c.new }}</span>
+                                        </template>
+                                        <span v-else-if="c.new !== null" style="color:var(--ok, #16a34a); font-weight:500;">{{ c.new }}</span>
+                                        <span v-else style="color:var(--err, #dc2626);">{{ c.old }}</span>
                                     </div>
                                 </div>
                             </td>

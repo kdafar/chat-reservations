@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\LogsClinicActivity;
+
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
@@ -9,6 +11,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class BulkInviteCampaign extends Model
 {
+    use LogsClinicActivity;
+
     protected $table = 'bulk_invite_campaigns';
 
     protected $fillable = [

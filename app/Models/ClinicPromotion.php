@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\LogsClinicActivity;
+
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -13,6 +15,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  */
 class ClinicPromotion extends Model
 {
+    use LogsClinicActivity;
+
     // Branch isolation: non-admins only see promotions for their accessible
     // branches (plus global rows where branch_id is null). Admin/super_admin bypass.
     use \App\Models\Concerns\BelongsToBranchScope;

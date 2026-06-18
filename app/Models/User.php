@@ -11,11 +11,17 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use App\Models\Concerns\LogsClinicActivity;
 use Spatie\Permission\Traits\HasRoles;
 
 class User extends Authenticatable implements MustVerifyEmailContract
 {
-    use HasFactory, HasRoles, MustVerifyEmailTrait, Notifiable;
+    use HasFactory, HasRoles, MustVerifyEmailTrait, Notifiable, LogsClinicActivity;
+
+    /** Never write credentials/secrets into the audit trail. */
+    protected array $activityLogExcept = [
+        'password', 'remember_token', 'two_factor_secret', 'two_factor_recovery_codes',
+    ];
 
     protected $fillable = [
         'name',

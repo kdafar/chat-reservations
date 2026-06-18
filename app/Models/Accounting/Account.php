@@ -2,6 +2,8 @@
 
 namespace App\Models\Accounting;
 
+use App\Models\Concerns\LogsClinicActivity;
+
 use App\Models\Branch;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -17,6 +19,8 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  */
 class Account extends Model
 {
+    use LogsClinicActivity;
+
     use SoftDeletes;
 
     protected $table = 'chart_of_accounts';

@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\LogsClinicActivity;
+
 use App\Models\Concerns\BelongsToBranchScope;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -9,6 +11,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class VisitStockRequest extends Model
 {
+    use LogsClinicActivity;
+
     use BelongsToBranchScope;
 
     protected $guarded = [];
