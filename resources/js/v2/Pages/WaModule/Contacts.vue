@@ -160,7 +160,7 @@ const groupItems = computed(() => [{ value: null, label: '—' }, ...props.group
                 <div style="display:grid; gap:12px;">
                     <div><label style="font-size:12px; color:var(--fg-subtle);">{{ t.f.msisdn }}</label><input v-model="cForm.msisdn" class="input" placeholder="9655…" /><div v-if="cForm.errors.msisdn" style="font-size:11px; color:#dc2626;">{{ cForm.errors.msisdn }}</div></div>
                     <div><label style="font-size:12px; color:var(--fg-subtle);">{{ t.f.name }}</label><input v-model="cForm.name" class="input" /></div>
-                    <div><label style="font-size:12px; color:var(--fg-subtle);">{{ t.f.locale }}</label><select v-model="cForm.locale" class="input"><option value="en">en</option><option value="ar">ar</option></select></div>
+                    <div><label style="font-size:12px; color:var(--fg-subtle);">{{ t.f.locale }}</label><SearchableSelect v-model="cForm.locale" :items="[{ value: 'en', label: 'en' }, { value: 'ar', label: 'ar' }]" :nullable="false" width="100%" /></div>
                 </div>
                 <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:18px;"><button class="btn btn-ghost" @click="showC=false">{{ t.cancel }}</button><button class="btn btn-primary" :disabled="cForm.processing" @click="saveC">{{ t.save }}</button></div>
             </div>
@@ -172,7 +172,7 @@ const groupItems = computed(() => [{ value: null, label: '—' }, ...props.group
                 <div style="display:grid; gap:12px;">
                     <div><label style="font-size:12px; color:var(--fg-subtle);">{{ t.f.gname }}</label><input v-model="gForm.name" class="input" /><div v-if="gForm.errors.name" style="font-size:11px; color:#dc2626;">{{ gForm.errors.name }}</div></div>
                     <div><label style="font-size:12px; color:var(--fg-subtle);">{{ t.f.gdesc }}</label><input v-model="gForm.description" class="input" /></div>
-                    <div><label style="font-size:12px; color:var(--fg-subtle);">{{ t.f.gtype }}</label><select v-model="gForm.group_type" class="input"><option value="static">static</option><option value="dynamic">dynamic</option></select></div>
+                    <div><label style="font-size:12px; color:var(--fg-subtle);">{{ t.f.gtype }}</label><SearchableSelect v-model="gForm.group_type" :items="[{ value: 'static', label: 'static' }, { value: 'dynamic', label: 'dynamic' }]" :nullable="false" width="100%" /></div>
                 </div>
                 <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:18px;"><button class="btn btn-ghost" @click="showG=false">{{ t.cancel }}</button><button class="btn btn-primary" :disabled="gForm.processing" @click="saveG">{{ t.save }}</button></div>
             </div>

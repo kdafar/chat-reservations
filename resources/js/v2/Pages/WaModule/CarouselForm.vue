@@ -51,7 +51,7 @@ function submit(publish) { cForm.publish = publish; cForm.post(route('v2.wa-modu
                     <div v-if="cForm.errors['cards.'+ci+'.image_path']" class="wa-err" style="margin-bottom:6px;">{{ cForm.errors['cards.'+ci+'.image_path'] }}</div>
                     <textarea v-model="card.body" class="input" :placeholder="t.cbody" rows="2" maxlength="160" style="font-size:12px;"></textarea>
                     <div v-for="(b,bi) in card.buttons" :key="bi" style="display:flex; gap:4px; margin-top:6px; align-items:center;">
-                        <select v-model="b.type" class="input" style="flex:0 0 90px; font-size:11px;"><option value="QUICK_REPLY">Reply</option><option value="URL">URL</option></select>
+                        <SearchableSelect v-model="b.type" :items="[{ value: 'QUICK_REPLY', label: 'Reply' }, { value: 'URL', label: 'URL' }]" :nullable="false" :width="90" />
                         <input v-model="b.text" class="input" placeholder="Text" style="flex:1; font-size:11px;" maxlength="25" />
                         <button type="button" class="btn btn-ghost btn-sm btn-icon" @click="removeCardBtn(card,bi)"><Icon name="x" :size="11" /></button>
                     </div>
