@@ -52,7 +52,7 @@ const t = computed(() => isRtl.value ? {
     drawer: { items: 'البنود', payments: 'المدفوعات', log: 'سجل الحالة', balance: 'الرصيد المتبقي', noItems: 'لا توجد بنود', noPayments: 'لا توجد مدفوعات', close: 'إغلاق' },
     retry: 'إعادة المحاولة', loadError: 'تعذّر تحميل المطالبة.',
     act: { submit: 'إرسال للتأمين', review: 'بدء المراجعة', approve: 'اعتماد', partial: 'اعتماد جزئي', reject: 'رفض', payment: 'تسجيل دفعة', writeoff: 'إعدام دين', void: 'إلغاء' },
-    fld: { notes: 'ملاحظات', approved_amount: 'المبلغ المعتمد', rejected_amount: 'المبلغ المرفوض', reference_no: 'رقم مرجعي', reason: 'السبب', amount: 'المبلغ', method: 'الطريقة', account: 'مودع في', decision_notes: 'ملاحظات القرار', visit_id: 'رقم الزيارة' },
+    fld: { notes: 'ملاحظات', approved_amount: 'المبلغ المعتمد', rejected_amount: 'المبلغ المرفوض', reference_no: 'رقم مرجعي', reason: 'السبب', amount: 'المبلغ', method: 'الطريقة', account: 'مودع في', accountHelp: 'الحساب النقدي أو البنكي الذي أودعت فيه دفعة شركة التأمين.', decision_notes: 'ملاحظات القرار', visit_id: 'رقم الزيارة' },
     method: { cheque: 'شيك', transfer: 'تحويل', cash: 'نقد' },
     fromVisitTitle: 'إنشاء مطالبة من زيارة', create: 'إنشاء', cancel: 'إلغاء', confirm: 'تأكيد',
     picker: {
@@ -99,7 +99,7 @@ const t = computed(() => isRtl.value ? {
     drawer: { items: 'Items', payments: 'Payments', log: 'State log', balance: 'Balance due', noItems: 'No items', noPayments: 'No payments', close: 'Close' },
     retry: 'Retry', loadError: 'Couldn\'t load this claim.',
     act: { submit: 'Send to insurer', review: 'Start review', approve: 'Approve', partial: 'Partially approve', reject: 'Reject', payment: 'Record payment', writeoff: 'Write off', void: 'Void' },
-    fld: { notes: 'Notes', approved_amount: 'Approved amount', rejected_amount: 'Rejected amount', reference_no: 'Reference no.', reason: 'Reason', amount: 'Amount', method: 'Method', account: 'Deposited to', decision_notes: 'Decision notes', visit_id: 'Visit #' },
+    fld: { notes: 'Notes', approved_amount: 'Approved amount', rejected_amount: 'Rejected amount', reference_no: 'Reference no.', reason: 'Reason', amount: 'Amount', method: 'Method', account: 'Deposited to', accountHelp: 'Cash or bank account the insurer\'s payment was deposited into.', decision_notes: 'Decision notes', visit_id: 'Visit #' },
     method: { cheque: 'Cheque', transfer: 'Bank transfer', cash: 'Cash' },
     fromVisitTitle: 'Create a claim from a visit', create: 'Create', cancel: 'Cancel', confirm: 'Confirm',
     picker: {
@@ -573,6 +573,7 @@ function submitFromVisit() {
                         <div v-if="drawer.accounts.length">
                             <label class="label">{{ t.fld.account }}</label>
                             <SearchableSelect v-model="actForm.deposited_to_account_id" :items="accountItems" null-label="—" />
+                            <div class="hint">{{ t.fld.accountHelp }}</div>
                         </div>
                     </template>
                     <!-- writeoff -->
@@ -733,4 +734,5 @@ function submitFromVisit() {
 
 <style scoped>
 .table th { position: sticky; top: 0; background: var(--card, var(--bg)); z-index: 1; }
+.hint { font-size:11px; color:var(--fg-subtle); margin-top:4px; line-height:1.4; }
 </style>

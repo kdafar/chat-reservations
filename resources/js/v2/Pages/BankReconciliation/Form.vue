@@ -19,11 +19,13 @@ const t = computed(() => isRtl.value ? {
     eyebrow: 'المحاسبة', back: 'التسويات البنكية', title: 'تسوية بنكية جديدة',
     desc: 'اختر الحساب البنكي والفترة والأرصدة، ثم طابِق الحركات من صفحة التسوية.',
     account: 'الحساب', start: 'بداية الفترة', end: 'نهاية الفترة', opening: 'الرصيد الافتتاحي', closing: 'الرصيد الختامي',
+    accountHelp: 'الحساب البنكي أو النقدي الذي تجري تسويته مقابل كشف حسابه.',
     save: 'إنشاء', cancel: 'إلغاء',
 } : {
     eyebrow: 'Accounting', back: 'Bank Reconciliation', title: 'New reconciliation',
     desc: 'Pick the bank account, period and balances, then match transactions from the reconciliation page.',
     account: 'Account', start: 'Period start', end: 'Period end', opening: 'Opening balance', closing: 'Closing balance',
+    accountHelp: 'The bank or cash account you\'re reconciling against its statement.',
     save: 'Create', cancel: 'Cancel',
 })
 
@@ -60,6 +62,7 @@ function submit() {
             <div style="grid-column:span 2;">
                 <label class="label">{{ t.account }} <span class="req">*</span></label>
                 <SearchableSelect v-model="form.account_id" :items="accountItems" :nullable="false" />
+                <div class="hint">{{ t.accountHelp }}</div>
                 <div v-if="errors.account_id" class="err">{{ errors.account_id }}</div>
             </div>
             <div>
@@ -89,3 +92,7 @@ function submit() {
         </form>
     </div>
 </template>
+
+<style scoped>
+.hint { font-size:11px; color:var(--fg-subtle); margin-top:4px; line-height:1.4; }
+</style>

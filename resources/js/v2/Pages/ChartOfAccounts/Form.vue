@@ -38,6 +38,52 @@ const typeLabel = (ty) => (ty || '').replace(/_/g, ' ')
 const typeItems = computed(() => props.types.map((ty) => ({ value: ty, label: typeLabel(ty) })))
 const parentItems = computed(() => props.parents.map((p) => ({ value: p.id, label: p.label })))
 
+// Contra accounts are offsets — their balance *reduces* a related normal account.
+// Warn so a regular asset (cash, inventory, WIP) isn't accidentally typed as one.
+const contraExamples = computed(() => isRtl.value ? {
+    contra_asset: 'مثل مجمع الإهلاك أو مخصص الديون المشكوك فيها',
+    contra_liability: 'مثل خصم إصدار سند أو قرض',
+    contra_revenue: 'مثل مردودات المبيعات أو الخصم الممنوح',
+} : {
+    contra_asset: 'e.g. Accumulated Depreciation, or Allowance for Doubtful Accounts',
+    contra_liability: 'e.g. a discount on a bond or loan issued',
+    contra_revenue: 'e.g. Sales Returns, or Discounts Allowed',
+})
+const contraWarning = computed(() => {
+    const ex = contraExamples.value[form.type]
+    if (!ex) return null
+    return isRtl.value
+        ? `هذا حساب «مقابل» (Contra) — رصيده يُخفِّض حساباً آخر مرتبطاً به (${ex}). استخدمه لهذا الغرض فقط؛ الأصل العادي مثل النقد أو المخزون أو الأعمال تحت التنفيذ يجب أن يكون نوعه «asset».`
+        : `This is a contra (offset) account — its balance reduces a related account (${ex}). Use it only for that purpose; a normal asset like cash, inventory or work-in-progress should be typed "asset".`
+})
+
+// Plain-language guidance for the currently-selected type — always shown so the
+// accountant understands the choice (where it lands on the statements + examples).
+const typeHelp = computed(() => {
+    const h = isRtl.value ? {
+        asset: 'أصل — ما تملكه العيادة (النقد، البنك، المخزون، المعدات، المبالغ المستحقة لها). يظهر في الميزانية العمومية.',
+        liability: 'التزام — ما تدين به العيادة (الدائنون، القروض، الرواتب المستحقة). يظهر في الميزانية العمومية.',
+        equity: 'حقوق ملكية — رأس المال والأرباح المحتجزة لأصحاب العيادة. يظهر في الميزانية العمومية.',
+        revenue: 'إيراد — الدخل المكتسب (رسوم الزيارات، المبيعات). يظهر في قائمة الدخل.',
+        cogs: 'تكلفة البضاعة المباعة — التكلفة المباشرة للأصناف/المستلزمات المستهلكة في تقديم الخدمة. تظهر في قائمة الدخل.',
+        expense: 'مصروف — التكاليف التشغيلية (الإيجار، الرواتب، المرافق). يظهر في قائمة الدخل.',
+        contra_asset: 'حساب أصل مقابل — يُخفِّض أصلاً مرتبطاً به (مثل مجمع الإهلاك).',
+        contra_liability: 'حساب التزام مقابل — يُخفِّض التزاماً مرتبطاً به.',
+        contra_revenue: 'حساب إيراد مقابل — يُخفِّض الإيراد (مثل مردودات المبيعات).',
+    } : {
+        asset: 'Asset — things the clinic owns (cash, bank, inventory, equipment, money owed to it). Shows on the Balance Sheet.',
+        liability: 'Liability — what the clinic owes (payables, loans, salaries due). Shows on the Balance Sheet.',
+        equity: 'Equity — owners’ capital and retained earnings. Shows on the Balance Sheet.',
+        revenue: 'Revenue — income earned (visit fees, sales). Shows on the Income Statement.',
+        cogs: 'Cost of Goods Sold — direct cost of items/consumables used to deliver a service. Shows on the Income Statement.',
+        expense: 'Expense — operating costs (rent, salaries, utilities). Shows on the Income Statement.',
+        contra_asset: 'Contra-asset — offsets a related asset (e.g. Accumulated Depreciation).',
+        contra_liability: 'Contra-liability — offsets a related liability.',
+        contra_revenue: 'Contra-revenue — reduces revenue (e.g. Sales Returns).',
+    }
+    return h[form.type] || null
+})
+
 const form = reactive(props.account ? {
     code: props.account.code,
     name: props.account.name,
@@ -91,6 +137,8 @@ function submit() {
                 <div>
                     <label class="label">{{ t.fields.type }}</label>
                     <SearchableSelect v-model="form.type" :items="typeItems" :nullable="false" :disabled="isSystem" />
+                    <div v-if="typeHelp" class="hint">{{ typeHelp }}</div>
+                    <div v-if="contraWarning" class="warn">{{ contraWarning }}</div>
                     <div v-if="errors.type" class="err">{{ errors.type }}</div>
                 </div>
                 <div style="grid-column:span 2;">
@@ -131,3 +179,8 @@ function submit() {
         </form>
     </div>
 </template>
+
+<style scoped>
+.hint { font-size:11px; color:var(--fg-subtle); margin-top:4px; line-height:1.4; }
+.warn { font-size:11px; color:#b45309; background:#fffbeb; border:1px solid #fde68a; border-radius:6px; padding:5px 8px; margin-top:5px; line-height:1.4; }
+</style>

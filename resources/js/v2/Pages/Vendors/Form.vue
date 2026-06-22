@@ -21,6 +21,21 @@ const isEdit = computed(() => props.mode === 'edit')
 const expenseAccountItems = computed(() => props.expenseAccounts.map((a) => ({ value: a.id, label: a.label })))
 const payableAccountItems = computed(() => props.payableAccounts.map((a) => ({ value: a.id, label: a.label })))
 
+// Type lookup so we can warn when an unusual account is picked as a default.
+function accountType(list, id) {
+    const found = list.find((a) => String(a.id) === String(id))
+    return found ? found.type : null
+}
+const expenseTypeWarning = computed(() => {
+    const type = accountType(props.expenseAccounts, form.default_account_id)
+    if (type === 'contra_asset' || type === 'contra_liability' || type === 'contra_revenue') {
+        return isRtl.value
+            ? 'هذا حساب مقابل (Contra) — اختياره كحساب افتراضي للمدين سيقلّل الرصيد بدل زيادته. تأكّد أن هذا مقصود.'
+            : 'This is a contra account — using it as the default debit will reduce the balance instead of increasing it. Make sure that\'s intended.'
+    }
+    return null
+})
+
 const t = computed(() => isRtl.value ? {
     eyebrow: 'المحاسبة', back: 'الموردون',
     createTitle: 'مورد جديد', editTitle: 'تحرير المورد',
@@ -31,6 +46,8 @@ const t = computed(() => isRtl.value ? {
         contact: 'اسم جهة الاتصال', phone: 'الهاتف', email: 'البريد', tax: 'الرقم الضريبي / السجل التجاري',
         address: 'العنوان', defaults: 'الحسابات الافتراضية', expenseAcc: 'حساب المصروف الافتراضي',
         payableAcc: 'حساب الدائنين الافتراضي', notes: 'ملاحظات', active: 'فعّال',
+        expenseAccHelp: 'الحساب المدين الافتراضي لمشتريات هذا المورد — مصروف أو تكلفة بضاعة أو أصل (مثل المخزون أو الأعمال تحت التنفيذ).',
+        payableAccHelp: 'حساب الالتزامات الذي يُسجَّل فيه ما هو مستحق لهذا المورد (حسابات دائنة فقط).',
     },
 } : {
     eyebrow: 'Accounting', back: 'Vendors',
@@ -42,6 +59,8 @@ const t = computed(() => isRtl.value ? {
         contact: 'Contact name', phone: 'Phone', email: 'Email', tax: 'Tax / Commercial Reg. No.',
         address: 'Address', defaults: 'Default accounts', expenseAcc: 'Default expense account',
         payableAcc: 'Default payable account', notes: 'Notes', active: 'Active',
+        expenseAccHelp: 'Default debit account for this vendor\'s purchases — an expense, COGS, or asset account (e.g. inventory or work-in-progress).',
+        payableAccHelp: 'Liability account that records what is owed to this vendor (payable accounts only).',
     },
 })
 
@@ -133,11 +152,14 @@ function submit() {
                 <div>
                     <label class="label">{{ t.fields.expenseAcc }}</label>
                     <SearchableSelect v-model="form.default_account_id" :items="expenseAccountItems" :null-label="t.none" />
+                    <div class="hint">{{ t.fields.expenseAccHelp }}</div>
+                    <div v-if="expenseTypeWarning" class="warn">{{ expenseTypeWarning }}</div>
                     <div v-if="errors.default_account_id" class="err">{{ errors.default_account_id }}</div>
                 </div>
                 <div>
                     <label class="label">{{ t.fields.payableAcc }}</label>
                     <SearchableSelect v-model="form.default_payable_account_id" :items="payableAccountItems" :null-label="t.none" />
+                    <div class="hint">{{ t.fields.payableAccHelp }}</div>
                     <div v-if="errors.default_payable_account_id" class="err">{{ errors.default_payable_account_id }}</div>
                 </div>
 
@@ -163,6 +185,8 @@ function submit() {
 .eyebrow { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.06em; color:var(--fg-faint); }
 .label { display:block; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.04em; color:var(--fg-faint); margin-bottom:4px; }
 .err { font-size:11px; color:var(--err, #dc2626); margin-top:4px; font-weight:500; }
+.hint { font-size:11px; color:var(--fg-subtle); margin-top:4px; line-height:1.4; }
+.warn { font-size:11px; color:#b45309; background:#fffbeb; border:1px solid #fde68a; border-radius:6px; padding:5px 8px; margin-top:5px; line-height:1.4; }
 .role-check { display:inline-flex; align-items:center; gap:6px; font-size:13px; padding:6px 10px; border:1px solid var(--line); border-radius:6px; cursor:pointer; }
 .role-check:hover { background:var(--bg-hover); }
 </style>

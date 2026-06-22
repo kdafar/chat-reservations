@@ -47,7 +47,7 @@ const t = computed(() => isRtl.value
             hireDate: 'تاريخ التعيين', remainingLeave: 'أيام إجازة متبقية', save: 'حفظ المسودة', cancel: 'إلغاء',
             computing: 'جارٍ الاحتساب…',
         },
-        pay: { title: 'صرف التسوية', account: 'يُدفع من حساب', confirm: 'تأكيد الدفع', cancel: 'إلغاء' },
+        pay: { title: 'صرف التسوية', account: 'يُدفع من حساب', accountHelp: 'الحساب النقدي أو البنكي الذي تُدفع منه التسوية.', confirm: 'تأكيد الدفع', cancel: 'إلغاء' },
         act: { approve: 'اعتماد', pay: 'صرف', edit: 'تعديل', del: 'حذف' },
         confirmApprove: 'اعتماد التسوية وترحيلها للدفاتر وتصفية سلف الموظف؟',
         confirmDelete: 'حذف هذه المسودة؟',
@@ -69,7 +69,7 @@ const t = computed(() => isRtl.value
             hireDate: 'Hire date', remainingLeave: 'Remaining leave days', save: 'Save draft', cancel: 'Cancel',
             computing: 'Computing…',
         },
-        pay: { title: 'Pay settlement', account: 'Pay from account', confirm: 'Confirm payment', cancel: 'Cancel' },
+        pay: { title: 'Pay settlement', account: 'Pay from account', accountHelp: 'Cash or bank account the settlement is paid from.', confirm: 'Confirm payment', cancel: 'Cancel' },
         act: { approve: 'Approve', pay: 'Pay', edit: 'Edit', del: 'Delete' },
         confirmApprove: 'Approve the settlement, post it to the ledger and clear the staff member’s loans?',
         confirmDelete: 'Delete this draft settlement?',
@@ -322,6 +322,7 @@ const candidateItems = computed(() => props.candidates.map(c => ({ value: c.id, 
             <form @submit.prevent="submitPay" style="padding:16px;">
                 <label class="label">{{ t.pay.account }} <span class="req">*</span></label>
                 <SearchableSelect v-model="payForm.payment_account_id" :items="payment_accounts.map(a => ({ value: a.id, label: a.name }))" :nullable="false" />
+                <div class="hint">{{ t.pay.accountHelp }}</div>
                 <div v-if="payErrors.payment_account_id" class="err">{{ payErrors.payment_account_id }}</div>
                 <div style="display:flex; justify-content:space-between; margin-top:10px; font-size:13px;">
                     <span style="color:var(--fg-faint);">{{ t.modal.net }}</span>
@@ -337,6 +338,7 @@ const candidateItems = computed(() => props.candidates.map(c => ({ value: c.id, 
 </template>
 
 <style scoped>
+.hint { font-size:11px; color:var(--fg-subtle); margin-top:4px; line-height:1.4; }
 .stat-chip { display:inline-flex; flex-direction:column; align-items:flex-start; padding:8px 12px; border-radius:8px; background:var(--bg-elev, var(--bg-hover)); border:1px solid var(--line); min-width:80px; }
 .stat-chip-num { font-size:18px; font-weight:700; color:var(--fg); line-height:1; font-variant-numeric:tabular-nums; }
 .stat-chip-lbl { font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:var(--fg-faint); margin-top:4px; }

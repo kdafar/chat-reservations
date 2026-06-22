@@ -30,7 +30,7 @@ const t = computed(() => isRtl.value
         col: { staff: 'الموظف', basic: 'الأساسي', allow: 'البدلات', comm: 'العمولة', gross: 'الإجمالي', loan: 'سلفة', unpaid: 'إجازة بدون أجر', other: 'أخرى', ded: 'الخصومات', net: 'الصافي' },
         actions: { regenerate: 'إعادة الاحتساب', approve: 'اعتماد وترحيل', pay: 'تسجيل الدفع', delete: 'حذف المسودة', export: 'تصدير Excel' },
         gl: { accrual: 'قيد الاستحقاق', payment: 'قيد الدفع', approvedBy: 'اعتمده', paidAt: 'تاريخ الدفع' },
-        payModal: { title: 'تسجيل دفع الرواتب', account: 'يُدفع من حساب', hint: 'سيُرحّل قيد الصرف: مدين الذمم الدائنة / دائن النقدية، وتسوية عمولات الأطباء والسلف.', confirm: 'تأكيد الدفع', cancel: 'إلغاء' },
+        payModal: { title: 'تسجيل دفع الرواتب', account: 'يُدفع من حساب', accountHelp: 'الحساب النقدي أو البنكي الذي تُدفع منه الرواتب.', hint: 'سيُرحّل قيد الصرف: مدين الذمم الدائنة / دائن النقدية، وتسوية عمولات الأطباء والسلف.', confirm: 'تأكيد الدفع', cancel: 'إلغاء' },
         confirmDelete: 'حذف هذه المسودة وكل قسائمها؟',
         confirmApprove: 'اعتماد المسيّر وترحيل استحقاق الرواتب للدفاتر؟',
         empty: 'لا توجد قسائم رواتب', doctorTag: 'طبيب', notes: 'ملاحظات', payslips: 'قسائم الرواتب', branch: 'الفرع', allBranches: 'كل الفروع', noLines: 'لا تفاصيل',
@@ -42,7 +42,7 @@ const t = computed(() => isRtl.value
         col: { staff: 'Staff', basic: 'Basic', allow: 'Allowances', comm: 'Commission', gross: 'Gross', loan: 'Loan', unpaid: 'Unpaid leave', other: 'Other', ded: 'Deductions', net: 'Net pay' },
         actions: { regenerate: 'Regenerate', approve: 'Approve & post', pay: 'Mark paid', delete: 'Delete draft', export: 'Export Excel' },
         gl: { accrual: 'Accrual entry', payment: 'Payment entry', approvedBy: 'Approved by', paidAt: 'Paid at' },
-        payModal: { title: 'Mark payroll paid', account: 'Pay from account', hint: 'Posts the disbursement: Dr payables / Cr cash, settling doctor commission and withheld loan installments.', confirm: 'Confirm payment', cancel: 'Cancel' },
+        payModal: { title: 'Mark payroll paid', account: 'Pay from account', accountHelp: 'Cash or bank account salaries are paid from.', hint: 'Posts the disbursement: Dr payables / Cr cash, settling doctor commission and withheld loan installments.', confirm: 'Confirm payment', cancel: 'Cancel' },
         confirmDelete: 'Delete this draft run and all its payslips?',
         confirmApprove: 'Approve the run and post the salary accrual to the ledger?',
         empty: 'No payslips', doctorTag: 'Doctor', notes: 'Notes', payslips: 'Payslips', branch: 'Branch', allBranches: 'All branches', noLines: 'No line items',
@@ -203,6 +203,7 @@ function toggle(id) { const s = new Set(expanded.value); s.has(id) ? s.delete(id
             <form @submit.prevent="submitPay" style="padding:16px;">
                 <label class="label">{{ t.payModal.account }} <span class="req">*</span></label>
                 <SearchableSelect v-model="payForm.payment_account_id" :items="payment_accounts.map(a => ({ value: a.id, label: a.name }))" :nullable="false" />
+                <div class="hint">{{ t.payModal.accountHelp }}</div>
                 <div v-if="payErrors.payment_account_id" class="err">{{ payErrors.payment_account_id }}</div>
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px; font-size:13px;">
                     <span style="color:var(--fg-faint);">{{ t.cards.net }}</span>
@@ -219,6 +220,7 @@ function toggle(id) { const s = new Set(expanded.value); s.has(id) ? s.delete(id
 </template>
 
 <style scoped>
+.hint { font-size:11px; color:var(--fg-subtle); margin-top:4px; line-height:1.4; }
 .cards { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:10px; }
 .sum-card { padding:12px 14px; border-radius:10px; background:var(--bg-elev, var(--bg-hover)); border:1px solid var(--line); }
 .sum-lbl { font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:var(--fg-faint); }

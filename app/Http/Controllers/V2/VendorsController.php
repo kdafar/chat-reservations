@@ -98,7 +98,14 @@ class VendorsController extends Controller
     protected function pickerData(): array
     {
         return [
-            'expenseAccounts' => $this->accountOptions([Account::TYPE_EXPENSE, Account::TYPE_COGS]),
+            // Default debit account for this vendor's purchases. Expense/COGS for
+            // consumed costs, plus assets (inventory, WIP) for capitalized purchases.
+            'expenseAccounts' => $this->accountOptions([
+                Account::TYPE_EXPENSE,
+                Account::TYPE_COGS,
+                Account::TYPE_ASSET,
+                Account::TYPE_CONTRA_ASSET,
+            ]),
             'payableAccounts' => $this->accountOptions([Account::TYPE_LIABILITY]),
         ];
     }
@@ -167,8 +174,8 @@ class VendorsController extends Controller
             'email' => ['nullable', 'email', 'max:191'],
             'tax_number' => ['nullable', 'string', 'max:64'],
             'address' => ['nullable', 'string', 'max:1000'],
-            'default_account_id' => ['nullable', 'integer', 'exists:accounts,id'],
-            'default_payable_account_id' => ['nullable', 'integer', 'exists:accounts,id'],
+            'default_account_id' => ['nullable', 'integer', 'exists:chart_of_accounts,id'],
+            'default_payable_account_id' => ['nullable', 'integer', 'exists:chart_of_accounts,id'],
             'notes' => ['nullable', 'string', 'max:2000'],
             'is_active' => ['boolean'],
         ]);
@@ -181,8 +188,8 @@ class VendorsController extends Controller
             ->whereIn('type', $types)
             ->where('is_active', true)
             ->orderBy('code')
-            ->get(['id', 'code', 'name'])
-            ->map(fn (Account $a) => ['id' => $a->id, 'label' => "{$a->code} — {$a->name}"])
+            ->get(['id', 'code', 'name', 'type'])
+            ->map(fn (Account $a) => ['id' => $a->id, 'label' => "{$a->code} — {$a->name}", 'type' => $a->type])
             ->all();
     }
 

@@ -25,14 +25,14 @@ const t = computed(() => isRtl.value ? {
     createTitle: 'قيد يومية جديد', editTitle: 'تحرير المسودة',
     desc: 'أنشئ قيداً متوازناً كمسودة، ثم رحّله من القائمة.',
     save: 'حفظ المسودة', cancel: 'إلغاء',
-    fields: { entry_date: 'التاريخ', branch: 'الفرع', currency: 'العملة', narration: 'البيان', lines: 'البنود', account: 'الحساب', debit: 'مدين', credit: 'دائن', description: 'وصف', addLine: 'إضافة بند', none: '— بدون —' },
+    fields: { entry_date: 'التاريخ', branch: 'الفرع', currency: 'العملة', narration: 'البيان', lines: 'البنود', account: 'الحساب', debit: 'مدين', credit: 'دائن', description: 'وصف', addLine: 'إضافة بند', none: '— بدون —', linesHelp: 'اختر حساب الأستاذ الذي يُسجَّل عليه كل بند مديناً أو دائناً.' },
     balanced: 'متوازن', unbalanced: 'غير متوازن', line: 'البند',
 } : {
     eyebrow: 'Accounting', back: 'Journal Entries',
     createTitle: 'New journal entry', editTitle: 'Edit draft',
     desc: 'Build a balanced entry as a draft, then post it from the list.',
     save: 'Save draft', cancel: 'Cancel',
-    fields: { entry_date: 'Date', branch: 'Branch', currency: 'Currency', narration: 'Narration', lines: 'Lines', account: 'Account', debit: 'Debit', credit: 'Credit', description: 'Description', addLine: 'Add line', none: '— None —' },
+    fields: { entry_date: 'Date', branch: 'Branch', currency: 'Currency', narration: 'Narration', lines: 'Lines', account: 'Account', debit: 'Debit', credit: 'Credit', description: 'Description', addLine: 'Add line', none: '— None —', linesHelp: 'Pick the ledger account each line debits or credits.' },
     balanced: 'Balanced', unbalanced: 'Unbalanced', line: 'Line',
 })
 
@@ -117,6 +117,7 @@ function submit() {
             </div>
 
             <label class="label">{{ t.fields.lines }}</label>
+            <div class="hint" style="margin-bottom:6px;">{{ t.fields.linesHelp }}</div>
             <table class="table" style="margin-bottom:8px;">
                 <thead>
                     <tr><th style="width:40%;">{{ t.fields.account }}</th><th style="width:18%; text-align:end;">{{ t.fields.debit }}</th><th style="width:18%; text-align:end;">{{ t.fields.credit }}</th><th>{{ t.fields.description }}</th><th style="width:32px;"></th></tr>
@@ -147,3 +148,7 @@ function submit() {
         </form>
     </div>
 </template>
+
+<style scoped>
+.hint { font-size:11px; color:var(--fg-subtle); margin-top:4px; line-height:1.4; }
+</style>

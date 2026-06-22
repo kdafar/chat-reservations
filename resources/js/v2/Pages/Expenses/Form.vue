@@ -26,13 +26,17 @@ const t = computed(() => isRtl.value ? {
     createTitle: 'مصروف جديد', editTitle: 'تحرير المصروف',
     desc: 'سجّل مصروفاً تشغيلياً كمسودة، ثم رحّله إلى دفتر الأستاذ من القائمة.',
     save: 'حفظ', cancel: 'إلغاء',
-    fields: { expense_date: 'التاريخ', vendor: 'المورّد', branch: 'الفرع', account: 'حساب المصروف', payment_account: 'حساب الدفع', amount: 'المبلغ', description: 'الوصف', reference_no: 'رقم مرجعي', none: '— بدون —', ap: '— على الحساب (دائنون) —' },
+    fields: { expense_date: 'التاريخ', vendor: 'المورّد', branch: 'الفرع', account: 'حساب المصروف', payment_account: 'حساب الدفع', amount: 'المبلغ', description: 'الوصف', reference_no: 'رقم مرجعي', none: '— بدون —', ap: '— على الحساب (دائنون) —',
+        accountHelp: 'فئة التكلفة التي يتبع لها هذا المصروف — حساب مصروف أو تكلفة بضاعة.',
+        paymentAccountHelp: 'الحساب النقدي أو البنكي الذي دُفع منه المبلغ. اتركه فارغاً لتسجيله كمستحق على الحساب (دائنون).' },
 } : {
     eyebrow: 'Accounting', back: 'Expenses',
     createTitle: 'New expense', editTitle: 'Edit expense',
     desc: 'Record an operational expense as a draft, then post it to the ledger from the list.',
     save: 'Save', cancel: 'Cancel',
-    fields: { expense_date: 'Date', vendor: 'Vendor', branch: 'Branch', account: 'Expense account', payment_account: 'Payment account', amount: 'Amount', description: 'Description', reference_no: 'Reference no.', none: '— None —', ap: '— On account (A/P) —' },
+    fields: { expense_date: 'Date', vendor: 'Vendor', branch: 'Branch', account: 'Expense account', payment_account: 'Payment account', amount: 'Amount', description: 'Description', reference_no: 'Reference no.', none: '— None —', ap: '— On account (A/P) —',
+        accountHelp: 'The cost category this expense belongs to — an expense or cost-of-goods account.',
+        paymentAccountHelp: 'Cash or bank account the money was paid from. Leave blank to record it as owed on account (A/P).' },
 })
 
 const expenseAccountItems = computed(() => props.expense_accounts.map((a) => ({ value: a.id, label: a.label })))
@@ -112,11 +116,13 @@ function submit() {
                 <div>
                     <label class="label">{{ t.fields.account }} <span class="req">*</span></label>
                     <SearchableSelect v-model="form.account_id" :items="expenseAccountItems" :nullable="false" placeholder="—" />
+                    <div class="hint">{{ t.fields.accountHelp }}</div>
                     <div v-if="errors.account_id" class="err">{{ errors.account_id }}</div>
                 </div>
                 <div>
                     <label class="label">{{ t.fields.payment_account }}</label>
                     <SearchableSelect v-model="form.payment_account_id" :items="paymentAccountItems" :null-label="t.fields.ap" />
+                    <div class="hint">{{ t.fields.paymentAccountHelp }}</div>
                     <div v-if="errors.payment_account_id" class="err">{{ errors.payment_account_id }}</div>
                 </div>
                 <div style="grid-column:span 2;">
@@ -138,3 +144,7 @@ function submit() {
         </form>
     </div>
 </template>
+
+<style scoped>
+.hint { font-size:11px; color:var(--fg-subtle); margin-top:4px; line-height:1.4; }
+</style>

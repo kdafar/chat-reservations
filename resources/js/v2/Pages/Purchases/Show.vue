@@ -36,7 +36,7 @@ const t = computed(() => isRtl.value ? {
     receipts: 'الاستلامات', payments: 'المدفوعات', noReceipts: 'لا توجد استلامات', noPayments: 'لا توجد مدفوعات', by: 'بواسطة',
     void: 'إبطال', method: 'الطريقة', date: 'التاريخ', amount: 'المبلغ', reference: 'المرجع', code: 'الرمز', goodsKwd: 'البضاعة (د.ك)', landedKwd: 'الواصلة (د.ك)',
     rcvPanel: 'استلام البضاعة', confirmReceipt: 'تأكيد الاستلام', qtyToRecv: 'كمية الاستلام', payPanel: 'تسجيل دفعة', recordPayment: 'تسجيل الدفعة',
-    autoByMethod: 'تلقائي حسب الطريقة', account: 'الحساب', payDate: 'تاريخ الدفع',
+    autoByMethod: 'تلقائي حسب الطريقة', account: 'الحساب', accountHelp: 'الحساب النقدي أو البنكي الذي تُدفع منه دفعة المورد. اتركه فارغاً ليُختار تلقائياً حسب طريقة الدفع.', payDate: 'تاريخ الدفع',
     ackPanel: 'تأكيد المورد', rejectPanel: 'رفض الأمر', reason: 'سبب الرفض',
     needQty: 'أدخل كمية واحدة على الأقل', needAmount: 'المبلغ يجب أن يكون أكبر من صفر', needReason: 'أدخل سبب الرفض',
     confirmReject: 'رفض أمر الشراء هذا؟', confirmClose: 'إغلاق أمر الشراء هذا؟', confirmCancel: 'إلغاء أمر الشراء هذا؟', confirmVoid: 'إبطال هذه الدفعة؟',
@@ -57,7 +57,7 @@ const t = computed(() => isRtl.value ? {
     receipts: 'Receipts', payments: 'Payments', noReceipts: 'No receipts yet', noPayments: 'No payments yet', by: 'by',
     void: 'Void', method: 'Method', date: 'Date', amount: 'Amount', reference: 'Reference', code: 'Code', goodsKwd: 'Goods (KWD)', landedKwd: 'Landed (KWD)',
     rcvPanel: 'Receive goods', confirmReceipt: 'Confirm receipt', qtyToRecv: 'Qty to receive', payPanel: 'Record payment', recordPayment: 'Record payment',
-    autoByMethod: 'Auto by method', account: 'Account', payDate: 'Payment date',
+    autoByMethod: 'Auto by method', account: 'Account', accountHelp: 'Cash or bank account the vendor payment is made from. Leave blank to auto-pick by payment method.', payDate: 'Payment date',
     ackPanel: 'Acknowledge order', rejectPanel: 'Reject order', reason: 'Rejection reason',
     needQty: 'Enter at least one quantity', needAmount: 'Amount must be greater than zero', needReason: 'Enter a rejection reason',
     confirmReject: 'Reject this purchase order?', confirmClose: 'Close this purchase order?', confirmCancel: 'Cancel this purchase order?', confirmVoid: 'Void this payment?',
@@ -345,6 +345,7 @@ const st = computed(() => order.value.status)
                     <div>
                         <div class="eyebrow" style="margin-bottom: 4px;">{{ t.account }}</div>
                         <SearchableSelect v-model="payForm.account_id" :items="accountItems" :null-label="t.autoByMethod" />
+                        <div class="hint">{{ t.accountHelp }}</div>
                     </div>
                     <div>
                         <div class="eyebrow" style="margin-bottom: 4px;">{{ t.payDate }}</div>
@@ -511,6 +512,7 @@ const st = computed(() => order.value.status)
 </template>
 
 <style scoped>
+.hint { font-size:11px; color:var(--fg-subtle); margin-top:4px; line-height:1.4; }
 .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
 @media (max-width: 900px) { .info-grid { grid-template-columns: 1fr; } }
 .card-h { padding: 12px 16px; font-size: 14px; font-weight: 700; color: var(--fg); }
