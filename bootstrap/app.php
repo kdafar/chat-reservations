@@ -95,7 +95,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command('booking:cleanup-holds')->everyMinute();
         $schedule->command('wa:sessions:expire')->everyFifteenMinutes();
         $schedule->command('tables:free-stuck --hours=6')->dailyAt('03:00');
-        $schedule->command('telescope:prune')->dailyAt('00:00');
+        $schedule->command('telescope:prune')->dailyAt('00:07');
         $schedule->command('queue:work --queue=campaigns,default --sleep=1 --max-time=55 --stop-when-empty')
             ->everyMinute()
             ->withoutOverlapping();
