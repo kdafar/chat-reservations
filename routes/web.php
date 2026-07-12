@@ -437,6 +437,10 @@ Route::middleware([
     // "How to use this page" help content (dedicated v2 help slide-over).
     Route::get('/api/help/{key}', [\App\Http\Controllers\V2\HelpController::class, 'show'])->name('api.help.show');
 
+    // System Guide — plain-language "what each link does + who can use it"
+    // overview, personalised to the current user. Visible to everyone.
+    Route::get('/guide', [\App\Http\Controllers\V2\GuideController::class, 'index'])->name('guide');
+
     // Live topbar status chips (waiting / today's bookings / unpaid).
     Route::get('/api/summary', [\App\Http\Controllers\V2\SummaryController::class, 'summary'])->name('api.summary');
 

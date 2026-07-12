@@ -6,7 +6,7 @@
 // GET /admin/v2/api/help/{id} when the drawer opens.
 export const HELP_PAGES = new Set([
     // Operations
-    'dashboard', 'waiting', 'checkin', 'bookings', 'visits', 'visit-console', 'doctor-schedule',
+    'dashboard', 'waiting', 'checkin', 'bookings', 'visits', 'visit-console', 'doctor-schedule', 'my-earnings',
     // Patients
     'patients', 'patient-files', 'follow-up-plans',
     // Inpatient
@@ -17,19 +17,23 @@ export const HELP_PAGES = new Set([
     'lab-tests',
     // Pharmacy & stock
     'clinic-items', 'clinic-stock', 'stock-movements', 'stock-requests', 'stock-transfers', 'purchase-orders', 'clinic-packages',
+    // Discounts & promotions
+    'coupons', 'promotions',
     // HR
     'leaves', 'attendance', 'doctors', 'users', 'doctor-comp', 'doctor-earnings',
     // Payroll
     'payroll-runs', 'salary-profiles', 'staff-loans', 'leave-balances', 'settlements',
     // Accounting
-    'accounts', 'journal-entries', 'expenses', 'vendors', 'reconciliation', 'periods',
-    'trial-balance', 'general-ledger', 'profit-loss', 'balance-sheet', 'cash-flow',
+    'accounts', 'posting-accounts', 'fixed-assets', 'prepaid-schedules', 'journal-entries', 'expenses', 'vendors', 'reconciliation', 'periods',
+    'trial-balance', 'general-ledger', 'profit-loss', 'balance-sheet', 'cash-flow', 'aging',
     // Reports
     'reports', 'daily-closing', 'daily-reconciliation', 'executive',
     // Platform
     'clinics', 'branches', 'gateways', 'roles', 'settings', 'activity',
     // WhatsApp
     'wa-triggers', 'wa-campaigns', 'wa-commands', 'wa-messages', 'wa-texts', 'wa-logs', 'wa-sessions', 'wa-audience',
+    // WhatsApp Platform (chat module)
+    'wap-dashboard', 'wap-inbox', 'wap-templates', 'wap-media', 'wap-contacts', 'wap-campaigns', 'wap-points', 'wap-logs', 'wap-sessions', 'wap-settings',
 ])
 
 export function hasHelp(navId) {
