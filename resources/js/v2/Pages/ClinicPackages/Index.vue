@@ -27,13 +27,23 @@ const t = computed(() => isRtl.value ? {
     desc: 'حزمة من الأصناف بسعر واحد يضيفها الطبيب للزيارة بنقرة. الفرع فارغ = متاحة لكل الفروع.',
     searchPh: 'ابحث باسم الباقة…', new: 'باقة جديدة',
     status: { all: 'الكل', active: 'فعّالة', inactive: 'غير فعّالة' }, allBranches: 'كل الفروع', global: 'كل الفروع',
-    col: { name: 'الاسم', branch: 'الفرع', price: 'السعر', items: 'الأصناف', status: 'الحالة' },
+    col: { name: 'الاسم', branch: 'الفرع', price: 'السعر الأساسي', offer: 'سعر العرض', items: 'الأصناف', status: 'الحالة' },
     empty: 'لا توجد باقات', emptyDesc: 'أنشئ أول باقة.', clear: 'مسح', showing: 'عرض', of: 'من',
-    stats: { total: 'الكل', active: 'فعّالة' },
+    stats: { total: 'الكل', active: 'فعّالة', offers: 'عروض منشورة' },
+    web: 'على الموقع', expired: 'انتهى العرض', scheduled: 'لم يبدأ بعد',
     modal: {
         createTitle: 'باقة جديدة', editTitle: 'تحرير الباقة',
         branch: 'الفرع', branchHelp: 'اتركه فارغًا لإتاحتها في كل الفروع.', global: '— كل الفروع —',
-        nameEn: 'الاسم (إنجليزي)', nameAr: 'الاسم (عربي)', price: 'السعر الافتراضي', active: 'فعّالة',
+        nameEn: 'الاسم (إنجليزي)', nameAr: 'الاسم (عربي)', price: 'السعر الأساسي', active: 'فعّالة',
+        priceHelp: 'السعر المعتاد للباقة قبل الخصم.',
+        discount: 'سعر العرض', discountHelp: 'اتركه فارغًا إن لم يكن هناك عرض. يجب أن يكون أقل من السعر الأساسي.',
+        saves: 'يوفّر المريض', pricing: 'التسعير', offerWindow: 'مدة العرض',
+        startsAt: 'يبدأ في', endsAt: 'ينتهي في', windowHelp: 'اتركه فارغًا ليظل العرض ساريًا دائمًا.',
+        website: 'الموقع الإلكتروني', isPublic: 'اعرض هذه الباقة كعرض على الموقع',
+        publicHelp: 'ستظهر في صفحة العروض مع السعر قبل وبعد الخصم وقيمة التوفير.',
+        descEn: 'الوصف (إنجليزي)', descAr: 'الوصف (عربي)', descPh: 'وصف قصير يظهر للمريض…',
+        imageUrl: 'رابط الصورة', imageHelp: 'رابط صورة تظهر على بطاقة العرض (اختياري).',
+        sortOrder: 'الترتيب', sortHelp: 'الأصغر يظهر أولًا.',
         items: 'أصناف الباقة', item: 'الصنف', qty: 'الكمية (أساس)', consumable: 'يُخصم من المخزون',
         addItem: 'إضافة صنف', selectItem: '— اختر صنفًا —', noItems: 'لا أصناف بعد.',
         save: 'حفظ', cancel: 'إلغاء', delete: 'حذف', deleteConfirm: 'حذف هذه الباقة نهائيًا؟',
@@ -43,13 +53,23 @@ const t = computed(() => isRtl.value ? {
     desc: 'A bundle of items at one price a doctor can add to a visit in one tap. Empty branch = available everywhere.',
     searchPh: 'Search by package name…', new: 'New package',
     status: { all: 'All', active: 'Active', inactive: 'Inactive' }, allBranches: 'All branches', global: 'All branches',
-    col: { name: 'Name', branch: 'Branch', price: 'Price', items: 'Items', status: 'Status' },
+    col: { name: 'Name', branch: 'Branch', price: 'Main price', offer: 'Offer price', items: 'Items', status: 'Status' },
     empty: 'No packages', emptyDesc: 'Create your first package.', clear: 'Clear', showing: 'Showing', of: 'of',
-    stats: { total: 'Total', active: 'Active' },
+    stats: { total: 'Total', active: 'Active', offers: 'Live offers' },
+    web: 'On website', expired: 'Offer ended', scheduled: 'Not started',
     modal: {
         createTitle: 'New package', editTitle: 'Edit package',
         branch: 'Branch', branchHelp: 'Leave empty to offer it at every branch.', global: '— All branches —',
-        nameEn: 'Name (English)', nameAr: 'Name (Arabic)', price: 'Default price', active: 'Active',
+        nameEn: 'Name (English)', nameAr: 'Name (Arabic)', price: 'Main price', active: 'Active',
+        priceHelp: 'What the package normally costs, before any discount.',
+        discount: 'Discount price', discountHelp: 'Leave empty if there is no offer. Must be lower than the main price.',
+        saves: 'Patient saves', pricing: 'Pricing', offerWindow: 'Offer period',
+        startsAt: 'Starts', endsAt: 'Ends', windowHelp: 'Leave empty to run the offer indefinitely.',
+        website: 'Public website', isPublic: 'Show this package as an offer on the website',
+        publicHelp: 'It appears on the Offers page with the before/after price and the amount saved.',
+        descEn: 'Description (English)', descAr: 'Description (Arabic)', descPh: 'Short description patients will see…',
+        imageUrl: 'Image URL', imageHelp: 'Photo shown on the offer card (optional).',
+        sortOrder: 'Sort order', sortHelp: 'Lower numbers appear first.',
         items: 'Package items', item: 'Item', qty: 'Qty (base)', consumable: 'Deduct from stock',
         addItem: 'Add item', selectItem: '— Select an item —', noItems: 'No items yet.',
         save: 'Save', cancel: 'Cancel', delete: 'Delete', deleteConfirm: 'Permanently delete this package?',
@@ -70,10 +90,27 @@ function clearFilters() { f.q = ''; f.branch_id = ''; f.status = 'all'; apply() 
 const modalOpen = ref(false)
 const modalMode = ref('create')
 const editing = ref(null)
-const blank = () => ({ branch_id: '', name_en: '', name_ar: '', default_price: 0, is_active: true, items: [] })
+const blank = () => ({
+    branch_id: '', name_en: '', name_ar: '',
+    description_en: '', description_ar: '', image_url: '',
+    default_price: 0, discount_price: null,
+    offer_starts_at: '', offer_ends_at: '',
+    is_active: true, is_public: false, sort_order: 0,
+    items: [],
+})
 const form = reactive(blank())
 const errors = ref({})
 const saving = ref(false)
+
+// Live "patient saves" readout under the two price inputs — the same figure the
+// patient sees on the website, so it can't be published wrong by accident.
+const preview = computed(() => {
+    const main = Number(form.default_price) || 0
+    const off = form.discount_price === null || form.discount_price === '' ? null : Number(form.discount_price)
+    if (off === null || !(off > 0) || !(off < main)) return null
+    const amount = main - off
+    return { amount, percent: Math.round((amount / main) * 100) }
+})
 
 function openCreate() {
     modalMode.value = 'create'; editing.value = null
@@ -85,7 +122,12 @@ function openEdit(row) {
     modalMode.value = 'edit'; editing.value = row
     Object.assign(form, {
         branch_id: row.branch_id || '', name_en: row.name_en || '', name_ar: row.name_ar || '',
-        default_price: row.default_price ?? 0, is_active: !!row.is_active,
+        description_en: row.description_en || '', description_ar: row.description_ar || '',
+        image_url: row.image_url || '',
+        default_price: row.default_price ?? 0,
+        discount_price: row.discount_price ?? null,
+        offer_starts_at: row.offer_starts_at || '', offer_ends_at: row.offer_ends_at || '',
+        is_active: !!row.is_active, is_public: !!row.is_public, sort_order: row.sort_order ?? 0,
         items: (row.items || []).map(it => ({ clinic_item_id: it.clinic_item_id, qty_base: it.qty_base, is_consumable: it.is_consumable })),
     })
     errors.value = {}; modalOpen.value = true
@@ -101,7 +143,17 @@ function submit() {
         ? route('v2.clinic-packages.store')
         : route('v2.clinic-packages.update', { clinicPackage: editing.value.id })
     const method = modalMode.value === 'create' ? 'post' : 'put'
-    const payload = { ...form, branch_id: form.branch_id || null }
+    const payload = {
+        ...form,
+        branch_id: form.branch_id || null,
+        // Empty inputs must reach the server as null, not '' — the nullable
+        // numeric/date rules reject a blank string.
+        discount_price: form.discount_price === '' || form.discount_price === null ? null : Number(form.discount_price),
+        offer_starts_at: form.offer_starts_at || null,
+        offer_ends_at: form.offer_ends_at || null,
+        image_url: form.image_url || null,
+        sort_order: Number(form.sort_order) || 0,
+    }
     router[method](url, payload, {
         preserveScroll: true,
         onSuccess: () => closeModal(),
@@ -136,6 +188,7 @@ function destroy(row) {
         <div style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;">
             <div class="stat-chip"><span class="stat-chip-num">{{ counts.total }}</span><span class="stat-chip-lbl">{{ t.stats.total }}</span></div>
             <div class="stat-chip"><span class="stat-chip-num" style="color:var(--ok);">{{ counts.active }}</span><span class="stat-chip-lbl">{{ t.stats.active }}</span></div>
+            <div class="stat-chip"><span class="stat-chip-num" style="color:var(--accent, #b45309);">{{ counts.offers }}</span><span class="stat-chip-lbl">{{ t.stats.offers }}</span></div>
         </div>
 
         <div class="card" style="padding:12px; margin-bottom:12px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
@@ -159,6 +212,7 @@ function destroy(row) {
                         <th>{{ t.col.name }}</th>
                         <th>{{ t.col.branch }}</th>
                         <th style="text-align:end;">{{ t.col.price }}</th>
+                        <th style="text-align:end;">{{ t.col.offer }}</th>
                         <th style="text-align:end;">{{ t.col.items }}</th>
                         <th>{{ t.col.status }}</th>
                         <th style="width:60px;"></th>
@@ -166,16 +220,29 @@ function destroy(row) {
                 </thead>
                 <tbody>
                     <tr v-if="page.data.length === 0">
-                        <td colspan="6" style="text-align:center; padding:48px 12px; color:var(--fg-faint);">
+                        <td colspan="7" style="text-align:center; padding:48px 12px; color:var(--fg-faint);">
                             <Icon name="gift" :size="32" style="margin-bottom:8px; opacity:0.4;" />
                             <div style="font-weight:600;">{{ t.empty }}</div>
                             <div style="font-size:12px; margin-top:4px;">{{ t.emptyDesc }}</div>
                         </td>
                     </tr>
                     <tr v-for="row in page.data" :key="row.id" @click="can_manage && openEdit(row)" :style="can_manage ? 'cursor:pointer;' : ''">
-                        <td style="font-weight:600;">{{ row.name }}</td>
+                        <td style="font-weight:600;">
+                            {{ row.name }}
+                            <span v-if="row.is_public" class="badge-web" :title="t.modal.publicHelp">{{ t.web }}</span>
+                        </td>
                         <td>{{ row.branch_name || t.global }}</td>
-                        <td class="mono" style="text-align:end;">{{ fmt(row.default_price) }}</td>
+                        <td class="mono" style="text-align:end;" :style="row.has_discount ? 'text-decoration:line-through; color:var(--fg-faint);' : ''">{{ fmt(row.default_price) }}</td>
+                        <td class="mono" style="text-align:end;">
+                            <template v-if="row.has_discount">
+                                <span style="font-weight:700;">{{ fmt(row.effective_price) }}</span>
+                                <span class="badge-save">−{{ row.savings_percent }}%</span>
+                            </template>
+                            <span v-else-if="row.discount_price !== null" class="badge-muted">
+                                {{ row.offer_window_open ? '—' : (row.offer_ends_at && !row.offer_window_open ? t.expired : t.scheduled) }}
+                            </span>
+                            <span v-else style="color:var(--fg-faint);">—</span>
+                        </td>
                         <td class="mono" style="text-align:end;">{{ row.items_count }}</td>
                         <td><span :class="row.is_active ? 'badge-ok' : 'badge-muted'">{{ row.is_active ? t.status.active : t.status.inactive }}</span></td>
                         <td @click.stop>
@@ -219,13 +286,74 @@ function destroy(row) {
                         <div style="font-size:11px; color:var(--fg-faint); margin-top:4px;">{{ t.modal.branchHelp }}</div>
                     </div>
                     <div>
-                        <label class="label">{{ t.modal.price }} <span class="req">*</span></label>
-                        <input v-model.number="form.default_price" type="number" step="any" min="0" class="input" required />
-                        <div v-if="errors.default_price" class="err">{{ errors.default_price }}</div>
+                        <label class="label">{{ t.modal.sortOrder }}</label>
+                        <input v-model.number="form.sort_order" type="number" step="1" min="0" class="input" />
+                        <div style="font-size:11px; color:var(--fg-faint); margin-top:4px;">{{ t.modal.sortHelp }}</div>
                     </div>
                 </div>
 
-                <label class="role-check" style="width:fit-content; margin-top:12px;"><input type="checkbox" v-model="form.is_active" /><span>{{ t.modal.active }}</span></label>
+                <div class="section-head">{{ t.modal.pricing }}</div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                    <div>
+                        <label class="label">{{ t.modal.price }} <span class="req">*</span></label>
+                        <input v-model.number="form.default_price" type="number" step="any" min="0" class="input" required />
+                        <div style="font-size:11px; color:var(--fg-faint); margin-top:4px;">{{ t.modal.priceHelp }}</div>
+                        <div v-if="errors.default_price" class="err">{{ errors.default_price }}</div>
+                    </div>
+                    <div>
+                        <label class="label">{{ t.modal.discount }}</label>
+                        <input v-model="form.discount_price" type="number" step="any" min="0" class="input" placeholder="—" />
+                        <div style="font-size:11px; color:var(--fg-faint); margin-top:4px;">{{ t.modal.discountHelp }}</div>
+                        <div v-if="errors.discount_price" class="err">{{ errors.discount_price }}</div>
+                    </div>
+                </div>
+
+                <div v-if="preview" class="savings-preview">
+                    <Icon name="tag" :size="14" />
+                    <span>{{ t.modal.saves }}</span>
+                    <strong>{{ fmt(preview.amount) }}</strong>
+                    <span class="badge-save">−{{ preview.percent }}%</span>
+                </div>
+
+                <div class="section-head">{{ t.modal.offerWindow }}</div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                    <div>
+                        <label class="label">{{ t.modal.startsAt }}</label>
+                        <input v-model="form.offer_starts_at" type="date" class="input" />
+                        <div v-if="errors.offer_starts_at" class="err">{{ errors.offer_starts_at }}</div>
+                    </div>
+                    <div>
+                        <label class="label">{{ t.modal.endsAt }}</label>
+                        <input v-model="form.offer_ends_at" type="date" class="input" />
+                        <div v-if="errors.offer_ends_at" class="err">{{ errors.offer_ends_at }}</div>
+                    </div>
+                </div>
+                <div style="font-size:11px; color:var(--fg-faint); margin-top:4px;">{{ t.modal.windowHelp }}</div>
+
+                <div class="section-head">{{ t.modal.website }}</div>
+                <label class="role-check" style="width:fit-content;"><input type="checkbox" v-model="form.is_public" /><span>{{ t.modal.isPublic }}</span></label>
+                <div style="font-size:11px; color:var(--fg-faint); margin-top:6px;">{{ t.modal.publicHelp }}</div>
+
+                <div v-if="form.is_public" style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px;">
+                    <div>
+                        <label class="label">{{ t.modal.descEn }}</label>
+                        <textarea v-model="form.description_en" class="input" rows="3" maxlength="1000" :placeholder="t.modal.descPh"></textarea>
+                        <div v-if="errors.description_en" class="err">{{ errors.description_en }}</div>
+                    </div>
+                    <div>
+                        <label class="label">{{ t.modal.descAr }}</label>
+                        <textarea v-model="form.description_ar" class="input" rows="3" maxlength="1000" dir="rtl" :placeholder="t.modal.descPh"></textarea>
+                        <div v-if="errors.description_ar" class="err">{{ errors.description_ar }}</div>
+                    </div>
+                    <div style="grid-column:1 / -1;">
+                        <label class="label">{{ t.modal.imageUrl }}</label>
+                        <input v-model="form.image_url" type="url" class="input" placeholder="https://…" dir="ltr" />
+                        <div style="font-size:11px; color:var(--fg-faint); margin-top:4px;">{{ t.modal.imageHelp }}</div>
+                        <div v-if="errors.image_url" class="err">{{ errors.image_url }}</div>
+                    </div>
+                </div>
+
+                <label class="role-check" style="width:fit-content; margin-top:16px;"><input type="checkbox" v-model="form.is_active" /><span>{{ t.modal.active }}</span></label>
 
                 <div style="display:flex; justify-content:space-between; align-items:center; margin:18px 0 8px;">
                     <label class="label" style="margin:0;">{{ t.modal.items }}</label>
@@ -261,6 +389,11 @@ function destroy(row) {
 .table tbody tr:hover { background:var(--bg-hover); }
 .badge-ok { display:inline-block; padding:2px 8px; font-size:11px; font-weight:600; border:1px solid var(--ok); color:var(--ok); border-radius:999px; }
 .badge-muted { display:inline-block; padding:2px 8px; font-size:11px; font-weight:600; border:1px solid var(--fg-faint); color:var(--fg-faint); border-radius:999px; }
+.badge-save { display:inline-block; margin-inline-start:6px; padding:2px 7px; font-size:10px; font-weight:700; border-radius:999px; background:#059669; color:#fff; letter-spacing:0.02em; }
+.badge-web { display:inline-block; margin-inline-start:6px; padding:1px 7px; font-size:10px; font-weight:600; border-radius:999px; background:var(--bg-hover); border:1px solid var(--line); color:var(--fg-subtle); }
+.section-head { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:var(--fg-faint); margin:20px 0 10px; padding-top:12px; border-top:1px solid var(--line); }
+.savings-preview { display:flex; align-items:center; gap:8px; margin-top:10px; padding:8px 12px; border-radius:8px; background:rgba(5,150,105,0.08); border:1px solid rgba(5,150,105,0.25); color:#047857; font-size:13px; font-weight:600; }
+textarea.input { resize:vertical; font-family:inherit; line-height:1.5; }
 .role-check { display:inline-flex; align-items:center; gap:6px; font-size:13px; padding:6px 10px; border:1px solid var(--line); border-radius:6px; cursor:pointer; }
 .role-check:hover { background:var(--bg-hover); }
 .item-row { display:flex; align-items:center; gap:8px; margin-bottom:8px; }

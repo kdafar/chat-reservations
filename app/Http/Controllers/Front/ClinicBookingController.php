@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Booking;
 use App\Models\Branch;
 use App\Models\ClinicItem;
+use App\Models\ClinicPackage;
 use App\Models\Doctor;
 use App\Models\Partner;
 use App\Models\Service;
@@ -25,9 +26,11 @@ use Illuminate\Support\Facades\Log;
 class ClinicBookingController extends Controller
 {
     // 1. View: Serves the React App
+    // Must be the same shell every other /clinic/* URL falls back to, so the
+    // EVA landing page renders here instead of a stale hardcoded template.
     public function index()
     {
-        return view('front.clinic.booking');
+        return view('clinic.landing');
     }
 
     // 2. API: Get List of Partners (Clinics)
@@ -200,7 +203,20 @@ class ClinicBookingController extends Controller
             // keep optional fields if frontend sends them later
             'email' => 'nullable|string',
             'otp_code' => 'nullable|string|max:8',
+            'package_id' => 'nullable|integer',
         ]);
+
+        // The offer the visitor was looking at when they hit "Book". Re-resolve it
+        // against the same published-offers query the site reads from, so a stale,
+        // unpublished or expired id can't be stamped onto the booking. This is a
+        // hint for reception, never a requirement: an id we can't confirm silently
+        // degrades to null so the booking still goes through.
+        $requestedPackageId = null;
+        if (! empty($data['package_id'])) {
+            $requestedPackageId = $this->publicOffersQuery()
+                ->whereKey((int) $data['package_id'])
+                ->value('id');
+        }
 
         // Normalize msisdn (same idea you used in BookingService; keep it stable here too)
         $msisdn = trim((string) $data['msisdn']);
@@ -290,6 +306,7 @@ class ClinicBookingController extends Controller
                 'source' => 'web',
                 // optional source_ref (safe add-only)
                 'source_ref' => (string) ($request->header('X-Request-Id') ?? ''),
+                'requested_package_id' => $requestedPackageId,
             ]);
         } catch (\Throwable $e) {
             Log::error('Web Booking: confirmFromHold failed', [
@@ -445,7 +462,72 @@ class ClinicBookingController extends Controller
             'categories' => Service::query()->where('is_active', true)->count(),
             'doctors' => Doctor::query()->where('is_active', true)->count(),
             'branches' => Branch::query()->count(),
+            'offers' => $this->publicOffersQuery()->count(),
         ]);
+    }
+
+    /**
+     * Published package offers, priced for the patient.
+     *
+     * Each row carries the main price, the offer price and the saving, so the
+     * site can show "was / now / you save" without doing pricing arithmetic of
+     * its own — the numbers come straight off the model accessors that also
+     * price the package when it is added to a real visit.
+     */
+    public function offers(): JsonResponse
+    {
+        $packages = $this->publicOffersQuery()
+            ->with(['branch:id,name,partner_id', 'items.clinicItem'])
+            ->orderBy('sort_order')
+            ->orderByDesc('id')
+            ->get();
+
+        $offers = $packages->map(fn (ClinicPackage $p) => [
+            'id' => $p->id,
+            'name' => $p->localized_name,
+            'description' => $p->localized_description,
+            'image_url' => $p->image_url,
+            'branch' => $p->branch?->localized_name,
+            // Ids so "Book this offer" can open the widget with the branch
+            // already chosen instead of restarting the flow.
+            'branch_id' => $p->branch?->id,
+            'partner_id' => $p->branch?->partner_id,
+
+            'price' => round((float) $p->default_price, 3),
+            'offer_price' => $p->effective_price,
+            'has_discount' => $p->has_discount,
+            'savings_amount' => $p->savings_amount,
+            'savings_percent' => $p->savings_percent,
+            'ends_at' => $p->offer_ends_at?->toDateString(),
+
+            // What's actually in the bundle — the reason the price is worth it.
+            // Quantity rides along so a 6-session course reads as six sessions
+            // rather than a single line the patient has to guess at.
+            'includes' => $p->items
+                ->filter(fn ($it) => $it->clinicItem !== null)
+                ->map(fn ($it) => [
+                    'name' => $it->clinicItem->localized_name,
+                    'qty' => (float) $it->qty_base,
+                ])
+                ->values()
+                ->all(),
+        ])->values();
+
+        return response()->json([
+            'offers' => $offers,
+            // Headline for the offers page: the most a patient can save right now.
+            'max_savings' => round((float) $offers->max('savings_amount'), 3),
+        ]);
+    }
+
+    /**
+     * Packages published to this website. Global scopes are dropped on purpose:
+     * the public site must render the same list for a guest and for a logged-in
+     * staff member, so `is_public` is the only thing that decides visibility.
+     */
+    protected function publicOffersQuery()
+    {
+        return ClinicPackage::query()->withoutGlobalScopes()->publicOffers();
     }
 
     public function branchShow(Branch $branch): JsonResponse
@@ -478,6 +560,23 @@ class ClinicBookingController extends Controller
                 'cover_image_url' => $branch->cover_image_url,
                 'partner' => $branch->partner,
                 'services' => $branch->services,
+
+                // For the map + directions button. Null coordinates simply hide
+                // the map rather than dropping a pin in the Gulf of Guinea.
+                'latitude' => $branch->latitude !== null ? (float) $branch->latitude : null,
+                'longitude' => $branch->longitude !== null ? (float) $branch->longitude : null,
+
+                // 0 = Sunday .. 6 = Saturday, matching Branch::isOpenNow() so
+                // the printed week and the "Open now" badge can never disagree.
+                'opening_hours' => $branch->openingHours
+                    ->sortBy('day_of_week')
+                    ->map(fn ($h) => [
+                        'day' => (int) $h->day_of_week,
+                        'opens_at' => $h->is_closed ? null : substr((string) $h->opens_at, 0, 5),
+                        'closes_at' => $h->is_closed ? null : substr((string) $h->closes_at, 0, 5),
+                        'is_closed' => (bool) $h->is_closed,
+                    ])
+                    ->values(),
             ],
             'doctors' => $doctors,
         ]);
@@ -514,6 +613,40 @@ class ClinicBookingController extends Controller
                     'cover_image_url' => $branch->cover_image_url,
                 ] : null,
             ],
+        ]);
+    }
+    /**
+     * Published before/after cases for the public results gallery.
+     *
+     * Only cases with recorded patient consent are exposed — see
+     * GalleryCase::scopePublic().
+     */
+    public function gallery(): JsonResponse
+    {
+        $cases = \App\Models\GalleryCase::query()
+            ->public()
+            ->with(['service:id,name,slug,icon', 'doctor:id,name', 'branch:id,name,slug'])
+            ->orderBy('sort_order')
+            ->orderByDesc('id')
+            ->get();
+
+        return response()->json([
+            'cases' => $cases->map(fn ($c) => [
+                'id' => $c->id,
+                'title' => $c->localized_title,
+                'summary' => $c->localized_summary,
+                'protocol' => $c->localized_protocol,
+                'before_image_url' => $c->before_image_url,
+                'after_image_url' => $c->after_image_url,
+                'service' => $c->service ? [
+                    'id' => $c->service->id,
+                    'name' => $c->service->localized_name ?? $c->service->name,
+                    'icon' => $c->service->icon,
+                    'slug' => $c->service->slug,
+                ] : null,
+                'doctor' => $c->doctor?->name,
+                'branch' => $c->branch?->localized_name,
+            ])->values(),
         ]);
     }
 }

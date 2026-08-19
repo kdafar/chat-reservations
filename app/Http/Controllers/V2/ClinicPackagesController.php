@@ -51,8 +51,20 @@ class ClinicPackagesController extends Controller
         return \Maatwebsite\Excel\Facades\Excel::download(
             new \App\Exports\V2\StyledQueryExport(
                 $query->orderBy('id'),
-                ['ID', 'Name (EN)', 'Name (AR)', 'Branch', 'Price', 'Items', 'Active'],
-                fn ($p) => [$p->id, $n['en'] ?? null, $n['ar'] ?? null, $p->branch?->localized_name, number_format((float) $p->default_price, 3, '.', ''), $p->items_count, $p->is_active ? 'Yes' : 'No'],
+                ['ID', 'Name (EN)', 'Name (AR)', 'Branch', 'Main price', 'Discount price', 'Patient saves', 'Save %', 'Items', 'On website', 'Active'],
+                fn ($p) => [
+                    $p->id,
+                    $p->name['en'] ?? null,
+                    $p->name['ar'] ?? null,
+                    $p->branch?->localized_name,
+                    number_format((float) $p->default_price, 3, '.', ''),
+                    $p->discount_price !== null ? number_format((float) $p->discount_price, 3, '.', '') : null,
+                    $p->savings_amount > 0 ? number_format($p->savings_amount, 3, '.', '') : null,
+                    $p->savings_percent > 0 ? $p->savings_percent.'%' : null,
+                    $p->items_count,
+                    $p->is_public ? 'Yes' : 'No',
+                    $p->is_active ? 'Yes' : 'No',
+                ],
                 'Clinic Packages',
                 app()->getLocale() === 'ar',
             ),
@@ -100,6 +112,7 @@ class ClinicPackagesController extends Controller
             'counts' => [
                 'total' => ClinicPackage::query()->count(),
                 'active' => ClinicPackage::query()->where('is_active', true)->count(),
+                'offers' => ClinicPackage::query()->publicOffers()->whereNotNull('discount_price')->count(),
             ],
             'can_manage' => (bool) $request->user()?->can('create_clinic_packages'),
         ]);
@@ -111,12 +124,8 @@ class ClinicPackagesController extends Controller
         $data = $this->validateData($request);
 
         DB::transaction(function () use ($data) {
-            $package = ClinicPackage::create([
+            $package = ClinicPackage::create($this->attributesFrom($data) + [
                 'partner_id' => $this->defaultPartnerId($data['branch_id'] ?? null), // clinic-owned
-                'branch_id' => $data['branch_id'] ?? null,
-                'name' => ['en' => $data['name_en'], 'ar' => $data['name_ar']],
-                'default_price' => $data['default_price'],
-                'is_active' => $data['is_active'] ?? true,
             ]);
             $this->syncItems($package, $data['items'] ?? []);
         });
@@ -130,12 +139,7 @@ class ClinicPackagesController extends Controller
         $data = $this->validateData($request);
 
         DB::transaction(function () use ($clinicPackage, $data) {
-            $clinicPackage->update([
-                'branch_id' => $data['branch_id'] ?? null,
-                'name' => ['en' => $data['name_en'], 'ar' => $data['name_ar']],
-                'default_price' => $data['default_price'],
-                'is_active' => $data['is_active'] ?? true,
-            ]);
+            $clinicPackage->update($this->attributesFrom($data));
             $this->syncItems($clinicPackage, $data['items'] ?? []);
         });
 
@@ -160,13 +164,49 @@ class ClinicPackagesController extends Controller
             'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
             'name_en' => ['required', 'string', 'max:191'],
             'name_ar' => ['required', 'string', 'max:191'],
+            'description_en' => ['nullable', 'string', 'max:1000'],
+            'description_ar' => ['nullable', 'string', 'max:1000'],
+            'image_url' => ['nullable', 'string', 'max:2048', 'url'],
+
+            // Main price is what the package normally costs; the discount price
+            // is the offer and must undercut it, or the "you save" figure is a lie.
             'default_price' => ['required', 'numeric', 'min:0'],
+            'discount_price' => ['nullable', 'numeric', 'min:0', 'lt:default_price'],
+            'offer_starts_at' => ['nullable', 'date'],
+            'offer_ends_at' => ['nullable', 'date', 'after_or_equal:offer_starts_at'],
+
             'is_active' => ['boolean'],
+            'is_public' => ['boolean'],
+            'sort_order' => ['nullable', 'integer', 'min:0'],
+
             'items' => ['array'],
             'items.*.clinic_item_id' => ['required', 'integer', 'exists:clinic_items,id'],
             'items.*.qty_base' => ['required', 'numeric', 'min:0.0001'],
             'items.*.is_consumable' => ['boolean'],
+        ], [
+            'discount_price.lt' => __('The discount price must be lower than the main price.'),
         ]);
+    }
+
+    /** Columns shared by store() and update(). */
+    protected function attributesFrom(array $data): array
+    {
+        $descEn = trim((string) ($data['description_en'] ?? ''));
+        $descAr = trim((string) ($data['description_ar'] ?? ''));
+
+        return [
+            'branch_id' => $data['branch_id'] ?? null,
+            'name' => ['en' => $data['name_en'], 'ar' => $data['name_ar']],
+            'description' => ($descEn === '' && $descAr === '') ? null : ['en' => $descEn, 'ar' => $descAr],
+            'image_url' => $data['image_url'] ?? null,
+            'default_price' => $data['default_price'],
+            'discount_price' => $data['discount_price'] ?? null,
+            'offer_starts_at' => $data['offer_starts_at'] ?? null,
+            'offer_ends_at' => $data['offer_ends_at'] ?? null,
+            'is_active' => $data['is_active'] ?? true,
+            'is_public' => $data['is_public'] ?? false,
+            'sort_order' => $data['sort_order'] ?? 0,
+        ];
     }
 
     protected function syncItems(ClinicPackage $package, array $items): void
@@ -224,10 +264,23 @@ class ClinicPackagesController extends Controller
             'name' => $p->localized_name,
             'name_en' => $p->name['en'] ?? '',
             'name_ar' => $p->name['ar'] ?? '',
+            'description_en' => $p->description['en'] ?? '',
+            'description_ar' => $p->description['ar'] ?? '',
+            'image_url' => $p->image_url,
             'branch_id' => $p->branch_id,
             'branch_name' => $p->branch ? $p->branch->localized_name : null,
             'default_price' => (float) $p->default_price,
+            'discount_price' => $p->discount_price !== null ? (float) $p->discount_price : null,
+            'effective_price' => $p->effective_price,
+            'savings_amount' => $p->savings_amount,
+            'savings_percent' => $p->savings_percent,
+            'has_discount' => $p->has_discount,
+            'offer_window_open' => $p->offer_window_open,
+            'offer_starts_at' => $p->offer_starts_at?->toDateString(),
+            'offer_ends_at' => $p->offer_ends_at?->toDateString(),
             'is_active' => (bool) $p->is_active,
+            'is_public' => (bool) $p->is_public,
+            'sort_order' => (int) $p->sort_order,
             'items_count' => $p->items_count,
             'items' => $p->items->map(fn ($it) => [
                 'clinic_item_id' => $it->clinic_item_id,

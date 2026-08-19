@@ -33,6 +33,17 @@ export function formatTimeDisplay(timeStr) {
   return `${hour12}:${m} ${ampm}`
 }
 
+/**
+ * Money for the public site. Kuwait prices carry 3 decimals, but trailing
+ * zeros read as clutter on a price tag — 25.000 shows as "25", 25.500 as
+ * "25.500". Returns the number only; callers place the currency label.
+ */
+export function formatPrice(value) {
+  const n = Number(value || 0)
+  const fixed = n.toFixed(3)
+  return fixed.endsWith('.000') ? fixed.slice(0, -4) : fixed
+}
+
 export function qs(obj) {
   const p = new URLSearchParams()
   Object.entries(obj || {}).forEach(([k, v]) => {
@@ -160,6 +171,18 @@ export const Api = {
   getServices: async () => {
     const res = await fetch('/clinic/api/services', { headers: { 'Accept': 'application/json' } })
     if (!res.ok) throw new Error('Failed to fetch services')
+    return await res.json()
+  },
+
+  getOffers: async () => {
+    const res = await fetch('/clinic/api/offers', { headers: { 'Accept': 'application/json' } })
+    if (!res.ok) throw new Error('Failed to fetch offers')
+    return await res.json()
+  },
+
+  getGallery: async () => {
+    const res = await fetch('/clinic/api/gallery', { headers: { 'Accept': 'application/json' } })
+    if (!res.ok) throw new Error('Failed to fetch gallery')
     return await res.json()
   },
 

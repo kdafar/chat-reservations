@@ -9,7 +9,7 @@
 
 /* Brand tokens (Tailwind v4) */
 @theme {
-  --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji',
+  --font-sans: 'Jost', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji',
                'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
 
   /* brand (carrot orange) */
@@ -32,6 +32,39 @@
   /* neutrals */
   --color-surface:    #ffffff;
   --color-muted:      #f3f4f6;
+
+  /* ---------------------------------------------------------------------
+   * EVA public site — aesthetic-clinic palette.
+   * Deliberately namespaced away from the tokens above (brand/accent/ink are
+   * owned by the admin + legacy front) so the marketing site can evolve on
+   * its own. Petal neutrals, a deep aubergine ink and a rose/champagne
+   * accent pair — the beauty-counter register, not a warm editorial one.
+   *
+   * Retheming the whole public site = changing these eight values.
+   * ------------------------------------------------------------------- */
+  --color-ivory:      #fdfaf9; /* page canvas */
+  --color-blush:      #f8eeee; /* alternating band */
+  --color-petal:      #f0dfe0; /* subtle fills */
+  --color-line:       #ead9da; /* hairlines */
+  --color-plum:       #2a1420; /* headings + dark sections */
+  --color-mauve:      #6a4d57; /* body copy (7:1 on ivory) */
+  --color-rose:       #c78a99; /* decorative: rules, icons, hovers */
+  --color-rose-deep:  #9a4a63; /* accent text (5.6:1 on ivory) */
+  --color-champagne:  #c9a227; /* gilt hairline for offers/prices */
+
+  /* Status colours, tuned to the palette rather than Tailwind's stock
+   * red-500 / emerald-600 / amber-500, which read as a different product. */
+  --color-success:      #3f6b57;
+  --color-success-soft: #e7efea;
+  --color-danger:       #a03246;
+  --color-danger-soft:  #f9e9ec;
+  --color-warn:         #8a6a1f;
+  --color-warn-soft:    #f8f0dd;
+
+  /* Display face. High-contrast old-style serif — the beauty/spa register.
+   * Arabic falls back to Tajawal Light — see the html[dir="rtl"] override in
+   * resources/views/clinic/landing.blade.php. */
+  --font-display: 'Cormorant Garamond', ui-serif, Georgia, 'Times New Roman', serif;
 }
 
 
@@ -41,6 +74,54 @@
 
 /* tiny helpers */
 .skeleton { @apply animate-pulse bg-gray-200 rounded; }
+
+/* ---------------------------------------------------------------------------
+ * Public site: browser defaults that would otherwise show through.
+ * Scoped to .clinic-site (set on the public <body>) so the admin panels keep
+ * their own look.
+ * ------------------------------------------------------------------------ */
+
+/* Scrollbars — the booking widget scrolls internally on every step, so the
+   stock grey bar is on screen for most of the flow. */
+.clinic-site .custom-scrollbar,
+.clinic-site {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-petal) transparent;
+}
+
+.clinic-site .custom-scrollbar::-webkit-scrollbar,
+.clinic-site ::-webkit-scrollbar { width: 8px; height: 8px; }
+
+.clinic-site .custom-scrollbar::-webkit-scrollbar-track,
+.clinic-site ::-webkit-scrollbar-track { background: transparent; }
+
+.clinic-site .custom-scrollbar::-webkit-scrollbar-thumb,
+.clinic-site ::-webkit-scrollbar-thumb {
+  background: var(--color-petal);
+  border-radius: 9999px;
+}
+
+.clinic-site .custom-scrollbar::-webkit-scrollbar-thumb:hover,
+.clinic-site ::-webkit-scrollbar-thumb:hover { background: var(--color-rose); }
+
+/* Native control tints (checkbox, radio, range, progress) + text selection. */
+.clinic-site { accent-color: var(--color-rose-deep); }
+
+/* Keyboard focus: visible, but in the brand rose rather than the OS blue. */
+.clinic-site :focus-visible {
+  outline: 2px solid var(--color-rose-deep);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Autofill paints Chrome's pale yellow over our inputs. */
+.clinic-site input:-webkit-autofill,
+.clinic-site input:-webkit-autofill:hover,
+.clinic-site input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--color-plum);
+  -webkit-box-shadow: 0 0 0 1000px #ffffff inset;
+  caret-color: var(--color-plum);
+}
 
 /* component-ish utilities (optional) */
 .btn { @apply inline-flex items-center justify-center rounded-xl px-4 py-2 font-medium transition; }
