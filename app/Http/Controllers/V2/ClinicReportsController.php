@@ -36,6 +36,15 @@ class ClinicReportsController extends Controller
             'branch_id' => $request->input('branch_id', '') !== '' ? (int) $request->input('branch_id') : null,
             'doctor_id' => $request->input('doctor_id', '') !== '' ? (int) $request->input('doctor_id') : null,
         ];
+
+        // A doctor carried over from a different branch would silently produce
+        // an all-zero report, so drop the selection when it doesn't belong to
+        // the chosen branch.
+        if ($filters['branch_id'] && $filters['doctor_id']
+            && ! Doctor::query()->whereKey($filters['doctor_id'])->where('branch_id', $filters['branch_id'])->exists()) {
+            $filters['doctor_id'] = null;
+        }
+
         $from = Carbon::parse($filters['from'], $tz)->startOfDay();
         $to = Carbon::parse($filters['to'], $tz)->endOfDay();
 
@@ -157,14 +166,36 @@ class ClinicReportsController extends Controller
             $byWeekday = [];
             for ($i = 1; $i <= 7; $i++) { $byWeekday[] = (int) ($wdRaw[$i] ?? 0); }
 
+            // Peak hours (clinic day 8:00–21:00).
+            $hrRaw = (clone $visits)->selectRaw('HOUR(computed_at) as h, COUNT(*) as c')->groupBy('h')->pluck('c', 'h')->all();
+            $byHour = [];
+            for ($h = 8; $h <= 21; $h++) { $byHour[] = ['hour' => $h, 'count' => (int) ($hrRaw[$h] ?? 0)]; }
+
+            // Revenue composition: consultations (fees) vs products (items) vs
+            // packages, less discounts — where the money actually comes from.
+            $bd = (clone $visits)->selectRaw('
+                SUM(COALESCE(fees_total,0)) as fees,
+                SUM(COALESCE(items_price_total,0)) as items,
+                SUM(COALESCE(packages_price_total,0)) as packages,
+                SUM(COALESCE(discount_total,0)) as discount')->first();
+            $revenueBreakdown = [
+                'fees' => (float) ($bd->fees ?? 0),
+                'items' => (float) ($bd->items ?? 0),
+                'packages' => (float) ($bd->packages ?? 0),
+                'discount' => (float) ($bd->discount ?? 0),
+            ];
+
             $ledger = DoctorCompensationLedger::query()
                 ->whereBetween('created_at', [$from, $to])
                 ->when($filters['branch_id'], fn ($q) => $q->where('branch_id', $filters['branch_id']))
                 ->when($filters['doctor_id'], fn ($q) => $q->where('doctor_id', $filters['doctor_id']));
 
-            $trend = (clone $visits)->selectRaw('DATE(computed_at) as date, SUM(COALESCE(profit_total,0)) as profit, SUM(COALESCE(fees_total,0)) as fees')
+            $trend = (clone $visits)->selectRaw('DATE(computed_at) as date,
+                    SUM(COALESCE(profit_total,0)) as profit,
+                    SUM(COALESCE(fees_total,0)) as fees,
+                    SUM(COALESCE(fees_total,0)+COALESCE(packages_price_total,0)+COALESCE(items_price_total,0)-COALESCE(discount_total,0)) as revenue')
                 ->groupBy('date')->orderBy('date')->get()
-                ->map(fn ($r) => ['date' => Carbon::parse($r->date)->format('d M'), 'profit' => (float) $r->profit, 'fees' => (float) $r->fees])->all();
+                ->map(fn ($r) => ['date' => Carbon::parse($r->date)->format('d M'), 'profit' => (float) $r->profit, 'fees' => (float) $r->fees, 'revenue' => (float) $r->revenue])->all();
 
             $topDoctors = (clone $ledger)->selectRaw('doctor_id, SUM(doctor_cut_amount) as cut_total, COUNT(*) as visits_count')
                 ->groupBy('doctor_id')->orderByDesc('cut_total')->limit(10)->get()
@@ -218,6 +249,8 @@ class ClinicReportsController extends Controller
                 'outstanding' => $outstanding,
                 'patients' => $patients,
                 'by_weekday' => $byWeekday,
+                'by_hour' => $byHour,
+                'revenue_breakdown' => $revenueBreakdown,
                 'trend' => $trend,
                 'top_doctors' => $topDoctors,
                 'top_items' => $topItems,
@@ -237,12 +270,16 @@ class ClinicReportsController extends Controller
             'outstanding' => Inertia::defer(fn () => $get('outstanding'), 'reports'),
             'patients' => Inertia::defer(fn () => $get('patients'), 'reports'),
             'by_weekday' => Inertia::defer(fn () => $get('by_weekday'), 'reports'),
+            'by_hour' => Inertia::defer(fn () => $get('by_hour'), 'reports'),
+            'revenue_breakdown' => Inertia::defer(fn () => $get('revenue_breakdown'), 'reports'),
             'trend' => Inertia::defer(fn () => $get('trend'), 'reports'),
             'top_doctors' => Inertia::defer(fn () => $get('top_doctors'), 'reports'),
             'top_items' => Inertia::defer(fn () => $get('top_items'), 'reports'),
             'branches' => Branch::query()->when($this->accessibleBranchIds() !== null, fn ($q) => $q->whereIn('id', $this->accessibleBranchIds() ?: [0]))->orderBy('id')->get(['id', 'name'])
                 ->map(fn ($b) => ['id' => $b->id, 'name' => $b->localized_name ?? ('#'.$b->id)])->all(),
-            'doctors' => Doctor::query()->orderBy('name')->get(['id', 'name'])
+            // Only the chosen branch's doctors — the dropdown sits next to the
+            // branch picker and offering the whole group was misleading.
+            'doctors' => Doctor::query()->atBranch($filters['branch_id'])->orderBy('name')->get(['id', 'name'])
                 ->map(fn ($d) => ['id' => $d->id, 'name' => $d->name ?? ('#'.$d->id)])->all(),
         ]);
     }

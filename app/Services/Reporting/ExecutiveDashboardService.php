@@ -8,7 +8,9 @@ use App\Models\Visit;
 use App\Models\VisitItem;
 use App\Models\VisitPayment;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Executive dashboard aggregations — extracted verbatim from the Filament
@@ -37,6 +39,11 @@ class ExecutiveDashboardService
             'follow_up_funnel' => $this->guard('funnel', fn () => $this->getFollowUpFunnel($start, $end, $branchId), []),
             'patients' => $this->guard('patients', fn () => $this->getPatients($start, $end, $branchId), ['total' => 0, 'new' => 0, 'returning' => 0, 'repeat_rate' => 0]),
             'receivables' => $this->guard('receivables', fn () => $this->getReceivables($end, $branchId), ['total' => 0, 'count' => 0, 'buckets' => []]),
+            // Whole-system modules — so the executive sees purchasing, lab and
+            // insurance next to clinical revenue, not just visits.
+            'purchasing' => $this->guard('purchasing', fn () => $this->getPurchasing($start, $end, $branchId), []),
+            'lab' => $this->guard('lab', fn () => $this->getLab($start, $end, $branchId), []),
+            'insurance' => $this->guard('insurance', fn () => $this->getInsurance($start, $end, $branchId), []),
         ];
     }
 
@@ -313,6 +320,124 @@ class ExecutiveDashboardService
             ['stage' => 'Suggested', 'count' => $suggested, 'percentage' => 100],
             ['stage' => 'Booked', 'count' => $booked, 'percentage' => $suggested > 0 ? ($booked / $suggested) * 100 : 0],
             ['stage' => 'Completed', 'count' => $completed, 'percentage' => $suggested > 0 ? ($completed / $suggested) * 100 : 0],
+        ];
+    }
+
+    /**
+     * Purchasing (Purchase-to-Pay): goods received in the period, PO count,
+     * vendor spend, and the outstanding accounts-payable balance as of period
+     * end. Values in KWD.
+     */
+    protected function getPurchasing(Carbon $start, Carbon $end, ?int $branchId): array
+    {
+        if (! Schema::hasTable('purchase_receipts')) {
+            return [];
+        }
+        $branch = fn ($q, $col = 'branch_id') => $branchId ? $q->where($col, $branchId) : $q;
+
+        $received = (float) $branch(DB::table('purchase_receipts')->whereBetween('received_at', [$start, $end]))->sum('total_amount');
+        $poCount = (int) $branch(DB::table('purchase_orders')->whereBetween('order_date', [$start->toDateString(), $end->toDateString()]))->count();
+        $paid = (float) $branch(DB::table('purchase_payments')->whereBetween('payment_date', [$start->toDateString(), $end->toDateString()]))->sum('amount');
+
+        // AP outstanding as-of end: all received to date minus all paid to date.
+        $recvToDate = (float) $branch(DB::table('purchase_receipts')->where('received_at', '<=', $end))->sum('total_amount');
+        $paidToDate = (float) $branch(DB::table('purchase_payments')->where('payment_date', '<=', $end->toDateString()))->sum('amount');
+
+        $topVendors = $branch(DB::table('purchase_receipts')
+            ->join('purchase_orders', 'purchase_orders.id', '=', 'purchase_receipts.purchase_order_id')
+            ->join('vendors', 'vendors.id', '=', 'purchase_orders.vendor_id')
+            ->whereBetween('purchase_receipts.received_at', [$start, $end]), 'purchase_receipts.branch_id')
+            ->groupBy('vendors.id', 'vendors.name')
+            ->selectRaw('vendors.name as name, SUM(purchase_receipts.total_amount) as spend')
+            ->orderByDesc('spend')->limit(5)->get()
+            ->map(fn ($r) => ['name' => $r->name, 'spend' => (float) $r->spend])->all();
+
+        $trend = $branch(DB::table('purchase_receipts')->whereBetween('received_at', [$start, $end]))
+            ->selectRaw('DATE(received_at) as date, SUM(total_amount) as received')
+            ->groupBy('date')->orderBy('date')->get()
+            ->map(fn ($r) => ['date' => Carbon::parse($r->date)->format('d M'), 'received' => (float) $r->received])->all();
+
+        return [
+            'received' => round($received, 3),
+            'po_count' => $poCount,
+            'paid' => round($paid, 3),
+            'outstanding_ap' => round(max(0, $recvToDate - $paidToDate), 3),
+            'top_vendors' => $topVendors,
+            'trend' => $trend,
+        ];
+    }
+
+    /**
+     * Laboratory: orders raised, tests performed and lab revenue in the period.
+     */
+    protected function getLab(Carbon $start, Carbon $end, ?int $branchId): array
+    {
+        if (! Schema::hasTable('lab_orders')) {
+            return [];
+        }
+        $orders = DB::table('lab_orders')->whereBetween('ordered_at', [$start, $end])
+            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId));
+
+        $orderCount = (int) (clone $orders)->count();
+        $orderIds = (clone $orders)->pluck('id');
+
+        $items = DB::table('lab_order_items')->whereIn('lab_order_id', $orderIds);
+        $testCount = (int) (clone $items)->count();
+        $revenue = (float) (clone $items)->sum('price_snapshot');
+
+        $topTests = DB::table('lab_order_items')
+            ->join('lab_tests', 'lab_tests.id', '=', 'lab_order_items.lab_test_id')
+            ->whereIn('lab_order_id', $orderIds)
+            ->groupBy('lab_tests.id', 'lab_tests.name')
+            ->selectRaw('lab_tests.name as name, COUNT(*) as cnt, SUM(lab_order_items.price_snapshot) as revenue')
+            ->orderByDesc('cnt')->limit(5)->get()
+            ->map(fn ($r) => ['name' => $r->name, 'count' => (int) $r->cnt, 'revenue' => (float) $r->revenue])->all();
+
+        return [
+            'orders' => $orderCount,
+            'tests' => $testCount,
+            'revenue' => round($revenue, 3),
+            'top_tests' => $topTests,
+        ];
+    }
+
+    /**
+     * Insurance: claims submitted in the period, amounts charged / payable /
+     * paid, the outstanding insurer receivable, and a status breakdown.
+     */
+    protected function getInsurance(Carbon $start, Carbon $end, ?int $branchId): array
+    {
+        if (! Schema::hasTable('insurance_claims')) {
+            return [];
+        }
+        $claims = DB::table('insurance_claims')->whereBetween('submitted_at', [$start, $end])
+            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId));
+
+        $count = (int) (clone $claims)->count();
+        $charged = (float) (clone $claims)->sum('total_charged');
+        $payable = (float) (clone $claims)->sum('insurer_payable');
+        $approved = (float) (clone $claims)->sum('approved_amount');
+        $paid = (float) (clone $claims)->sum('paid_amount');
+
+        // Outstanding insurer receivable as-of end (submitted, not yet fully paid).
+        $outstanding = (float) DB::table('insurance_claims')
+            ->where('submitted_at', '<=', $end)
+            ->whereNotIn('status', ['rejected', 'void', 'draft'])
+            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
+            ->selectRaw('SUM(GREATEST(insurer_payable - paid_amount, 0)) as bal')->value('bal');
+
+        $byStatus = (clone $claims)->groupBy('status')
+            ->selectRaw('status, COUNT(*) as cnt')->get()
+            ->map(fn ($r) => ['status' => $r->status, 'count' => (int) $r->cnt])->all();
+
+        return [
+            'claims' => $count,
+            'charged' => round($charged, 3),
+            'payable' => round($payable, 3),
+            'approved' => round($approved, 3),
+            'paid' => round($paid, 3),
+            'outstanding' => round((float) $outstanding, 3),
+            'by_status' => $byStatus,
         ];
     }
 }
