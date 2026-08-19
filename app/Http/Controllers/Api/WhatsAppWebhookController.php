@@ -90,6 +90,23 @@ class WhatsAppWebhookController extends Controller
                 $meta = $this->extractMeta($payload);
                 Log::info('WA webhook: POST received', $ctx + $meta);
 
+                // --- BOT PNID GUARD ------------------------------------------
+                // Meta delivers events for EVERY WABA subscribed to this app —
+                // including the sister "pharmacy" install. Only act on events
+                // addressed to THIS install's own phone number; acknowledge
+                // anything else with 200 (so Meta stops retrying) but never
+                // reply to it or run the booking flow for it.
+                $botPnid = (string) config('services.whatsapp.phone_number_id');
+                $incomingPnid = (string) ($meta['phone_number_id'] ?? '');
+                if ($botPnid !== '' && $incomingPnid !== '' && $incomingPnid !== $botPnid) {
+                    Log::info('WA webhook: skipping non-bot phone_number_id', $ctx + [
+                        'incoming' => $incomingPnid,
+                        'bot' => $botPnid,
+                    ]);
+
+                    return response('ok', 200);
+                }
+
                 // Idempotency on first message id.
                 $wamid = data_get($payload, 'entry.0.changes.0.value.messages.0.id');
                 $from = (string) (data_get($payload, 'entry.0.changes.0.value.messages.0.from') ?? '');

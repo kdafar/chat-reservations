@@ -658,7 +658,12 @@ class WhatsAppApiService
         return $this->sendRaw($payload);
     }
 
-    public function sendDocumentById(string $to, string $mediaId, ?string $caption = null): array
+    /**
+     * $filename is what the recipient sees in the WhatsApp chat bubble. Without
+     * it Meta falls back to the uploaded temp file's basename (a uuid), which is
+     * useless on something like a lab report the patient needs to keep.
+     */
+    public function sendDocumentById(string $to, string $mediaId, ?string $caption = null, ?string $filename = null): array
     {
         $payload = [
             'messaging_product' => 'whatsapp',
@@ -668,6 +673,9 @@ class WhatsAppApiService
         ];
         if ($caption) {
             $payload['document']['caption'] = $this->normalizeText($caption);
+        }
+        if ($filename) {
+            $payload['document']['filename'] = $filename;
         }
 
         return $this->sendRaw($payload);

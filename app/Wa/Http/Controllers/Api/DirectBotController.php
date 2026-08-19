@@ -100,8 +100,14 @@ class DirectBotController extends Controller
             $this->handleIncomingMessage($value, $messagePayload);
         }
 
-        // 3) Forward everything to Chatwoot’s WA webhook so it also sees it
-        $this->forwardToChatwoot($payload);
+        // 3) Forward everything to Chatwoot’s WA webhook so it also sees it —
+        //    but only when the event is for this install's own bot number, so
+        //    Chatwoot doesn't auto-greet from a wrong inbox for another WABA.
+        $incomingPnid = (string) data_get($value, 'metadata.phone_number_id');
+        $botPnid = (string) config('services.whatsapp.phone_number_id');
+        if ($botPnid === '' || $incomingPnid === '' || $incomingPnid === $botPnid) {
+            $this->forwardToChatwoot($payload);
+        }
 
         return response()->json(['status' => 'processed']);
     }
@@ -375,6 +381,24 @@ class DirectBotController extends Controller
                 'status' => 'delivered',
                 'sent_at' => now(),
             ]);
+        }
+
+        // ---------------------------------------------------------------------
+        // 1.5) BOT PNID GUARD
+        // Only this install's own bot number should be answered. If Meta delivers
+        // an event for a different phone_number_id (e.g. the pharmacy WABA that is
+        // also subscribed to this Meta App), save it to the inbox above but do NOT
+        // run any bot / message handler / flow logic for it.
+        // ---------------------------------------------------------------------
+        $botPnid = (string) config('services.whatsapp.phone_number_id');
+        $incomingPnid = (string) data_get($value, 'metadata.phone_number_id');
+        if ($botPnid !== '' && $incomingPnid !== $botPnid) {
+            \Log::info('[WA Webhook] Skipping bot for non-bot phone_number_id', [
+                'incoming' => $incomingPnid,
+                'bot' => $botPnid,
+            ]);
+
+            return;
         }
 
         // ---------------------------------------------------------------------

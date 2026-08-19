@@ -22,6 +22,7 @@ use Tests\TestCase;
  *   - duplicate wa_message_id → handler is NOT invoked again (idempotency)
  *   - delivery-status payloads → handler is NOT invoked (logging only)
  *   - empty messages array → handler is NOT invoked
+ *   - event addressed to another WABA's phone number → skipped entirely
  *
  * The signature/handshake security gates live in WhatsAppWebhookSignatureTest.
  */
@@ -30,6 +31,17 @@ class WhatsAppWebhookHandlerTest extends TestCase
     use RefreshDatabase;
 
     protected string $appSecret = 'handler-test-secret';
+
+    /**
+     * The phone number id this install's bot answers on. Pinned in setUp() so
+     * the suite does not depend on whatever WHATSAPP_PHONE_NUMBER_ID happens to
+     * be in the developer's .env — the webhook's pnid guard compares incoming
+     * events against this value and skips anything that doesn't match.
+     */
+    protected string $botPnid = '111';
+
+    /** A phone number id belonging to a different WABA on the same Meta app. */
+    protected string $foreignPnid = '999999999';
 
     /** Tracks how many times BookingFlowService::handle() was invoked. */
     public int $handleCalls = 0;
@@ -41,6 +53,7 @@ class WhatsAppWebhookHandlerTest extends TestCase
     {
         parent::setUp();
         Config::set('services.whatsapp.app_secret', $this->appSecret);
+        Config::set('services.whatsapp.phone_number_id', $this->botPnid);
 
         // Replace BookingFlowService with a spy so the test doesn't need a
         // session/flow stack and we can assert on dispatch precisely.
@@ -83,8 +96,8 @@ class WhatsAppWebhookHandlerTest extends TestCase
         );
     }
 
-    /** Build a minimal valid message payload. */
-    private function messagePayload(string $wamid, string $from = '96599887766', string $text = 'hello'): array
+    /** Build a minimal valid message payload addressed to this install's bot. */
+    private function messagePayload(string $wamid, string $from = '96599887766', string $text = 'hello', ?string $pnid = null): array
     {
         return [
             'object' => 'whatsapp_business_account',
@@ -92,7 +105,7 @@ class WhatsAppWebhookHandlerTest extends TestCase
                 'id' => 'WABA-1',
                 'changes' => [[
                     'value' => [
-                        'metadata' => ['phone_number_id' => '111', 'display_phone_number' => '+96522220000'],
+                        'metadata' => ['phone_number_id' => $pnid ?? $this->botPnid, 'display_phone_number' => '+96522220000'],
                         'messages' => [[
                             'id' => $wamid,
                             'from' => $from,
@@ -136,7 +149,7 @@ class WhatsAppWebhookHandlerTest extends TestCase
                 'id' => 'WABA-1',
                 'changes' => [[
                     'value' => [
-                        'metadata' => ['phone_number_id' => '111'],
+                        'metadata' => ['phone_number_id' => $this->botPnid],
                         'statuses' => [[
                             'id' => 'wamid.STAT1',
                             'status' => 'delivered',
@@ -164,7 +177,7 @@ class WhatsAppWebhookHandlerTest extends TestCase
                 'id' => 'WABA-1',
                 'changes' => [[
                     'value' => [
-                        'metadata' => ['phone_number_id' => '111'],
+                        'metadata' => ['phone_number_id' => $this->botPnid],
                         // no messages, no statuses
                     ],
                 ]],
@@ -175,5 +188,39 @@ class WhatsAppWebhookHandlerTest extends TestCase
 
         $resp->assertStatus(200);
         $this->assertSame(0, $this->handleCalls);
+    }
+
+    /**
+     * Meta fans out events for EVERY WABA subscribed to the same app, so this
+     * endpoint also receives the sister pharmacy install's traffic. Those must
+     * be acknowledged (so Meta stops retrying) but never answered — running the
+     * booking flow would have our bot reply to another number's customers.
+     */
+    public function test_message_for_another_wabas_phone_number_is_skipped(): void
+    {
+        $resp = $this->postSigned(
+            $this->messagePayload('wamid.FOREIGN1', pnid: $this->foreignPnid)
+        );
+
+        $resp->assertStatus(200);
+        $this->assertSame(0, $this->handleCalls, 'Must not run the booking flow for another WABA');
+        $this->assertDatabaseMissing('wa_message_logs', ['wa_message_id' => 'wamid.FOREIGN1']);
+    }
+
+    /**
+     * The guard must not fire when this install has no phone number id
+     * configured — otherwise an install that never set WHATSAPP_PHONE_NUMBER_ID
+     * would silently ignore all of its own traffic.
+     */
+    public function test_unconfigured_phone_number_id_does_not_block_traffic(): void
+    {
+        Config::set('services.whatsapp.phone_number_id', null);
+
+        $resp = $this->postSigned(
+            $this->messagePayload('wamid.NOCONF1', pnid: $this->foreignPnid)
+        );
+
+        $this->assertNotSame(401, $resp->getStatusCode(), 'Signature should pass');
+        $this->assertSame(1, $this->handleCalls, 'With no bot pnid configured every event must still be handled');
     }
 }
