@@ -12,9 +12,9 @@ export const HELP_PAGES = new Set([
     // Inpatient
     'inpatient-board', 'inpatient-admissions', 'inpatient-wards', 'inpatient-beds', 'inpatient-reports',
     // Insurance
-    'insurance-insurers', 'insurance-plans', 'insurance-policies', 'insurance-preauth', 'insurance-claims',
+    'insurance-insurers', 'insurance-plans', 'insurance-policies', 'insurance-preauth', 'insurance-claims', 'insurance-followup',
     // Laboratory
-    'lab-tests',
+    'lab-orders', 'lab-tests',
     // Pharmacy & stock
     'clinic-items', 'clinic-stock', 'stock-movements', 'stock-requests', 'stock-transfers', 'purchase-orders', 'clinic-packages',
     // Discounts & promotions

@@ -302,6 +302,45 @@ return [
         ['q' => 'What does the small number of days next to a claim mean?', 'a' => 'It shows how long the claim has been waiting. It turns amber after about two weeks and red after about a month, so you can chase the insurer on the oldest ones first.'],
     ]],
 ],
+'insurance-followup' => [
+    'what' => ['heading' => 'What is this?', 'body' => 'This is the chasing page for money the insurance companies still owe you. The top half shows each insurer, how much they owe, and how old that money is. The bottom half is your worklist — the individual claims behind those numbers, with a place to record every phone call and promise.'],
+    'how' => ['heading' => 'How to use it', 'items' => [
+        'Start on the "Chase now" tab. Those claims are either past the insurer\'s own agreed payment terms, or you asked to be reminded about them today.',
+        'Look at the insurer table first. The "0–30 / 31–60 / 61–90 / 90+" columns show how old the money is — anything in the last two columns has been waiting far too long. Click an insurer to see only their claims in the worklist below.',
+        'Use the small phone, WhatsApp and email buttons on an insurer row to contact them. The message is written for you with the amount and number of claims already filled in.',
+        'After you speak to them, click "Log chase" on the claim. Choose how you contacted them, type what they said, and set "Chase again on" — the claim then moves to the "Scheduled" tab until that date arrives.',
+        'In a hurry? The little alarm-clock button pushes a claim one week forward without opening anything.',
+        'Click any claim row to see its full follow-up history and any payments already received. Click "Export Excel" to take the chase list with you.',
+    ]],
+    'faq' => ['heading' => 'Common questions', 'items' => [
+        ['q' => 'How is "Past agreed terms" worked out?', 'a' => 'It compares how long the claim has been waiting against the "Payment terms (days)" set on that insurer under Insurance → Insurers. If an insurer has no terms recorded, 30 days is assumed.'],
+        ['q' => 'Does logging a chase change the claim?', 'a' => 'No. It only records that you followed up and when to follow up again. The claim\'s status, amounts and payments are only ever changed from the Claims page.'],
+        ['q' => 'Why is a claim here that was never sent?', 'a' => 'Drafts are money sitting with you, not with the insurer — they show under "Not sent". Send them from the Claims page and they will move to "With insurer".'],
+        ['q' => 'A claim disappeared from this page — where did it go?', 'a' => 'This page only lists open claims that still have a balance. Once the insurer pays in full (or the balance is written off), the claim drops off and the payment shows in "Collected (30 days)".'],
+    ]],
+],
+'lab-orders' => [
+    'what' => ['heading' => 'What is this?', 'body' => 'The laboratory\'s work list. Every time a doctor orders tests on a visit, the order lands here. You work down the list: take the sample, start the analysis, type the results in, then release the report — which sends it back to the doctor automatically.'],
+    'how' => ['heading' => 'How to use it', 'items' => [
+        'The tabs across the top split the work: "Open" is everything still to do, "New" is waiting for a sample, "Analysing" is on the bench, and "Released" is finished. The number next to each tab is how many are in it.',
+        'Urgent orders sit at the top of the list with a red "Urgent" tag. The "Waiting" column turns amber after an hour and red after two, so nothing gets forgotten.',
+        'On a new order, click "Collect sample". Once the sample is in, click "Start analysis" — or just click "Enter results" and start typing; the order moves itself along.',
+        'On the order page, type each value into the "Result" box. The "Flag" column fills in by itself (Normal / Low / High) from the reference range — change it by hand if you need to, for example when the range is age or sex specific.',
+        'Use "Attach file" on the right to add the analyser printout or a photo of the report (PDF, JPG or PNG).',
+        'When every test has a value, click "Release report". The doctor gets a notification straight away, and a critical result is flagged red for them.',
+        'After releasing, use "Print report" for a paper copy, "Download PDF" / "Download image" to save it, or "Send as PDF" / "Send as image" to WhatsApp it to the patient.',
+        'Click "Print requisition" to print the slip you keep with the specimen — it has the order number, the patient and tick boxes for each test.',
+        'Use the search box (patient, order number or test), the doctor dropdown, the date boxes and "Urgent only" to narrow the list. "Export" downloads what you are looking at as Excel.',
+    ]],
+    'faq' => ['heading' => 'Common questions', 'items' => [
+        ['q' => 'Can I change a result after releasing the report?', 'a' => 'No. Releasing is the point where the result becomes the patient\'s record and the doctor is told about it. If something was wrong, cancel is not available either — ask an admin, and have the doctor order a repeat test so the correction is traceable.'],
+        ['q' => 'Why can\'t I click "Release report"?', 'a' => 'At least one test still has an empty "Result" box. Fill every row (or remove a test that is not being run) and the button becomes available.'],
+        ['q' => 'Where do the prices come from, and who gets charged?', 'a' => 'Each test carries its price from the Lab Tests catalogue, and it is added to the patient\'s visit bill the moment the doctor orders it. Cancelling an order takes those charges back off the bill.'],
+        ['q' => 'The "Send as PDF" buttons are missing.', 'a' => 'Sending reports over WhatsApp is switched off by default, because every message is billable and a result is private medical information. Ask an admin to turn it on for the clinic.'],
+        ['q' => 'Can I add a test the doctor forgot?', 'a' => 'Yes, while the order is still open — use the picker at the bottom of the results table. It is billed like any other ordered test.'],
+        ['q' => 'A doctor says they cannot see the result.', 'a' => 'Check the order shows "Released". Until then the doctor sees it as still with the lab. Doctors only see their own patients\' orders.'],
+    ]],
+],
 'lab-tests' => [
     'what' => ['heading' => 'What is this?', 'body' => 'This is the list of lab tests your clinic offers. Each test has a short code, a name, the kind of sample it needs, its unit, the normal range, and a price. Doctors pick tests from this list when they order labs on a visit.'],
     'how' => ['heading' => 'How to use it', 'items' => [
@@ -393,18 +432,24 @@ return [
     ]],
 ],
 'clinic-packages' => [
-    'what' => ['heading' => 'What is this?', 'body' => 'A package is a ready-made bundle of items sold for one price that a doctor can add to a visit in a single tap. Use it for common combinations, like a consultation plus its supplies.'],
+    'what' => ['heading' => 'What is this?', 'body' => 'A package is a ready-made bundle of items sold for one price that a doctor can add to a visit in a single tap. Use it for common combinations, like a consultation plus its supplies. A package can also be put on offer at a lower price and published on your public website, where patients see what they save.'],
     'how' => ['heading' => 'How to use it', 'items' => [
-        'Click "New package", type the name in English and Arabic, and set a "Default price" (the one price charged for the whole bundle).',
+        'Click "New package", type the name in English and Arabic, and set the "Main price" — what the bundle normally costs.',
+        'To run an offer, fill in "Discount price" (it must be lower than the main price). A green line shows exactly what the patient saves, in money and as a percentage, before you save.',
+        'Optionally set an offer period with "Starts" and "Ends" — outside those dates the package quietly goes back to its main price. Leave both empty to run the offer indefinitely.',
         'Click "Add item" for each thing the package includes, pick it from the list, and set its "Qty (base)" (how many).',
         'On any item line, tick the box if it should be taken out of stock when the package is used; leave it off for items that should not affect stock.',
         'Leave "Branch" empty to offer the package at every branch, or pick one branch to make it available there only. Keep "Active" ticked so staff can use it.',
+        'To advertise it, tick "Show this package as an offer on the website", then add a short description in both languages and an image link. It appears on your website\'s Offers page with the before and after price.',
         'Use the search box, branch picker and the All / Active / Inactive buttons to find a package; click a row to edit it, or use the trash icon to delete it. "Export Excel" downloads the list and the import button bulk-loads packages.',
     ]],
     'faq' => ['heading' => 'Common questions', 'items' => [
         ['q' => 'Can a package include a service, not just stock items?', 'a' => 'Yes. The item list shows services, products and supplies together, with services listed first. Add the service as a line; the supplies that service normally uses come from the service itself and are taken out of stock automatically.'],
         ['q' => 'If I edit a package, what happens to its items?', 'a' => 'When you save, the package matches exactly the items shown in the editor at that moment, so add or remove lines before saving to get the bundle you want.'],
-        ['q' => 'How is the price related to the items inside?', 'a' => 'The "Default price" is the single price charged for the whole bundle. It is set on its own and does not have to match the individual items\' own prices.'],
+        ['q' => 'How is the price related to the items inside?', 'a' => 'The "Main price" is the single price charged for the whole bundle. It is set on its own and does not have to match the individual items\' own prices.'],
+        ['q' => 'What does the patient actually pay when a package is on offer?', 'a' => 'The discount price. When the package is added to a visit, the bill shows the main price with the saving taken off as a discount line, so the patient can see both what it normally costs and what they saved.'],
+        ['q' => 'Does the offer show on the website automatically?', 'a' => 'Only if you tick "Show this package as an offer on the website". Without that tick the discount still applies to visits, but the package stays private and is not advertised.'],
+        ['q' => 'What if a package is also covered by a promotion?', 'a' => 'The offer price is applied first, then the promotion is worked out on the already-reduced price — so a deal is never counted twice.'],
     ]],
 ],
 'leaves' => [

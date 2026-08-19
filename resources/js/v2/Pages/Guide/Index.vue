@@ -9,6 +9,10 @@ const props = defineProps({
     sections: { type: Array, default: () => [] },
     roles: { type: Array, default: () => [] },
     my_roles: { type: Array, default: () => [] },
+    // Admins / clinic managers get the whole-system catalogue and the per-role
+    // filters. For everyone else the server already trimmed `sections` to the
+    // pages they can open, so the filters and role badges are just noise.
+    can_see_all: { type: Boolean, default: false },
 })
 
 const page = usePage()
@@ -16,18 +20,13 @@ const locale = computed(() => page.props.locale ?? 'en')
 const isRtl = computed(() => locale.value === 'ar')
 const pick = (en, ar) => (isRtl.value ? ar : en)
 
-const isAdmin = computed(() => (props.my_roles || []).some(r => r === 'admin' || r === 'super_admin'))
 const myCount = computed(() => props.sections.reduce((n, s) => n + s.items.filter(i => i.mine).length, 0))
 const totalCount = computed(() => props.sections.reduce((n, s) => n + s.items.length, 0))
 
-// Colour per section so each category button + banner has its own identity.
-const THEME = {
-    operations: '#4f46e5', patients: '#0ea5e9', inpatient: '#14b8a6', insurance: '#8b5cf6',
-    lab: '#06b6d4', pharmacy: '#f59e0b', discounts: '#ec4899', hr: '#3b82f6',
-    payroll: '#10b981', accounting: '#0d9488', reports: '#6366f1', platform: '#64748b',
-    whatsapp: '#22c55e', 'wa-platform': '#16a34a',
-}
-const color = (id) => THEME[id] || '#4f46e5'
+// Sections are distinguished by their icon and heading, not by colour. The
+// admin has a single accent (the brand gold) and giving fourteen categories
+// fourteen saturated colours of their own fought with it — and with the
+// sidebar, which uses the same icons with no colour coding at all.
 
 const ROLE_ICON = {
     clinic_admin: 'briefcase', clinic_doctor: 'stethoscope',
@@ -37,7 +36,9 @@ const roleLabel = (key) => { const r = props.roles.find(x => x.key === key); ret
 
 // ---- filters + accordion state ----
 const query = ref('')
-const roleFilter = ref('all')        // 'all' | 'mine' | <roleKey>
+// Admins land on their own surface first and can widen to "All"; restricted
+// users have nothing to widen to, so 'all' already means "mine".
+const roleFilter = ref(props.can_see_all ? 'mine' : 'all')  // 'all' | 'mine' | <roleKey>
 const open = reactive({})             // id -> bool
 const allOpen = ref(false)
 
@@ -73,17 +74,29 @@ const highlights = computed(() => ([
 ]))
 
 const t = computed(() => isRtl.value ? {
-    eyebrow: 'دليل النظام', title: 'دليل النظام', tagline: 'كل ما يقوم به النظام لعيادتك — ومن يستطيع استخدام كل جزء.',
+    eyebrow: 'دليل النظام', title: 'دليل النظام',
+    tagline: props.can_see_all
+        ? 'كل ما يقوم به النظام لعيادتك — ومن يستطيع استخدام كل جزء.'
+        : 'الصفحات المتاحة لك، وما تفعله كل واحدة منها، وكيفية استخدامها.',
     find: 'ابحث عن صفحة…', viewBy: 'العرض حسب:', all: 'الكل', mine: 'ما أستطيع فتحه',
     expandAll: 'توسيع الكل', collapseAll: 'طي الكل', details: 'التفاصيل', hide: 'إخفاء',
     pages: 'صفحات', what: 'ما الذي تفعله', how: 'كيفية الاستخدام', adminsOnly: 'للمدراء فقط',
-    allStaff: 'كل الموظفين', open: 'افتح الصفحة', youCan: 'متاح لك', avail: (m, n) => `${m} / ${n} متاح لك`,
+    allStaff: 'كل الموظفين', open: 'افتح الصفحة', youCan: 'متاح لك',
+    avail: (m, n) => `${m} / ${n} متاح لك`,
+    availMine: (m) => `${m} صفحة متاحة لك`,
+    noAccess: 'لا توجد صفحات متاحة لحسابك حتى الآن. تواصل مع مدير العيادة لمنحك الصلاحيات.',
 } : {
-    eyebrow: 'System Guide', title: 'System Guide', tagline: 'Everything the system does for your clinic — and who can use each part.',
+    eyebrow: 'System Guide', title: 'System Guide',
+    tagline: props.can_see_all
+        ? 'Everything the system does for your clinic — and who can use each part.'
+        : 'The pages you can open, what each one does, and how to use it.',
     find: 'Find a page…', viewBy: 'View by:', all: 'All', mine: 'What I can open',
     expandAll: 'Expand all', collapseAll: 'Collapse all', details: 'Details', hide: 'Hide',
     pages: 'pages', what: 'What it does', how: 'How to use it', adminsOnly: 'Admins only',
-    allStaff: 'All staff', open: 'Open page', youCan: 'Available to you', avail: (m, n) => `${m} / ${n} available to you`,
+    allStaff: 'All staff', open: 'Open page', youCan: 'Available to you',
+    avail: (m, n) => `${m} / ${n} available to you`,
+    availMine: (m) => `${m} ${m === 1 ? 'page' : 'pages'} available to you`,
+    noAccess: 'No pages are available to your account yet. Ask your clinic manager to grant access.',
 })
 
 const shotOf = (it) => pick(it.shot_en, it.shot_ar)
@@ -99,12 +112,15 @@ const shotOf = (it) => pick(it.shot_en, it.shot_ar)
         </div>
         <h1 class="pg-title">{{ t.title }}</h1>
         <p class="pg-tagline">{{ t.tagline }}</p>
-        <div class="pg-avail"><Icon name="circle-check" :size="15" /> {{ t.avail(myCount, totalCount) }}</div>
+        <div v-if="totalCount" class="pg-avail">
+            <Icon name="circle-check" :size="15" />
+            {{ can_see_all ? t.avail(myCount, totalCount) : t.availMine(myCount) }}
+        </div>
 
-        <!-- category buttons -->
+        <!-- category buttons — driven off the filtered view so every chip lands somewhere -->
         <div class="pg-cats">
-            <button v-for="s in sections" :key="s.id" class="pg-cat"
-                    :style="{ '--c': color(s.id) }" @click="scrollTo(s.id)">
+            <button v-for="s in view" :key="s.id" class="pg-cat"
+                    @click="scrollTo(s.id)">
                 <Icon :name="s.icon" :size="15" /> {{ pick(s.label_en, s.label_ar) }}
             </button>
             <button class="pg-cat ghost" @click="toggleAll">
@@ -124,7 +140,7 @@ const shotOf = (it) => pick(it.shot_en, it.shot_ar)
                 <Icon name="search" :size="16" />
                 <input v-model="query" :placeholder="t.find" />
             </div>
-            <div class="pg-viewby">
+            <div v-if="can_see_all" class="pg-viewby">
                 <span class="pg-viewby-lbl">{{ t.viewBy }}</span>
                 <div class="pg-seg">
                     <button :class="{ on: roleFilter === 'all' }" @click="roleFilter = 'all'">{{ t.all }}</button>
@@ -136,7 +152,7 @@ const shotOf = (it) => pick(it.shot_en, it.shot_ar)
 
         <!-- ===== SECTIONS ===== -->
         <section v-for="s in view" :key="s.id" :id="`gsec-${s.id}`" class="pg-section">
-            <div class="pg-sec-head" :style="{ '--c': color(s.id) }">
+            <div class="pg-sec-head">
                 <span class="pg-sec-ic"><Icon :name="s.icon" :size="20" /></span>
                 <div class="pg-sec-meta">
                     <h2>{{ pick(s.label_en, s.label_ar) }} <span class="pg-sec-count">{{ s.items.length }} {{ t.pages }}</span></h2>
@@ -145,17 +161,17 @@ const shotOf = (it) => pick(it.shot_en, it.shot_ar)
 
             <!-- tool cards -->
             <div class="pg-tool" v-for="it in s.items" :key="it.id"
-                 :class="{ open: open[it.id] }" :style="{ '--c': color(s.id) }">
+                 :class="{ open: open[it.id], 'no-roles': !can_see_all }">
                 <button class="pg-tool-row" @click="toggle(it.id)">
                     <span class="pg-tool-ic"><Icon :name="it.icon" :size="18" /></span>
                     <span class="pg-tool-main">
                         <span class="pg-tool-name">
                             {{ pick(it.label_en, it.label_ar) }}
-                            <span v-if="it.mine" class="pg-mine" :title="t.youCan"><Icon name="check" :size="11" /></span>
+                            <span v-if="can_see_all && it.mine" class="pg-mine" :title="t.youCan"><Icon name="check" :size="11" /></span>
                         </span>
                         <span class="pg-tool-desc">{{ pick(it.desc_en, it.desc_ar) }}</span>
                     </span>
-                    <span class="pg-tool-roles">
+                    <span v-if="can_see_all" class="pg-tool-roles">
                         <template v-if="it.roles && it.roles.length">
                             <span v-for="rk in it.roles" :key="rk" class="pg-badge">{{ roleLabel(rk) }}</span>
                         </template>
@@ -193,7 +209,9 @@ const shotOf = (it) => pick(it.shot_en, it.shot_ar)
             </div>
         </section>
 
-        <p v-if="!view.length" class="pg-empty">{{ pick('No pages match your search.', 'لا توجد صفحات مطابقة لبحثك.') }}</p>
+        <p v-if="!view.length" class="pg-empty">
+            {{ totalCount ? pick('No pages match your search.', 'لا توجد صفحات مطابقة لبحثك.') : t.noAccess }}
+        </p>
     </div>
 </template>
 
@@ -202,22 +220,23 @@ const shotOf = (it) => pick(it.shot_en, it.shot_ar)
 
 /* header */
 .pg-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
-.pg-logo { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; background: linear-gradient(135deg, #4f46e5, #7c3aed); color: #fff; box-shadow: 0 8px 20px -8px rgba(79,70,229,.7); }
-.pg-eyebrow { font-size: 13px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: var(--fg-muted); }
-.pg-title { font-size: 42px; font-weight: 900; letter-spacing: -.02em; margin: 0 0 8px; color: var(--fg); }
-.pg-tagline { font-size: 16px; color: var(--fg-muted); margin: 0 0 14px; }
-.pg-avail { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 700; color: #047857; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 999px; padding: 6px 13px; }
+.pg-logo { width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center; background: var(--primary-soft); color: var(--primary); }
+.pg-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--fg-faint); }
+.pg-title { font-size: 28px; font-weight: 700; letter-spacing: -.01em; margin: 0 0 8px; color: var(--fg); }
+.pg-tagline { font-size: 14px; color: var(--fg-muted); margin: 0 0 14px; max-width: 640px; }
+.pg-avail { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600; color: var(--success); background: var(--success-soft); border: 1px solid color-mix(in srgb, var(--success) 30%, transparent); border-radius: 999px; padding: 5px 12px; }
 
-/* category buttons */
-.pg-cats { display: flex; flex-wrap: wrap; gap: 10px; margin: 22px 0 18px; }
-.pg-cat { display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 700; cursor: pointer; color: #fff; background: var(--c); border: none; border-radius: 11px; padding: 10px 15px; transition: transform .12s, filter .12s; }
-.pg-cat:hover { transform: translateY(-1px); filter: brightness(1.07); }
-.pg-cat.ghost { color: var(--fg); background: var(--bg); border: 1px solid var(--line); }
+/* category buttons — neutral chips; the icon and label carry the meaning */
+.pg-cats { display: flex; flex-wrap: wrap; gap: 8px; margin: 22px 0 18px; }
+.pg-cat { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 500; cursor: pointer; color: var(--fg); background: var(--bg-elev); border: 1px solid var(--line); border-radius: 8px; padding: 8px 13px; transition: background .12s, border-color .12s; }
+.pg-cat:hover { background: var(--bg-hover); border-color: var(--line-strong); }
+.pg-cat :deep(svg) { color: var(--fg-muted); }
+.pg-cat.ghost { color: var(--fg-muted); }
 
 /* highlights */
 .pg-highlights { display: flex; flex-wrap: wrap; gap: 22px; padding: 14px 2px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); margin-bottom: 20px; }
-.pg-hl { display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 600; color: var(--fg); }
-.pg-hl :deep(svg) { color: #6366f1; }
+.pg-hl { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; color: var(--fg); }
+.pg-hl :deep(svg) { color: var(--fg-muted); }
 
 /* controls */
 .pg-controls { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between; margin-bottom: 26px; }
@@ -228,43 +247,44 @@ const shotOf = (it) => pick(it.shot_en, it.shot_ar)
 .pg-viewby-lbl { font-size: 13px; font-weight: 600; color: var(--fg-muted); white-space: nowrap; }
 .pg-seg { display: flex; flex-wrap: wrap; gap: 4px; background: var(--bg-sunken); border-radius: 10px; padding: 4px; }
 .pg-seg button { font-size: 12.5px; font-weight: 700; cursor: pointer; border: none; background: transparent; color: var(--fg-muted); border-radius: 7px; padding: 6px 11px; transition: background .12s, color .12s; }
-.pg-seg button.on { background: #4f46e5; color: #fff; }
+.pg-seg button.on { background: var(--primary); color: var(--primary-fg); }
 
 /* section */
 .pg-section { margin-bottom: 30px; scroll-margin-top: 110px; }
-.pg-sec-head { display: flex; align-items: center; gap: 12px; padding-inline-start: 14px; border-inline-start: 4px solid var(--c); margin-bottom: 14px; }
-.pg-sec-ic { width: 42px; height: 42px; border-radius: 11px; display: grid; place-items: center; background: color-mix(in srgb, var(--c) 14%, transparent); color: var(--c); }
-.pg-sec-meta h2 { font-size: 20px; font-weight: 800; margin: 0; color: var(--fg); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.pg-sec-count { font-size: 12px; font-weight: 700; color: var(--c); background: color-mix(in srgb, var(--c) 12%, transparent); border-radius: 999px; padding: 3px 10px; }
+.pg-sec-head { display: flex; align-items: center; gap: 12px; padding-inline-start: 12px; border-inline-start: 3px solid var(--primary); margin-bottom: 14px; }
+.pg-sec-ic { width: 36px; height: 36px; border-radius: 9px; display: grid; place-items: center; background: var(--primary-soft); color: var(--primary); }
+.pg-sec-meta h2 { font-size: 17px; font-weight: 600; margin: 0; color: var(--fg); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.pg-sec-count { font-size: 11px; font-weight: 500; color: var(--fg-muted); background: var(--bg-sunken); border-radius: 999px; padding: 3px 9px; }
 
 /* tool card */
-.pg-tool { background: var(--bg); border: 1px solid var(--line); border-radius: 14px; margin-bottom: 12px; overflow: hidden; transition: border-color .12s, box-shadow .12s; }
-.pg-tool.open { border-color: color-mix(in srgb, var(--c) 45%, var(--line)); box-shadow: 0 10px 30px -16px color-mix(in srgb, var(--c) 60%, transparent); }
-.pg-tool-row { width: 100%; display: flex; align-items: center; gap: 14px; padding: 16px 18px; background: none; border: none; cursor: pointer; text-align: start; }
-.pg-tool-ic { width: 40px; height: 40px; border-radius: 11px; display: grid; place-items: center; flex-shrink: 0; background: color-mix(in srgb, var(--c) 12%, transparent); color: var(--c); }
+.pg-tool { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; margin-bottom: 10px; overflow: hidden; transition: border-color .12s, box-shadow .12s; }
+.pg-tool.open { border-color: var(--line-strong); box-shadow: 0 2px 8px oklch(0 0 0 / 0.05); }
+.pg-tool-row { width: 100%; display: flex; align-items: center; gap: 14px; padding: 14px 16px; background: none; border: none; cursor: pointer; text-align: start; }
+.pg-tool-ic { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; flex-shrink: 0; background: var(--bg-sunken); color: var(--fg-muted); }
+.pg-tool.open .pg-tool-ic { background: var(--primary-soft); color: var(--primary); }
 .pg-tool-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.pg-tool-name { font-size: 16px; font-weight: 800; color: var(--fg); display: inline-flex; align-items: center; gap: 8px; }
-.pg-mine { width: 18px; height: 18px; border-radius: 50%; background: #16a34a; color: #fff; display: inline-grid; place-items: center; }
-.pg-tool-desc { font-size: 13px; color: var(--fg-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 560px; }
+.pg-tool-name { font-size: 14px; font-weight: 600; color: var(--fg); display: inline-flex; align-items: center; gap: 8px; }
+.pg-mine { width: 16px; height: 16px; border-radius: 50%; background: var(--success); color: var(--bg-elev); display: inline-grid; place-items: center; }
+.pg-tool-desc { font-size: 12.5px; color: var(--fg-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 560px; }
+/* No role badges to leave room for — let the one-liner use the full row. */
+.pg-tool.no-roles .pg-tool-desc { max-width: none; }
 .pg-tool-roles { display: flex; flex-wrap: wrap; gap: 5px; justify-content: flex-end; max-width: 230px; }
-.pg-badge { font-size: 10.5px; font-weight: 700; color: var(--fg); background: var(--bg-sunken); border-radius: 999px; padding: 4px 9px; white-space: nowrap; }
-.pg-badge.admins { background: #fef3c7; color: #92400e; }
+.pg-badge { font-size: 10.5px; font-weight: 500; color: var(--fg-muted); background: var(--bg-sunken); border: 1px solid var(--line); border-radius: 999px; padding: 3px 8px; white-space: nowrap; }
+.pg-badge.admins { background: var(--warning-soft); color: var(--fg); border-color: color-mix(in srgb, var(--warning) 35%, transparent); }
 .pg-tool-toggle { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; font-weight: 700; color: var(--fg-muted); white-space: nowrap; }
 
 /* expanded panel */
 .pg-panel { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; padding: 4px 18px 20px; align-items: start; }
 .pg-panel-text { display: flex; flex-direction: column; gap: 12px; }
-.pg-oneliner { display: flex; align-items: center; gap: 9px; font-size: 14.5px; font-weight: 800; color: var(--fg); background: color-mix(in srgb, var(--c) 9%, transparent); border-radius: 10px; padding: 12px 14px; }
-.pg-oneliner :deep(svg) { color: var(--c); flex-shrink: 0; }
-.pg-block { background: var(--bg-sunken); border-radius: 10px; padding: 13px 15px; }
-.pg-block-head { display: inline-flex; align-items: center; gap: 7px; font-size: 11.5px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; margin-bottom: 7px; }
-.pg-block.what .pg-block-head { color: #7c3aed; }
-.pg-block.how .pg-block-head { color: #0d9488; }
-.pg-block p { margin: 0; font-size: 13.5px; line-height: 1.6; color: var(--fg); }
+.pg-oneliner { display: flex; align-items: center; gap: 9px; font-size: 13.5px; font-weight: 600; color: var(--fg); background: var(--primary-soft); border-radius: 9px; padding: 11px 13px; }
+.pg-oneliner :deep(svg) { color: var(--primary); flex-shrink: 0; }
+.pg-block { background: var(--bg-sunken); border-radius: 9px; padding: 13px 15px; }
+.pg-block-head { display: inline-flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; margin-bottom: 7px; color: var(--fg-faint); }
+.pg-block p { margin: 0; font-size: 13px; line-height: 1.6; color: var(--fg); }
 .pg-block ul { margin: 0; padding-inline-start: 18px; display: flex; flex-direction: column; gap: 6px; }
-.pg-block li { font-size: 13px; line-height: 1.55; color: var(--fg); }
-.pg-open { align-self: flex-start; display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 800; color: #fff; background: var(--c); border-radius: 10px; padding: 9px 16px; text-decoration: none; transition: filter .12s; }
-.pg-open:hover { filter: brightness(1.08); }
+.pg-block li { font-size: 12.5px; line-height: 1.55; color: var(--fg); }
+.pg-open { align-self: flex-start; display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 500; color: var(--primary-fg); background: var(--primary); border-radius: 8px; padding: 8px 14px; text-decoration: none; transition: background .12s; }
+.pg-open:hover { background: var(--primary-hover); }
 
 .pg-panel-shot { border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: var(--bg-sunken); min-height: 200px; display: grid; place-items: center; }
 .pg-panel-shot img { width: 100%; height: 100%; object-fit: cover; object-position: top; display: block; }
@@ -275,12 +295,10 @@ const shotOf = (it) => pick(it.shot_en, it.shot_ar)
 @media (max-width: 820px) {
     .pg-panel { grid-template-columns: 1fr; }
     .pg-tool-desc, .pg-tool-roles { display: none; }
-    .pg-title { font-size: 32px; }
+    .pg-title { font-size: 24px; }
 }
 
-/* dark mode */
-:global(.dark) .pg-avail { background: rgba(4,120,87,.18); border-color: rgba(167,243,208,.25); color: #6ee7b7; }
-:global(.dark) .pg-block { background: rgba(255,255,255,.03); }
-:global(.dark) .pg-badge.admins { background: rgba(146,64,14,.25); color: #fcd34d; }
-:global(.dark) .pg-seg button.on { background: #6366f1; }
+/* No dark-mode block: every colour above is a design-system token, and those
+   already carry their own dark values. The overrides that used to live here
+   re-stated hardcoded light-mode hexes and had to be kept in sync by hand. */
 </style>

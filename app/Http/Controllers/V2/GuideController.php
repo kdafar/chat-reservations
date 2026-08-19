@@ -13,9 +13,10 @@ use Spatie\Permission\Models\Role;
  * allowed to use it" overview of the whole v2 admin.
  *
  * It is READ-ONLY and visible to every authenticated staff member. The page is
- * "personalised": every link the current user can actually open is highlighted,
- * the rest are dimmed, so a staff member instantly sees their own surface while
- * still understanding the whole system (useful in onboarding / demo meetings).
+ * "personalised": ordinary staff only ever see the links they can actually open —
+ * listing the whole system to a receptionist reads as a menu of things that are
+ * broken or hidden from them. Admins / clinic managers keep the full catalogue
+ * plus the per-role filters, because they are the ones who onboard and demo.
  *
  * The link list + access gates here MIRROR the sidebar in
  * resources/js/v2/Layouts/AppLayout.vue (navSections + navGates). When you add a
@@ -37,6 +38,11 @@ class GuideController extends Controller
     {
         $user = $request->user();
 
+        // Only these roles get the whole-system catalogue + the per-role filters.
+        // Everyone else sees strictly their own surface.
+        $canSeeAll = $user && method_exists($user, 'hasAnyRole')
+            && $user->hasAnyRole(['admin', 'super_admin', 'clinic_admin']);
+
         // Pre-load each display role once so we don't hit the DB per link.
         $roles = [];
         foreach (array_keys(self::DISPLAY_ROLES) as $name) {
@@ -56,6 +62,14 @@ class GuideController extends Controller
             $items = [];
             foreach ($section['items'] as $item) {
                 $gate = $item['gate'] ?? [];
+                $mine = $this->userPasses($gate, $user);
+
+                // Ordinary staff: drop anything they cannot open, so the guide is a
+                // list of what they CAN do rather than a wall of locked doors.
+                if (! $canSeeAll && ! $mine) {
+                    continue;
+                }
+
                 $items[] = [
                     'id'        => $item['id'],
                     'icon'      => $item['icon'],
@@ -75,8 +89,13 @@ class GuideController extends Controller
                     // Roles (by key) that can open this link.
                     'roles'     => $this->rolesForGate($gate, $roles),
                     // Does the CURRENT user have access? (personalisation)
-                    'mine'      => $this->userPasses($gate, $user),
+                    'mine'      => $mine,
                 ];
+            }
+
+            // A section with nothing in it for this user is not worth a heading.
+            if (! $items) {
+                continue;
             }
 
             $sections[] = [
@@ -94,9 +113,10 @@ class GuideController extends Controller
         }
 
         return Inertia::render('Guide/Index', [
-            'sections'  => $sections,
-            'roles'     => $roleMeta,
-            'my_roles'  => $user && method_exists($user, 'getRoleNames') ? $user->getRoleNames()->all() : [],
+            'sections'    => $sections,
+            'roles'       => $canSeeAll ? $roleMeta : [],
+            'my_roles'    => $user && method_exists($user, 'getRoleNames') ? $user->getRoleNames()->all() : [],
+            'can_see_all' => $canSeeAll,
         ]);
     }
 
@@ -224,8 +244,10 @@ class GuideController extends Controller
                 ['id' => 'insurance-policies', 'icon' => 'badge-check',    'label_en' => 'Policies',          'label_ar' => 'البوالص',            'href' => '/admin/v2/insurance/policies',          'gate' => ['perm' => 'view_any_patient_insurance_policies']],
                 ['id' => 'insurance-preauth',  'icon' => 'document-check', 'label_en' => 'Pre-authorizations','label_ar' => 'الموافقات المسبقة',  'href' => '/admin/v2/insurance/preauthorizations', 'gate' => ['perm' => 'view_any_insurance_preauthorizations']],
                 ['id' => 'insurance-claims',   'icon' => 'file-text',      'label_en' => 'Claims',            'label_ar' => 'المطالبات',          'href' => '/admin/v2/insurance/claims',            'gate' => ['perm' => 'view_any_insurance_claims']],
+                ['id' => 'insurance-followup', 'icon' => 'bell',           'label_en' => 'Follow-up',         'label_ar' => 'متابعة التحصيل',     'href' => '/admin/v2/insurance/follow-up',         'gate' => ['perm' => 'view_any_insurance_claims']],
             ]],
             ['id' => 'lab', 'icon' => 'beaker', 'label_en' => 'Laboratory', 'label_ar' => 'المختبر', 'items' => [
+                ['id' => 'lab-orders', 'icon' => 'flask-conical', 'label_en' => 'Lab Worklist', 'label_ar' => 'قائمة عمل المختبر', 'href' => '/admin/v2/lab-orders', 'gate' => ['perm' => 'view_any_lab_orders']],
                 ['id' => 'lab-tests', 'icon' => 'beaker', 'label_en' => 'Lab Tests', 'label_ar' => 'كتالوج الاختبارات', 'href' => '/admin/v2/lab-tests', 'gate' => ['perm' => 'view_any_lab_tests']],
             ]],
             ['id' => 'pharmacy', 'icon' => 'pill', 'label_en' => 'Pharmacy & Stock', 'label_ar' => 'الصيدلية والمخزون', 'items' => [
