@@ -15,6 +15,8 @@ const props = defineProps({
     filters: { type: Object, required: true },
     page: { type: Object, required: true },
     branches: { type: Array, required: true },
+    branch_windows: { type: Object, default: () => ({}) },
+    branch_slot_lengths: { type: Object, default: () => ({}) },
     partners: { type: Array, required: true },
     rooms: { type: Array, default: () => [] },
     counts: { type: Object, required: true },
@@ -54,8 +56,22 @@ const t = computed(() => isRtl.value
             bio: 'نبذة', active: 'فعّال',
             save: 'حفظ', cancel: 'إلغاء',
             archiveConfirm: 'إخفاء الطبيب من القوائم النشطة؟',
+            slotLen: 'مدة الموعد (دقيقة)',
+            slotLenHelp: 'اتركه فارغًا لاستخدام مدة الفرع',
+            slotLenHelp2: 'يحدّد طول كل موعد لهذا الطبيب، وتُرتَّب مواعيده تباعًا بهذه المدة.',
+            hours: 'ساعات العمل',
+            hoursHelp: 'لا يمكن جدولة الطبيب خارج ساعات عمل الفرع.',
+            hoursNoBranch: 'اختر الفرع أولاً لعرض ساعات العمل المتاحة.',
+            hoursUnset: 'لم تُحدَّد ساعات عمل هذا الفرع بعد — يمكنك ضبطها من صفحة الفروع.',
+            branchClosed: 'الفرع مغلق',
+            branchWindow: 'الفرع',
+            copyToAll: 'نسخ لكل الأيام المفتوحة',
+            from: 'من', to: 'إلى',
+            outside: 'خارج ساعات الفرع',
         },
         stats: { total: 'الكل', active: 'فعّال', inactive: 'مؤرشف' },
+        col2: { hours: 'ساعات العمل' },
+        off: 'إجازة',
     }
     : {
         title: 'Doctors', eyebrow: 'HR',
@@ -77,8 +93,22 @@ const t = computed(() => isRtl.value
             bio: 'Bio', active: 'Active',
             save: 'Save', cancel: 'Cancel',
             archiveConfirm: 'Archive this doctor from active lists?',
+            slotLen: 'Appointment length (min)',
+            slotLenHelp: "Leave empty to use the branch's",
+            slotLenHelp2: 'Sets how long each appointment with this doctor takes; their slots run back-to-back at this length.',
+            hours: 'Working hours',
+            hoursHelp: "A doctor can't be scheduled outside their branch's opening hours.",
+            hoursNoBranch: 'Pick a branch first to see the hours it allows.',
+            hoursUnset: "This branch has no opening hours set yet — set them on the Branches page.",
+            branchClosed: 'Branch closed',
+            branchWindow: 'Branch',
+            copyToAll: 'Copy to all working days',
+            from: 'From', to: 'To',
+            outside: "Outside the branch's hours",
         },
         stats: { total: 'Total', active: 'Active', inactive: 'Archived' },
+        col2: { hours: 'Hours' },
+        off: 'Off',
     })
 
 const f = reactive({
@@ -101,13 +131,102 @@ function clearFilters() { f.q = ''; f.branch_id = ''; f.active = 'all'; apply() 
 const modalOpen = ref(false)
 const modalMode = ref('create')
 const editing = ref(null)
+const DAY_LABELS = {
+    en: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
+    ar: ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'],
+}
+function blankHours() {
+    return [0, 1, 2, 3, 4, 5, 6].map((day) => ({ day, is_open: false, start: '09:00', end: '17:00' }))
+}
+
 const form = reactive({
     name: '', specialty: '', phone: '', email: '', license_number: '',
     consultation_fee: 1, branch_id: '', partner_id: '', restaurant_table_id: '',
-    bio: '', is_active: true,
+    default_slot_minutes: '', bio: '', is_active: true, working_hours: blankHours(),
 })
 const errors = ref({})
 const saving = ref(false)
+
+// The selected branch's weekly window, keyed by day — drives the greyed-out
+// closed days, the min/max on the time inputs, and the inline warnings.
+const branchWindow = computed(() => {
+    const rows = props.branch_windows?.[form.branch_id] || props.branch_windows?.[String(form.branch_id)]
+    if (!rows) return null
+    const byDay = {}
+    rows.forEach((r) => { byDay[r.day] = r })
+    return byDay
+})
+// The branch's appointment length, shown as the placeholder so an empty field
+// reads as "inherits 30" rather than as nothing at all.
+const branchSlotLength = computed(() =>
+    props.branch_slot_lengths?.[form.branch_id] ?? props.branch_slot_lengths?.[String(form.branch_id)] ?? null
+)
+const branchHoursConfigured = computed(() =>
+    !!branchWindow.value && Object.values(branchWindow.value).some((w) => w.configured)
+)
+function dayLabel(day) { return DAY_LABELS[isRtl.value ? 'ar' : 'en'][day] }
+function windowFor(day) { return branchWindow.value?.[day] || null }
+function dayClosed(day) {
+    const w = windowFor(day)
+    return !!w && w.configured && !w.is_open
+}
+function windowLabel(day) {
+    const w = windowFor(day)
+    if (!w || !w.configured) return ''
+    if (!w.is_open) return t.value.modal.branchClosed
+    return `${w.open}–${w.close}`
+}
+// Client-side mirror of the server rule, so the problem is visible before save.
+function rowOutside(row) {
+    const w = windowFor(row.day)
+    if (!row.is_open || !w || !w.configured) return false
+    if (!w.is_open) return true
+    if (w.overnight) return false // overnight windows are checked server-side
+    return row.start < w.open || row.end > w.close || row.end <= row.start
+}
+const anyOutside = computed(() => form.working_hours.some(rowOutside))
+// Server-side schedule rejections, whichever day index they came back on.
+const hoursErrors = computed(() =>
+    Object.entries(errors.value || {})
+        .filter(([key]) => String(key).startsWith('working_hours'))
+        .map(([, msg]) => (Array.isArray(msg) ? msg[0] : msg))
+)
+
+// Switching branch can invalidate days the new branch doesn't open — turn
+// those off rather than letting the user submit a guaranteed failure.
+watch(() => form.branch_id, () => {
+    if (!branchWindow.value) return
+    form.working_hours.forEach((row) => {
+        if (dayClosed(row.day)) row.is_open = false
+    })
+})
+
+function toggleDay(row) {
+    if (dayClosed(row.day)) return
+    row.is_open = !row.is_open
+    // Opening a day snaps it to the branch window so the default is valid.
+    const w = windowFor(row.day)
+    if (row.is_open && w?.configured && w.is_open && !w.overnight) {
+        if (row.start < w.open) row.start = w.open
+        if (row.end > w.close) row.end = w.close
+    }
+}
+
+function copyToAllDays(row) {
+    form.working_hours.forEach((r) => {
+        if (!r.is_open || r.day === row.day || dayClosed(r.day)) return
+        const w = windowFor(r.day)
+        r.start = w?.configured && w.is_open && !w.overnight && row.start < w.open ? w.open : row.start
+        r.end = w?.configured && w.is_open && !w.overnight && row.end > w.close ? w.close : row.end
+    })
+}
+
+/** "Sun–Thu 09:00–17:00"-ish one-liner for the table column. */
+function hoursSummary(row) {
+    const list = row.hours_summary || []
+    if (!list.length) return null
+    return list.map((h) => `${dayLabel(h.day).slice(0, 3)} ${h.start}–${h.end}`).join(' · ')
+}
 
 // Branch options cascade off the chosen partner (clinic) — you can't pick a
 // branch from another clinic. Mirrors the old admin's Partner → Branch flow.
@@ -148,6 +267,7 @@ function openCreate() {
     Object.assign(form, {
         name: '', specialty: '', phone: '', email: '', license_number: '',
         consultation_fee: 1, restaurant_table_id: '', bio: '', is_active: true,
+        default_slot_minutes: '', working_hours: blankHours(),
         ...defaultAssignment(),
     })
     errors.value = {}; modalOpen.value = true
@@ -162,7 +282,11 @@ function openEdit(row) {
         consultation_fee: Number(row.consultation_fee ?? 1),
         branch_id: row.branch_id || '', partner_id: row.partner_id || '',
         restaurant_table_id: row.restaurant_table_id || '',
+        default_slot_minutes: row.default_slot_minutes ?? '',
         bio: row.bio || '', is_active: !!row.is_active,
+        working_hours: (row.hours || blankHours()).map((h) => ({
+            day: h.day, is_open: !!h.is_open, start: h.start, end: h.end,
+        })),
     })
     errors.value = {}; modalOpen.value = true
 }
@@ -176,6 +300,7 @@ function submit() {
         partner_id: form.partner_id || null,
         restaurant_table_id: form.restaurant_table_id || null,
         license_number: form.license_number || null,
+        default_slot_minutes: form.default_slot_minutes === '' ? null : Number(form.default_slot_minutes),
     }
     const url = modalMode.value === 'create'
         ? route('v2.doctors.store')
@@ -255,6 +380,7 @@ function rowIsArchived(row) { return !!row.deleted_at || !row.is_active }
                             <th>{{ t.col.branch }}</th>
                             <th>{{ t.col.phone }}</th>
                             <th>{{ t.col.license }}</th>
+                            <th>{{ t.col2.hours }}</th>
                             <th style="text-align:end;">{{ t.col.fee }}</th>
                             <th>{{ t.col.status }}</th>
                             <th style="width:80px;"></th>
@@ -262,7 +388,7 @@ function rowIsArchived(row) { return !!row.deleted_at || !row.is_active }
                     </thead>
                     <tbody>
                         <tr v-if="page.data.length === 0">
-                            <td :colspan="can_edit ? 9 : 8" style="text-align:center; padding:48px 12px; color:var(--fg-faint);">
+                            <td :colspan="can_edit ? 10 : 9" style="text-align:center; padding:48px 12px; color:var(--fg-faint);">
                                 <Icon name="stethoscope" :size="32" style="margin-bottom:8px; opacity:0.4;" />
                                 <div style="font-weight:600;">{{ t.empty }}</div>
                                 <div style="font-size:12px; margin-top:4px;">{{ t.emptyDesc }}</div>
@@ -282,6 +408,13 @@ function rowIsArchived(row) { return !!row.deleted_at || !row.is_active }
                             <td style="color:var(--fg-subtle); font-size:12px;">{{ row.branch?.name || '—' }}</td>
                             <td class="mono" style="font-size:12px;">{{ row.phone || '—' }}</td>
                             <td class="mono" style="font-size:12px;">{{ row.license_number || '—' }}</td>
+                            <td style="font-size:11px; color:var(--fg-subtle); max-width:220px;">
+                                <span v-if="hoursSummary(row)">{{ hoursSummary(row) }}</span>
+                                <span v-else class="badge-warn">{{ isRtl ? 'بدون ساعات' : 'No hours' }}</span>
+                                <div v-if="row.default_slot_minutes" style="color:var(--fg-faint); margin-top:2px;">
+                                    {{ row.default_slot_minutes }} {{ isRtl ? 'د/موعد' : 'min/appt' }}
+                                </div>
+                            </td>
                             <td class="mono" style="text-align:end;">{{ fmt(row.consultation_fee) }}</td>
                             <td>
                                 <span :class="rowIsArchived(row) ? 'badge-muted' : 'badge-ok'">
@@ -375,6 +508,13 @@ function rowIsArchived(row) { return !!row.deleted_at || !row.is_active }
                         <div v-if="errors.restaurant_table_id" class="err">{{ errors.restaurant_table_id }}</div>
                     </div>
                     <div style="grid-column:span 2;">
+                        <label class="label">{{ t.modal.slotLen }}</label>
+                        <input v-model="form.default_slot_minutes" type="number" min="5" max="480" step="5" class="input"
+                               :placeholder="branchSlotLength ? `${t.modal.slotLenHelp} (${branchSlotLength})` : t.modal.slotLenHelp" />
+                        <div style="font-size:11px; color:var(--fg-faint); margin-top:4px;">{{ t.modal.slotLenHelp2 }}</div>
+                        <div v-if="errors.default_slot_minutes" class="err">{{ errors.default_slot_minutes }}</div>
+                    </div>
+                    <div style="grid-column:span 2;">
                         <label class="label">{{ t.modal.bio }}</label>
                         <textarea v-model="form.bio" rows="2" class="input" maxlength="2000"></textarea>
                     </div>
@@ -383,9 +523,45 @@ function rowIsArchived(row) { return !!row.deleted_at || !row.is_active }
                         <label for="d_active" style="font-size:13px;">{{ t.modal.active }}</label>
                     </div>
 
-                    <div style="grid-column:span 2; display:flex; justify-content:flex-end; gap:8px; margin-top:8px; padding-top:12px; border-top:1px solid var(--line);">
+                    <div style="grid-column:span 2; padding-top:12px; border-top:1px solid var(--line);">
+                        <label class="label">{{ t.modal.hours }}</label>
+                        <div style="font-size:11px; color:var(--fg-faint); margin-bottom:8px;">{{ t.modal.hoursHelp }}</div>
+
+                        <div v-if="!form.branch_id" style="font-size:12px; color:var(--fg-faint);">{{ t.modal.hoursNoBranch }}</div>
+                        <template v-else>
+                            <div v-if="!branchHoursConfigured" class="hours-note">{{ t.modal.hoursUnset }}</div>
+                            <div class="hours-grid">
+                                <div v-for="row in form.working_hours" :key="row.day"
+                                     class="hours-row" :class="{ 'is-closed': dayClosed(row.day), 'is-bad': rowOutside(row) }">
+                                    <label class="hours-day">
+                                        <input type="checkbox" :checked="row.is_open" :disabled="dayClosed(row.day)" @change="toggleDay(row)" />
+                                        <span>{{ dayLabel(row.day) }}</span>
+                                    </label>
+                                    <div v-if="dayClosed(row.day)" class="hours-closed">{{ t.modal.branchClosed }}</div>
+                                    <template v-else-if="row.is_open">
+                                        <!-- No native min/max here: it silently blocks submit with only
+                                             a browser tooltip. The inline warning below plus the server
+                                             check say the same thing in the app's own voice. -->
+                                        <input v-model="row.start" type="time" class="input input-sm" />
+                                        <span class="hours-sep">–</span>
+                                        <input v-model="row.end" type="time" class="input input-sm" />
+                                        <span class="hours-window" v-if="windowLabel(row.day)">{{ t.modal.branchWindow }} {{ windowLabel(row.day) }}</span>
+                                        <button type="button" class="btn btn-ghost btn-sm" :title="t.modal.copyToAll" @click="copyToAllDays(row)">
+                                            <Icon name="copy" :size="12" />
+                                        </button>
+                                    </template>
+                                    <div v-else class="hours-off">{{ t.off }}</div>
+                                    <div v-if="rowOutside(row)" class="hours-bad">{{ t.modal.outside }} ({{ windowLabel(row.day) }})</div>
+                                </div>
+                            </div>
+                        </template>
+                        <div v-for="msg in hoursErrors" :key="msg" class="err">{{ msg }}</div>
+                    </div>
+
+                    <div style="grid-column:span 2; display:flex; justify-content:flex-end; align-items:center; gap:8px; margin-top:8px; padding-top:12px; border-top:1px solid var(--line);">
+                        <span v-if="anyOutside" class="err" style="margin-inline-end:auto;">{{ t.modal.outside }}</span>
                         <button type="button" class="btn btn-ghost" @click="closeModal">{{ t.modal.cancel }}</button>
-                        <button type="submit" class="btn btn-primary" :disabled="saving">{{ saving ? '…' : t.modal.save }}</button>
+                        <button type="submit" class="btn btn-primary" :disabled="saving || anyOutside">{{ saving ? '…' : t.modal.save }}</button>
                     </div>
                 </form>
             </div>
@@ -406,8 +582,21 @@ function rowIsArchived(row) { return !!row.deleted_at || !row.is_active }
 .table tr:last-child td { border-bottom:none; }
 .table tbody tr:hover { background:var(--bg-hover); }
 .table tr.is-archived { opacity:0.55; }
+.hours-grid { display:flex; flex-direction:column; gap:6px; }
+.hours-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:6px 8px; border:1px solid var(--line); border-radius:6px; }
+.hours-row.is-closed { opacity:0.5; background:var(--bg-hover); }
+.hours-row.is-bad { border-color:var(--err, #dc2626); }
+.hours-day { display:inline-flex; align-items:center; gap:6px; font-size:13px; min-width:140px; cursor:pointer; }
+.hours-row.is-closed .hours-day { cursor:not-allowed; }
+.hours-sep { color:var(--fg-faint); }
+.hours-window { font-size:11px; color:var(--fg-faint); }
+.hours-closed, .hours-off { font-size:12px; color:var(--fg-faint); }
+.hours-bad { font-size:11px; color:var(--err, #dc2626); font-weight:500; flex-basis:100%; }
+.hours-note { font-size:11px; color:var(--warn, #d97706); margin-bottom:8px; }
+.input-sm { width:110px; padding:4px 8px; font-size:13px; }
 .badge-ok { display:inline-block; padding:2px 8px; font-size:11px; font-weight:600; border:1px solid var(--ok); color:var(--ok); border-radius:999px; }
 .badge-muted { display:inline-block; padding:2px 8px; font-size:11px; font-weight:600; border:1px solid var(--fg-faint); color:var(--fg-faint); border-radius:999px; }
+.badge-warn { display:inline-block; padding:2px 8px; font-size:10.5px; font-weight:600; border:1px solid var(--warn, #d97706); color:var(--warn, #d97706); border-radius:999px; }
 .label { display:block; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.04em; color:var(--fg-faint); margin-bottom:4px; }
 .err { font-size:11px; color:var(--err, #dc2626); margin-top:4px; font-weight:500; }
 .modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:80; display:flex; align-items:center; justify-content:center; padding:24px; }

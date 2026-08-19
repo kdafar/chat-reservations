@@ -17,6 +17,10 @@ const props = defineProps({
     // Pre-select a booking and skip step 1 (search). Used when the
     // receptionist clicks a "Pending check-in" card on Waiting Patients.
     bookingId: { type: [Number, String, null], default: null },
+    // The package/offer the patient selected on the website, handed down by
+    // the caller alongside `bookingId` (read-only — the modal never edits it).
+    // Passed as a prop rather than re-fetched so check-in stays one round-trip.
+    requestedPackage: { type: [Object, null], default: null },
 })
 const emit = defineEmits(['checked-in'])
 
@@ -63,6 +67,13 @@ const t = computed(() => isRtl.value
         idConfirmed: 'تم تأكيد الهوية',
         idSplit: 'تم إنشاء مريض جديد',
         idError: 'تعذرت معالجة الهوية',
+        requestedOffer: 'العرض المطلوب',
+        requestedMismatch: 'هذا العرض يخص فرعاً آخر — تأكد من السعر قبل تطبيقه',
+        addPackage: 'إضافة هذه الباقة إلى الزيارة',
+        addPackageHint: 'ستظهر في الفاتورة وسيراها الطبيب.',
+        addPackageMismatchHint: 'باقة فرع آخر — فعّلها يدوياً فقط إذا كنت متأكداً.',
+        pkgAdded: 'تمت إضافة الباقة إلى الزيارة',
+        pkgFailed: 'تم تسجيل الوصول، لكن تعذّرت إضافة الباقة — أضفها من الزيارة',
     }
     : {
         eyebrow: 'Reception', title: 'Check-in patient',
@@ -98,6 +109,13 @@ const t = computed(() => isRtl.value
         idConfirmed: 'Identity confirmed',
         idSplit: 'New patient created',
         idError: 'Could not resolve identity',
+        requestedOffer: 'Requested offer',
+        requestedMismatch: 'This offer belongs to another branch — confirm the price before applying it',
+        addPackage: 'Add this package to the visit',
+        addPackageHint: 'It will appear on the bill and the doctor will see it.',
+        addPackageMismatchHint: 'Another branch’s offer — only tick this if you are sure.',
+        pkgAdded: 'Package added to the visit',
+        pkgFailed: 'Checked in, but the package could not be added — add it from the visit',
     }
 )
 
@@ -108,6 +126,27 @@ const matches = ref([])
 const searching = ref(false)
 let searchDebounce
 const booking = ref(null)
+
+// The requested offer, preferring the SERVER value that came back with the
+// booking we actually loaded (summarizeBooking emits `requested_package` in
+// the same shape as the waiting-list card). The prop stays as a fallback for
+// callers that still hand it down — but it only describes the booking the
+// caller pre-loaded, so once the receptionist starts over and searches for a
+// different booking it no longer matches what's on screen and is dropped.
+const shownRequest = computed(() => {
+    if (!booking.value) return null
+    if (booking.value.requested_package) return booking.value.requested_package
+    if (!props.requestedPackage || !props.bookingId) return null
+    return String(booking.value.id) === String(props.bookingId) ? props.requestedPackage : null
+})
+
+// Reception's explicit "yes, sell them this" tick. Defaults ON so the normal
+// case is one click — EXCEPT when the offer belongs to another branch, where
+// applying it must be a deliberate choice.
+const addRequestedPackage = ref(false)
+watch(shownRequest, (rq) => {
+    addRequestedPackage.value = !!rq && !rq.branch_mismatch
+}, { immediate: true })
 const loading = ref(false)
 const feeMethod = ref('cash')
 const feeAmount = ref('')
@@ -206,6 +245,9 @@ const selectedRoomId = ref(null)
 const doctorRoomId = ref(null)
 const doctorRoomName = ref(null)
 const doctorRoomBusy = ref(false)
+// Only admins / branch managers may pick a room. Front-desk staff always route
+// the patient into the booking doctor's own room (server enforces this too).
+const canChooseRoom = ref(true)
 const checkingIn = ref(false)
 const success = ref(null)
 const resolvingId = ref(false)
@@ -230,8 +272,10 @@ function reset() {
     doctorRoomId.value = null
     doctorRoomName.value = null
     doctorRoomBusy.value = false
+    canChooseRoom.value = true
     rooms.value = []
     success.value = null
+    addRequestedPackage.value = false
 }
 
 watch(open, async (v) => {
@@ -371,8 +415,15 @@ async function loadRooms() {
         doctorRoomId.value = data.doctor_room_id ?? null
         doctorRoomName.value = data.doctor_room_name ?? null
         doctorRoomBusy.value = !!data.doctor_room_busy
+        canChooseRoom.value = data.can_choose_room !== false
 
-        // Pre-selection priority:
+        // Front-desk staff can't choose: always the doctor's own room.
+        if (!canChooseRoom.value) {
+            selectedRoomId.value = doctorRoomId.value
+            return
+        }
+
+        // Admin/manager pre-selection priority:
         //   1. Doctor's assigned room, if it's available
         //   2. The first available room
         //   3. Nothing
@@ -404,9 +455,44 @@ async function doCheckin() {
         const data = await resp.json()
         success.value = data
         pushToast({ kind: 'success', icon: 'check', title: t.value.success, desc: booking.value.patient?.name })
+
+        // The patient IS checked in from here on. Attaching the requested
+        // package is a follow-on step — a failure warns and is never allowed
+        // to unwind the check-in above.
+        if (addRequestedPackage.value && shownRequest.value?.id) {
+            await attachRequestedPackage(data.visit_id)
+        }
+
         emit('checked-in', { booking: booking.value, ...data })
     } finally {
         checkingIn.value = false
+    }
+}
+
+/**
+ * Add the confirmed offer to the freshly-created visit by reusing the visit
+ * console's own add-package endpoint — the one that snapshots the price,
+ * applies time-bound package promotions and handles bundled stock. Nothing
+ * about package pricing is re-implemented here.
+ */
+async function attachRequestedPackage(visitId) {
+    const rq = shownRequest.value
+    if (!visitId || !rq?.id) return
+    try {
+        const resp = await fetch(`/admin/v2/api/visits/${visitId}/packages`, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf(), Accept: 'application/json' },
+            body: JSON.stringify({ clinic_package_id: rq.id, qty: 1 }),
+        })
+        const data = await resp.json().catch(() => ({}))
+        if (!resp.ok || data.ok === false) {
+            pushToast({ kind: 'warning', icon: 'alert-triangle', title: t.value.pkgFailed, desc: data.error || data.message || rq.name })
+            return
+        }
+        pushToast({ kind: 'success', icon: 'check', title: t.value.pkgAdded, desc: rq.name })
+    } catch (e) {
+        pushToast({ kind: 'warning', icon: 'alert-triangle', title: t.value.pkgFailed, desc: rq.name })
     }
 }
 
@@ -651,6 +737,21 @@ function fmtMoney(n) { return (Number(n) || 0).toFixed(3) }
                                     <Icon name="phone" :size="13" :style="{ color: 'var(--fg-subtle)' }" />
                                     {{ booking.patient.msisdn }}
                                 </div>
+                                <!-- What the patient picked online — read-only, so reception
+                                     knows what they came for before taking the money. -->
+                                <div v-if="shownRequest" class="ci-request" :class="shownRequest.branch_mismatch ? 'is-warn' : ''">
+                                    <Icon :name="shownRequest.branch_mismatch ? 'alert-triangle' : 'sparkles'" :size="13" />
+                                    <div style="min-width: 0;">
+                                        <div class="eyebrow" style="font-size: 10px; margin-bottom: 2px;">{{ t.requestedOffer }}</div>
+                                        <div style="font-size: 12.5px; font-weight: 500; color: var(--fg);">{{ shownRequest.name }}</div>
+                                        <div class="tnum" style="font-size: 11.5px; color: var(--fg-muted); margin-top: 1px;">
+                                            {{ fmtMoney(shownRequest.price) }} {{ t.kwd }}
+                                        </div>
+                                        <div v-if="shownRequest.branch_mismatch" style="font-size: 11.5px; margin-top: 4px; color: var(--destructive);">
+                                            {{ t.requestedMismatch }}
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
 
                             <!-- Fee panel (right) -->
@@ -769,67 +870,134 @@ function fmtMoney(n) { return (Number(n) || 0).toFixed(3) }
                                         {{ t.back }}
                                     </button>
                                 </div>
+                                <!-- Confirm the offer before it goes on the visit.
+                                     Ticked by default, except for another branch's
+                                     offer where applying it must be deliberate. -->
+                                <label
+                                    v-if="shownRequest"
+                                    class="ci-request ci-request-pick"
+                                    :class="shownRequest.branch_mismatch ? 'is-warn' : ''"
+                                    style="margin-top: 10px;"
+                                >
+                                    <input v-model="addRequestedPackage" type="checkbox" :disabled="checkingIn" />
+                                    <div style="min-width: 0; flex: 1;">
+                                        <div style="display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap;">
+                                            <span class="eyebrow" style="font-size: 10px;">{{ t.requestedOffer }}</span>
+                                            <span style="font-size: 12.5px; font-weight: 500; color: var(--fg);">{{ shownRequest.name }}</span>
+                                            <span class="tnum" style="font-size: 11.5px; color: var(--fg-muted);">{{ fmtMoney(shownRequest.price) }} {{ t.kwd }}</span>
+                                            <span v-if="shownRequest.has_discount" class="badge badge-violet" style="font-size: 9.5px; height: 16px;">
+                                                <Icon name="tag" :size="10" />
+                                                {{ isRtl ? 'سعر العرض' : 'Offer price' }}
+                                            </span>
+                                        </div>
+                                        <div style="font-size: 12px; font-weight: 500; color: var(--fg); margin-top: 4px;">{{ t.addPackage }}</div>
+                                        <div v-if="shownRequest.branch_mismatch" style="font-size: 11.5px; margin-top: 3px; color: var(--destructive);">
+                                            {{ t.requestedMismatch }} · {{ t.addPackageMismatchHint }}
+                                        </div>
+                                        <div v-else style="font-size: 11.5px; margin-top: 3px; color: var(--fg-muted);">
+                                            {{ t.addPackageHint }}
+                                        </div>
+                                    </div>
+                                </label>
                             </div>
 
                             <div class="ci-section">
                                 <div class="eyebrow" style="margin-bottom: 10px;">{{ t.rooms }}</div>
 
-                                <!-- Doctor's room busy hint -->
-                                <div v-if="doctorRoomBusy && doctorRoomName" style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--warning-soft, var(--bg-sunken)); border: 1px solid var(--warning, var(--line)); border-radius: 8px; margin-bottom: 12px; font-size: 12.5px; color: var(--fg);">
-                                    <Icon name="alert-circle" :size="14" :style="{ color: 'var(--warning)', flexShrink: 0 }" />
-                                    <span>
-                                        {{ isRtl ? 'غرفة الطبيب المعتادة' : 'Doctor’s usual room' }}
-                                        <strong style="font-weight: 600;">{{ doctorRoomName }}</strong>
-                                        {{ isRtl ? 'مشغولة الآن — اختر غرفة بديلة.' : 'is busy right now — pick an alternative below.' }}
-                                    </span>
-                                </div>
-
-                                <div v-if="rooms.length === 0" style="text-align: center; padding: 18px 8px; color: var(--fg-subtle);">
-                                    <Icon name="door-closed" :size="20" />
-                                    <div style="font-size: 12.5px; margin-top: 4px;">{{ t.roomsEmpty }}</div>
-                                </div>
-                                <div v-else style="display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px;">
-                                    <button
-                                        v-for="r in rooms"
-                                        :key="r.id"
-                                        type="button"
-                                        class="ci-room"
-                                        :class="{ 'is-active': selectedRoomId === r.id, 'is-doctor-room': r.is_doctor_room }"
-                                        @click="selectedRoomId = r.id"
-                                    >
+                                <!-- ══ Front-desk (non-admin): locked to the doctor's own room ══ -->
+                                <template v-if="!canChooseRoom">
+                                    <div v-if="doctorRoomId" class="ci-room is-active is-doctor-room" style="cursor: default; margin-bottom: 4px;">
                                         <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
                                             <Icon name="door-open" :size="14" :style="{ color: 'var(--success)' }" />
-                                            <span v-if="r.is_doctor_room" class="badge badge-gold" style="font-size: 9.5px; height: 16px;">
+                                            <span class="badge badge-gold" style="font-size: 9.5px; height: 16px;">
                                                 <Icon name="stethoscope" :size="10" />
                                                 {{ isRtl ? 'غرفة الطبيب' : 'Doctor’s room' }}
                                             </span>
                                         </div>
-                                        <div style="font-size: 13px; font-weight: 500;">{{ r.name }}</div>
-                                    </button>
-                                </div>
+                                        <div style="font-size: 13px; font-weight: 500;">{{ doctorRoomName }}</div>
+                                    </div>
+                                    <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--fg-subtle); margin-top: 8px;">
+                                        <Icon name="lock" :size="12" />
+                                        <span v-if="doctorRoomId">
+                                            {{ isRtl ? 'يتم توجيه المريض إلى غرفة الطبيب تلقائياً.' : 'The patient is routed to the doctor’s own room automatically.' }}
+                                        </span>
+                                        <span v-else>
+                                            {{ isRtl ? 'لا توجد غرفة مخصصة لهذا الطبيب.' : 'No room is assigned to this doctor.' }}
+                                        </span>
+                                    </div>
+                                    <div style="margin-top: 14px;">
+                                        <button
+                                            type="button"
+                                            class="btn btn-primary"
+                                            style="width: 100%; height: 42px; font-size: 14px;"
+                                            :disabled="checkingIn"
+                                            @click="doCheckin"
+                                        >
+                                            <Icon :name="checkingIn ? 'loader' : 'log-in'" :size="14" />
+                                            {{ checkingIn ? t.loading : t.checkIn }}
+                                        </button>
+                                    </div>
+                                </template>
 
-                                <div style="display: flex; gap: 8px; margin-top: 14px;">
-                                    <button
-                                        v-if="rooms.length > 0"
-                                        type="button"
-                                        class="btn btn-outline"
-                                        style="flex: 1;"
-                                        :disabled="checkingIn"
-                                        @click="selectedRoomId = null; doCheckin()"
-                                    >
-                                        {{ t.skipRoom }}
-                                    </button>
-                                    <button
-                                        type="button"
-                                        class="btn btn-primary"
-                                        style="flex: 2; height: 42px; font-size: 14px;"
-                                        :disabled="checkingIn"
-                                        @click="doCheckin"
-                                    >
-                                        <Icon :name="checkingIn ? 'loader' : 'log-in'" :size="14" />
-                                        {{ checkingIn ? t.loading : t.checkIn }}
-                                    </button>
-                                </div>
+                                <!-- ══ Admin / manager: free room choice ══ -->
+                                <template v-else>
+                                    <!-- Doctor's room busy hint -->
+                                    <div v-if="doctorRoomBusy && doctorRoomName" style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--warning-soft, var(--bg-sunken)); border: 1px solid var(--warning, var(--line)); border-radius: 8px; margin-bottom: 12px; font-size: 12.5px; color: var(--fg);">
+                                        <Icon name="alert-circle" :size="14" :style="{ color: 'var(--warning)', flexShrink: 0 }" />
+                                        <span>
+                                            {{ isRtl ? 'غرفة الطبيب المعتادة' : 'Doctor’s usual room' }}
+                                            <strong style="font-weight: 600;">{{ doctorRoomName }}</strong>
+                                            {{ isRtl ? 'مشغولة الآن — اختر غرفة بديلة.' : 'is busy right now — pick an alternative below.' }}
+                                        </span>
+                                    </div>
+
+                                    <div v-if="rooms.length === 0" style="text-align: center; padding: 18px 8px; color: var(--fg-subtle);">
+                                        <Icon name="door-closed" :size="20" />
+                                        <div style="font-size: 12.5px; margin-top: 4px;">{{ t.roomsEmpty }}</div>
+                                    </div>
+                                    <div v-else style="display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px;">
+                                        <button
+                                            v-for="r in rooms"
+                                            :key="r.id"
+                                            type="button"
+                                            class="ci-room"
+                                            :class="{ 'is-active': selectedRoomId === r.id, 'is-doctor-room': r.is_doctor_room }"
+                                            @click="selectedRoomId = r.id"
+                                        >
+                                            <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+                                                <Icon name="door-open" :size="14" :style="{ color: 'var(--success)' }" />
+                                                <span v-if="r.is_doctor_room" class="badge badge-gold" style="font-size: 9.5px; height: 16px;">
+                                                    <Icon name="stethoscope" :size="10" />
+                                                    {{ isRtl ? 'غرفة الطبيب' : 'Doctor’s room' }}
+                                                </span>
+                                            </div>
+                                            <div style="font-size: 13px; font-weight: 500;">{{ r.name }}</div>
+                                        </button>
+                                    </div>
+
+                                    <div style="display: flex; gap: 8px; margin-top: 14px;">
+                                        <button
+                                            v-if="rooms.length > 0"
+                                            type="button"
+                                            class="btn btn-outline"
+                                            style="flex: 1;"
+                                            :disabled="checkingIn"
+                                            @click="selectedRoomId = null; doCheckin()"
+                                        >
+                                            {{ t.skipRoom }}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            class="btn btn-primary"
+                                            style="flex: 2; height: 42px; font-size: 14px;"
+                                            :disabled="checkingIn"
+                                            @click="doCheckin"
+                                        >
+                                            <Icon :name="checkingIn ? 'loader' : 'log-in'" :size="14" />
+                                            {{ checkingIn ? t.loading : t.checkIn }}
+                                        </button>
+                                    </div>
+                                </template>
                             </div>
                         </div>
                     </div>
@@ -960,6 +1128,38 @@ function fmtMoney(n) { return (Number(n) || 0).toFixed(3) }
     background: var(--warning, var(--primary-soft));
     color: var(--warning-fg, #fff);
     display: inline-flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+}
+
+/* Read-only "the patient asked for this offer" strip. Gold by default;
+   red when the offer belongs to another branch and the price can't be
+   taken at face value. */
+.ci-request {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px 10px;
+    border: 1px solid color-mix(in oklch, var(--primary) 35%, transparent);
+    border-radius: 8px;
+    background: var(--primary-soft, var(--bg-sunken));
+    color: var(--primary);
+}
+.ci-request.is-warn {
+    border-color: var(--destructive);
+    background: var(--destructive-soft, var(--bg-sunken));
+    color: var(--destructive);
+}
+
+/* Same strip, but as the confirm control on the last step: reception ticks it
+   to put the offer on the visit being created. */
+.ci-request-pick {
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+    cursor: pointer;
+}
+.ci-request-pick input[type="checkbox"] {
+    margin-top: 1px;
     flex-shrink: 0;
 }
 </style>

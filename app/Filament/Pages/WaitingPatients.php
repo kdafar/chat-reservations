@@ -302,7 +302,10 @@ class WaitingPatients extends Page
                         throw new \RuntimeException('You cannot accept a visit assigned to another doctor.');
                     }
 
-                    if ($fresh->accepted_at || $fresh->accepted_by_user_id) {
+                    // Keyed on the owner, not the timestamp: a stale accepted_at
+                    // with no accepted_by_user_id is not a claim by another
+                    // doctor, and bailing on it made Accept silently do nothing.
+                    if ($fresh->accepted_by_user_id) {
                         return;
                     }
 

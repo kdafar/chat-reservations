@@ -17,12 +17,16 @@ import { formatMoney } from '../../lib/money.js'
 
 const checkinOpen = ref(false)
 const checkinBookingId = ref(null)
+// The offer the patient picked online, handed to the modal read-only so
+// reception sees the request at the point they collect the fee.
+const checkinRequestedPackage = ref(null)
 
 // Open the check-in modal either fresh (no booking) or with a specific
 // booking pre-loaded so the receptionist jumps straight to collect-fee /
 // assign-room without re-searching.
-function startCheckin(bookingId = null) {
+function startCheckin(bookingId = null, requestedPackage = null) {
     checkinBookingId.value = bookingId
+    checkinRequestedPackage.value = requestedPackage
     checkinOpen.value = true
 }
 
@@ -151,10 +155,34 @@ async function reassignDoctor(visitId, doctorId, force = false) {
     } finally { reassigningId.value = null }
 }
 
+// Doctors on today's board, with how many visits each is carrying. Sorted by
+// name so the order doesn't shuffle as visits move between statuses.
 const doctors = computed(() => {
-    const set = new Set()
-    props.visits.forEach((v) => v.doctor?.name && set.add(v.doctor.name))
-    return ['all', ...Array.from(set)]
+    const tally = new Map()
+    props.visits.forEach((v) => {
+        const name = v.doctor?.name
+        if (name) tally.set(name, (tally.get(name) ?? 0) + 1)
+    })
+    return Array.from(tally, ([name, count]) => ({ name, count }))
+        .sort((a, b) => a.name.localeCompare(b.name))
+})
+
+// A segmented control stops working past a handful of options — at a busy
+// branch this list runs to 18 doctors, which overflowed the row and wrapped
+// every label into unreadable stacks. Past the threshold, switch to a
+// searchable dropdown instead.
+const doctorsAsMenu = computed(() => doctors.value.length > 4)
+
+const doctorItems = computed(() => doctors.value.map((d) => ({
+    value: d.name,
+    label: `${t.value.doctor} ${docName(d.name)}`,
+    sublabel: String(d.count),
+})))
+
+// SearchableSelect speaks null for "no choice"; the filter speaks 'all'.
+const doctorSelected = computed({
+    get: () => (doctorFilter.value === 'all' ? null : doctorFilter.value),
+    set: (v) => { doctorFilter.value = v ?? 'all' },
 })
 
 // Derived: minute count from the queued_at / service_started_at iso.
@@ -201,11 +229,27 @@ function sourceMeta(source) {
         : { icon: 'tag', tone: 'muted', label: source }
 }
 
+// Worst lab flag on the card, in the current language.
+function labFlagLabel(flag) {
+    const ar = { low: 'منخفض', high: 'مرتفع', critical: 'خطير', normal: 'طبيعي' }
+    const en = { low: 'Low', high: 'High', critical: 'Critical', normal: 'Normal' }
+    return (locale.value === 'ar' ? ar : en)[flag] ?? flag
+}
+
 // Tooltip / aria text for an insurance chip: "Insurer · Plan · #policy".
 function insuranceTitle(policy) {
     if (!policy) return ''
     return [policy.insurer, policy.plan, policy.number ? `#${policy.number}` : null]
         .filter(Boolean).join(' · ')
+}
+
+// Tooltip for the "requested offer" chip: what the patient picked on the
+// website, its price, and the branch warning when the offer isn't ours.
+function requestedTitle(rp) {
+    if (!rp) return ''
+    const parts = [`${t.value.requestedOffer}: ${rp.name}`, `${formatMoney(rp.price)} KWD`]
+    if (rp.branch_mismatch) parts.push(t.value.requestedMismatch)
+    return parts.join(' · ')
 }
 
 function waitTone(min) {
@@ -269,7 +313,9 @@ const t = computed(() => locale.value === 'ar'
         empty: 'القائمة فارغة',
         emptyDesc: 'لا يوجد مرضى يطابقون هذا التصفية. سيظهر التسجيل الجديد هنا تلقائياً.',
         file: 'ملف', code: 'حجز', doctor: 'د.', room: 'غرفة', min: 'د', units: { m: 'د', h: 'س', d: 'ي' },
-        clear: 'مسح', allDoctors: 'كل الأطباء',
+        clear: 'مسح', allDoctors: 'كل الأطباء', searchDoctor: 'ابحث عن طبيب…',
+        requested: 'مطلوب', requestedOffer: 'العرض المطلوب',
+        requestedMismatch: 'هذا العرض يخص فرعاً آخر — تأكد من السعر قبل تطبيقه',
     }
     : {
         live: 'Live · auto-refresh 10s',
@@ -281,7 +327,9 @@ const t = computed(() => locale.value === 'ar'
         empty: 'Queue is clear',
         emptyDesc: 'No patients match this filter. New check-ins will appear here automatically.',
         file: 'File', code: 'Booking', doctor: 'Dr.', room: 'Room', min: 'min', units: { m: 'm', h: 'h', d: 'd' },
-        clear: 'Clear', allDoctors: 'All',
+        clear: 'Clear', allDoctors: 'All doctors', searchDoctor: 'Search doctor…',
+        requested: 'Requested', requestedOffer: 'Requested offer',
+        requestedMismatch: 'This offer belongs to another branch — confirm the price before applying it',
     }
 )
 
@@ -466,19 +514,35 @@ const gridCols = 'repeat(auto-fill, minmax(320px, 1fr))'
                     </button>
                 </div>
 
-                <div v-if="doctors.length > 2" class="seg" style="margin-inline-start: auto;">
+                <!-- Many doctors: a searchable dropdown, so the row can't overflow. -->
+                <div v-if="doctors.length > 1 && doctorsAsMenu" class="wp-doc-select">
+                    <SearchableSelect
+                        v-model="doctorSelected"
+                        :items="doctorItems"
+                        :null-label="t.allDoctors"
+                        :placeholder="t.allDoctors"
+                        :search-placeholder="t.searchDoctor"
+                        nullable
+                        width="100%"
+                    />
+                </div>
+
+                <!-- Few doctors: chips stay, they're faster to hit. -->
+                <div v-else-if="doctors.length > 1" class="seg wp-doc-seg">
+                    <button
+                        :class="doctorFilter === 'all' ? 'is-active' : ''"
+                        @click="doctorFilter = 'all'"
+                    >
+                        <Icon name="users" :size="12" /> {{ t.allDoctors }}
+                    </button>
                     <button
                         v-for="d in doctors"
-                        :key="d"
-                        :class="doctorFilter === d ? 'is-active' : ''"
-                        @click="doctorFilter = d"
+                        :key="d.name"
+                        :class="doctorFilter === d.name ? 'is-active' : ''"
+                        @click="doctorFilter = d.name"
                     >
-                        <template v-if="d === 'all'">
-                            <Icon name="users" :size="12" /> {{ t.allDoctors }}
-                        </template>
-                        <template v-else>
-                            {{ t.doctor }} {{ d.split(' ').slice(-1)[0] }}
-                        </template>
+                        {{ t.doctor }} {{ docName(d.name) }}
+                        <span class="tnum" style="color: var(--fg-faint);">{{ d.count }}</span>
                     </button>
                 </div>
 
@@ -538,7 +602,7 @@ const gridCols = 'repeat(auto-fill, minmax(320px, 1fr))'
                     v-for="v in filtered"
                     :key="v.id"
                     class="patient-card fade-up"
-                    @click="v.is_booking ? startCheckin(v.booking_id) : (openId = v.id)"
+                    @click="v.is_booking ? startCheckin(v.booking_id, v.requested_package) : (openId = v.id)"
                 >
                     <!-- accent bar -->
                     <div
@@ -606,11 +670,28 @@ const gridCols = 'repeat(auto-fill, minmax(320px, 1fr))'
                         </template>
                     </div>
 
-                    <!-- Info chips: phone · paid/balance · insurance · discount -->
+                    <!-- Info chips: phone · paid/balance · insurance · discount · labs -->
                     <div
-                        v-if="v.patient?.msisdn || (v.fee && v.fee.amount > 0) || v.policy || (v.discount_total > 0)"
+                        v-if="v.patient?.msisdn || (v.fee && v.fee.amount > 0) || v.policy || (v.discount_total > 0) || v.lab || v.requested_package"
                         style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 2px;"
                     >
+                        <!--
+                            What the patient picked on the website when booking.
+                            Gold = the ask; red = the offer belongs to another
+                            branch, so reception must confirm before applying it.
+                        -->
+                        <span
+                            v-if="v.requested_package"
+                            class="wp-chip"
+                            :style="v.requested_package.branch_mismatch
+                                ? { color: 'var(--destructive)', borderColor: 'var(--destructive)', fontWeight: 600 }
+                                : { color: 'var(--primary)', borderColor: 'var(--primary)' }"
+                            :title="requestedTitle(v.requested_package)"
+                        >
+                            <Icon :name="v.requested_package.branch_mismatch ? 'alert-triangle' : 'sparkles'" :size="11" />
+                            {{ t.requested }}: {{ v.requested_package.name }}
+                            <span class="tnum" style="opacity: 0.8;">· {{ formatMoney(v.requested_package.price) }}</span>
+                        </span>
                         <span
                             v-if="v.patient?.msisdn"
                             class="wp-chip tnum"
@@ -655,6 +736,35 @@ const gridCols = 'repeat(auto-fill, minmax(320px, 1fr))'
                             <Icon name="tag" :size="11" />
                             -{{ formatMoney(v.discount_total) }}
                         </span>
+                        <!--
+                            Lab state. "Results ready" is the loud one — it means a
+                            released report nobody has looked at yet, which is the
+                            reason this patient may still be sitting in the queue.
+                        -->
+                        <span
+                            v-if="v.lab && v.lab.ready > 0"
+                            class="wp-chip"
+                            style="color: var(--success); border-color: var(--success); font-weight: 600;"
+                            :title="locale === 'ar' ? 'نتائج مختبر جاهزة' : 'Lab results ready to review'"
+                        >
+                            <Icon name="beaker" :size="11" />
+                            {{ locale === 'ar' ? 'نتائج جاهزة' : 'Results ready' }}
+                            <span
+                                v-if="v.lab.worst_flag && v.lab.worst_flag !== 'normal'"
+                                :style="{ color: v.lab.worst_flag === 'low' ? 'var(--info)' : 'var(--destructive)' }"
+                            >· {{ labFlagLabel(v.lab.worst_flag) }}</span>
+                        </span>
+                        <span
+                            v-else-if="v.lab && v.lab.pending > 0"
+                            class="wp-chip tnum"
+                            :style="v.lab.urgent
+                                ? { color: 'var(--destructive)', borderColor: 'var(--destructive)' }
+                                : { color: 'var(--fg-subtle)' }"
+                            :title="locale === 'ar' ? 'تحاليل في المختبر' : 'Tests at the lab'"
+                        >
+                            <Icon name="beaker" :size="11" />
+                            {{ v.lab.pending }} {{ locale === 'ar' ? 'في المختبر' : 'at lab' }}
+                        </span>
                     </div>
 
                     <!-- Footer -->
@@ -691,7 +801,7 @@ const gridCols = 'repeat(auto-fill, minmax(320px, 1fr))'
                             <button
                                 type="button"
                                 class="btn btn-primary btn-sm"
-                                @click.stop="startCheckin(v.booking_id)"
+                                @click.stop="startCheckin(v.booking_id, v.requested_package)"
                             >
                                 <Icon name="log-in" :size="13" />
                                 <span>{{ locale === 'ar' ? 'تسجيل وصول' : 'Check in' }}</span>
@@ -860,6 +970,32 @@ const gridCols = 'repeat(auto-fill, minmax(320px, 1fr))'
                         </div>
                     </div>
 
+                    <!-- Offer the patient asked for when booking online -->
+                    <div v-if="openPatient.requested_package" class="card" style="padding: 14px; background: var(--bg-sunken);">
+                        <div class="eyebrow" style="margin-bottom: 10px; display: inline-flex; align-items: center; gap: 6px;">
+                            <Icon name="sparkles" :size="11" :style="{ color: 'var(--primary)' }" />
+                            {{ t.requestedOffer }}
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 6px; font-size: 13px;">
+                            <div style="font-weight: 500;">{{ openPatient.requested_package.name }}</div>
+                            <div class="tnum" style="color: var(--fg-muted);">
+                                {{ formatMoney(openPatient.requested_package.price) }}
+                                <span style="font-size: 10px; color: var(--fg-subtle);">KWD</span>
+                                <span v-if="openPatient.requested_package.has_discount" class="badge badge-violet" style="margin-inline-start: 6px;">
+                                    <Icon name="tag" :size="10" />
+                                    {{ locale === 'ar' ? 'سعر العرض' : 'Offer price' }}
+                                </span>
+                            </div>
+                            <div
+                                v-if="openPatient.requested_package.branch_mismatch"
+                                style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--destructive);"
+                            >
+                                <Icon name="alert-triangle" :size="12" />
+                                {{ t.requestedMismatch }}
+                            </div>
+                        </div>
+                    </div>
+
                     <div v-if="openPatient.notes" style="display: flex; flex-direction: column; gap: 6px;">
                         <div class="eyebrow">{{ locale === 'ar' ? 'ملاحظة الزيارة' : 'Visit note' }}</div>
                         <div style="font-size: 13.5px; line-height: 1.55; color: var(--fg);">{{ openPatient.notes }}</div>
@@ -882,7 +1018,7 @@ const gridCols = 'repeat(auto-fill, minmax(320px, 1fr))'
             </aside>
         </template>
 
-        <CheckinModal v-model:open="checkinOpen" :booking-id="checkinBookingId" @checked-in="refresh" />
+        <CheckinModal v-model:open="checkinOpen" :booking-id="checkinBookingId" :requested-package="checkinRequestedPackage" @checked-in="refresh" />
         <NewBookingSheet v-model:open="newBookingOpen" @created="refresh" />
         <VisitSheet v-model:open="visitSheetOpen" :visit-id="visitSheetId" @changed="refresh" />
 
@@ -916,6 +1052,25 @@ const gridCols = 'repeat(auto-fill, minmax(320px, 1fr))'
 </template>
 
 <style scoped>
+/* Doctor filter. The dropdown is width-capped so it can't push the toolbar
+   wide, and the chip variant never wraps — a wrapped label inside a fixed
+   36px .seg gets clipped into unreadable stacked fragments. */
+.wp-doc-select {
+    margin-inline-start: auto;
+    width: 100%;
+    max-width: 220px;
+    flex: 0 1 220px;
+}
+
+.wp-doc-seg {
+    margin-inline-start: auto;
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+
+.wp-doc-seg::-webkit-scrollbar { display: none; }
+
 .wp-menu-row {
     display: flex;
     align-items: center;

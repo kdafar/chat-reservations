@@ -9,6 +9,7 @@ use App\Models\Doctor;
 use App\Models\Patient;
 use App\Models\Visit;
 use App\Models\VisitPayment;
+use App\Services\Clinic\WorkingHoursService;
 use App\Support\ResolvesAccessibleClinics;
 use App\Support\VisitAuthorization;
 use Illuminate\Http\JsonResponse;
@@ -24,8 +25,8 @@ use Inertia\Response;
 
 class BookingsController extends Controller
 {
-    use VisitAuthorization;
     use ResolvesAccessibleClinics;
+    use VisitAuthorization;
 
     /** Canonical booking source vocabulary — shared with the Filament admin. */
     public const SOURCES = ['web', 'whatsapp', 'call', 'walk_in', 'reception'];
@@ -36,10 +37,15 @@ class BookingsController extends Controller
         abort_unless($this->canManageBooking(), 403, 'Reception or admin access required.');
     }
 
-    /** Doctors for the form — carry branch + fee + their assigned room (for auto-room). */
+    /**
+     * Doctors for the form — carry branch + fee + their assigned room.
+     * The room isn't pickable any more, it's inherited from the doctor, so a
+     * doctor with no room would produce a room-less booking: leave them out
+     * of the picker until someone assigns them one.
+     */
     protected function doctorOptions(): \Illuminate\Support\Collection
     {
-        return Doctor::query()->orderBy('name')
+        return Doctor::query()->whereNotNull('restaurant_table_id')->orderBy('name')
             ->get(['id', 'name', 'branch_id', 'consultation_fee', 'restaurant_table_id'])
             ->map(fn (Doctor $d) => [
                 'id' => $d->id,
@@ -104,7 +110,8 @@ class BookingsController extends Controller
         $branches = Branch::query()->orderBy('name')->get()
             ->map(fn (Branch $b) => ['id' => $b->id, 'name' => $b->getTranslation('name', $locale, true)])
             ->values();
-        $doctors  = Doctor::query()->orderBy('name')->get(['id', 'name'])
+        // Scoped to the chosen branch so the picker matches the branch filter.
+        $doctors = Doctor::query()->atBranch($filters['branch_id'])->orderBy('name')->get(['id', 'name'])
             ->map(fn (Doctor $d) => ['id' => $d->id, 'name' => $d->name])
             ->values();
 
@@ -261,56 +268,55 @@ class BookingsController extends Controller
         $this->abortIfNotReception();
         $request->validate([
             'doctor_id' => 'required|integer|exists:doctors,id',
+            'branch_id' => 'nullable|integer|exists:branches,id',
             'date' => 'required|date_format:Y-m-d',
             'slot_minutes' => 'nullable|integer|min:5|max:240',
+            'ignore_booking_id' => 'nullable|integer',
         ]);
 
         $doctorId = (int) $request->input('doctor_id');
         $date = $request->input('date');
         $slotMinutes = (int) $request->input('slot_minutes', 15);
 
-        $doctor = Doctor::query()->find($doctorId);
+        // bookableDoctor, not Doctor::find: the branch scope resolves the
+        // doctors table to "me" for a doctor-role user, so a doctor covering
+        // reception got an empty picker for every colleague.
+        $svc = app(WorkingHoursService::class);
+        $doctor = $svc->bookableDoctor($doctorId);
         if (! $doctor) {
-            return response()->json(['slots' => []]);
+            return response()->json(['slots' => [], 'reason' => 'doctor_unavailable']);
         }
 
-        $hours = is_array($doctor->working_hours) ? $doctor->working_hours : [];
-        $dow = (int) Carbon::parse($date)->dayOfWeek; // 0=Sun..6=Sat
-
-        $candidates = [];
-        foreach ($hours as $w) {
-            if (! is_array($w)) continue;
-            if ((int) ($w['day'] ?? -1) !== $dow) continue;
-            $start = (string) ($w['start'] ?? '');
-            $end = (string) ($w['end'] ?? '');
-            if (! preg_match('/^\d{2}:\d{2}$/', $start) || ! preg_match('/^\d{2}:\d{2}$/', $end)) continue;
-
-            $cursor = Carbon::createFromFormat('H:i', $start);
-            $stop = Carbon::createFromFormat('H:i', $end);
-            while ($cursor->lt($stop)) {
-                $candidates[] = $cursor->format('H:i');
-                $cursor->addMinutes($slotMinutes);
-            }
+        // The branch the booking is for; the doctor's own branch is the
+        // fallback so older callers that only send doctor_id keep working.
+        $branchId = (int) ($request->input('branch_id') ?: $doctor->branch_id);
+        if (! $branchId) {
+            return response()->json(['slots' => [], 'reason' => 'no_branch']);
         }
 
-        // De-dupe in case overlapping windows generate the same slot.
-        $candidates = array_values(array_unique($candidates));
+        $slots = $svc->slotsFor($branchId, $doctorId, $date, $slotMinutes, $request->input('ignore_booking_id'));
 
-        // Strip taken slots.
-        $taken = Booking::query()
-            ->where('doctor_id', $doctorId)
-            ->whereDate('res_date', $date)
-            ->whereIn('status', [Booking::S_CONFIRMED, Booking::S_PENDING])
-            ->pluck('res_time')
-            ->map(fn ($t) => $t ? substr((string) $t, 0, 5) : null)
-            ->filter()
-            ->values()
-            ->all();
+        // When there's nothing to offer, say why — an empty picker with no
+        // explanation is the single most common "the system is broken" ticket.
+        $reason = null;
+        if (! $slots) {
+            $dow = (int) Carbon::parse($date)->dayOfWeek;
+            $window = $svc->branchWindow($branchId, $dow);
+            [$docStart] = $svc->doctorWindowForDate($doctorId, $branchId, $date);
 
-        $slots = array_values(array_diff($candidates, $taken));
-        sort($slots);
+            $reason = match (true) {
+                ! $svc->branchIsBookable($branchId) => 'branch_disabled',
+                $window !== null && ! $window['is_open'] => 'branch_closed',
+                $docStart === null => 'doctor_off',
+                default => 'fully_booked',
+            };
+        }
 
-        return response()->json(['slots' => $slots]);
+        return response()->json([
+            'slots' => $slots,
+            'reason' => $reason,
+            'branch_hours' => $svc->branchWindowLabel($svc->branchWindow($branchId, (int) Carbon::parse($date)->dayOfWeek)),
+        ]);
     }
 
     /**
@@ -335,86 +341,101 @@ class BookingsController extends Controller
             // Canonical source vocabulary — same set as the Filament admin so
             // reports group consistently across both UIs + the WhatsApp webhook.
             'source' => 'nullable|string|in:web,whatsapp,call,walk_in,reception',
-            // Optional room, must belong to the chosen branch (branch→room cascade).
-            'table_id' => ['nullable', 'integer', Rule::exists('restaurant_tables', 'id')->where('branch_id', (int) $request->input('branch_id'))],
+            // No room here on purpose — it's taken from the doctor below.
         ]);
 
-        $booking = DB::transaction(function () use ($data, $request) {
-            $branch = Branch::query()->find($data['branch_id']);
+        // The UI only offers valid slots, but nothing stops a stale tab or a
+        // direct POST — so the window rules are enforced here too, and under a
+        // lock: two receptionists taking the same slot used to both pass the
+        // check before either of them wrote a row.
+        [$ok, $problem, $booking] = app(WorkingHoursService::class)->guardedBooking(
+            (int) $data['branch_id'],
+            (int) $data['doctor_id'],
+            $data['res_date'],
+            $data['res_time'],
+            null,
+            function () use ($data, $request) {
+                $branch = Branch::query()->find($data['branch_id']);
 
-            $patientId = $data['patient_id'] ?? null;
-            $patientPhone = null;
+                $patientId = $data['patient_id'] ?? null;
+                $patientPhone = null;
 
-            if ($patientId) {
-                $existing = Patient::query()->find($patientId);
-                $patientPhone = $existing?->phone;
-            } else {
-                $np = (array) $request->input('new_patient', []);
-                $payload = [
-                    'name' => trim((string) ($np['name'] ?? '')),
-                    'phone' => trim((string) ($np['phone'] ?? '')) ?: null,
-                    'gender' => $np['gender'] ?? null,
-                    'civil_id' => trim((string) ($np['civil_id'] ?? '')) ?: null,
-                ];
-                if (Schema::hasColumn('patients', 'partner_id') && ! empty($branch?->partner_id)) {
-                    $payload['partner_id'] = $branch->partner_id;
+                if ($patientId) {
+                    $existing = Patient::query()->find($patientId);
+                    $patientPhone = $existing?->phone;
+                } else {
+                    $np = (array) $request->input('new_patient', []);
+                    $payload = [
+                        'name' => trim((string) ($np['name'] ?? '')),
+                        'phone' => trim((string) ($np['phone'] ?? '')) ?: null,
+                        'gender' => $np['gender'] ?? null,
+                        'civil_id' => trim((string) ($np['civil_id'] ?? '')) ?: null,
+                    ];
+                    if (Schema::hasColumn('patients', 'partner_id') && ! empty($branch?->partner_id)) {
+                        $payload['partner_id'] = $branch->partner_id;
+                    }
+                    $patient = Patient::create(array_filter($payload, fn ($v) => $v !== null));
+                    $patientId = $patient->id;
+                    $patientPhone = $patient->phone;
                 }
-                $patient = Patient::create(array_filter($payload, fn ($v) => $v !== null));
-                $patientId = $patient->id;
-                $patientPhone = $patient->phone;
-            }
 
-            $source = (string) ($data['source'] ?? 'reception');
+                $source = (string) ($data['source'] ?? 'reception');
 
-            // Room: explicit choice, else auto-assign the doctor's own room
-            // (mirrors the old admin's auto-room-from-doctor behaviour).
-            $tableId = $data['table_id'] ?? null;
-            if (! $tableId) {
+                // Room always comes from the doctor — nobody picks it at booking
+                // time, so ignore any table_id the client sent.
                 $tableId = Doctor::query()->whereKey($data['doctor_id'])->value('restaurant_table_id');
+
+                // Link to a WhatsApp contact by phone, if one exists — so booking
+                // reminders/threads attach to the right contact (old admin links
+                // contact_id; we resolve it server-side from the phone).
+                $contactId = null;
+                $digits = preg_replace('/\D/', '', (string) $patientPhone);
+                if ($digits && \Illuminate\Support\Facades\Schema::hasColumn('bookings', 'contact_id')) {
+                    $contactId = \App\Models\WhatsappContact::query()
+                        ->where('msisdn', $patientPhone)
+                        ->when(strlen($digits) >= 8, fn ($q) => $q->orWhere('msisdn', 'LIKE', "%{$digits}"))
+                        ->value('id');
+                }
+
+                // res_start / res_end MUST be set for slot-blocking, the no-show
+                // sweep and overlap detection to work. The Filament form derives
+                // them on save; mirror that here so v2-created bookings aren't
+                // invisible to those code paths.
+                [$resStart, $resEnd] = $this->deriveSlotWindow(
+                    $data['res_date'],
+                    $data['res_time'],
+                    (int) $data['branch_id'],
+                    (int) $data['doctor_id'],
+                );
+
+                return Booking::create([
+                    'patient_id' => $patientId,
+                    'branch_id' => $data['branch_id'],
+                    'doctor_id' => $data['doctor_id'],
+                    'table_id' => $tableId,
+                    'contact_id' => $contactId,
+                    'res_date' => $data['res_date'],
+                    'res_time' => $data['res_time'],
+                    'res_start' => $resStart,
+                    'res_end' => $resEnd,
+                    'party_size' => $data['party_size'],
+                    'notes' => $data['notes'] ?? null,
+                    'status' => Booking::S_CONFIRMED,
+                    'booking_code' => $this->uniqueManualBookingCode(),
+                    'source' => $source,
+                    // msisdn is NOT NULL in the DB; fall back to '' (as BookingService
+                    // does) when the patient has no phone on file.
+                    'msisdn' => $patientPhone ?: '',
+                ]);
+            },
+        );
+
+        if (! $ok) {
+            if ($request->wantsJson() || $request->expectsJson()) {
+                return response()->json(['ok' => false, 'error' => $problem], 422);
             }
-
-            // Link to a WhatsApp contact by phone, if one exists — so booking
-            // reminders/threads attach to the right contact (old admin links
-            // contact_id; we resolve it server-side from the phone).
-            $contactId = null;
-            $digits = preg_replace('/\D/', '', (string) $patientPhone);
-            if ($digits && \Illuminate\Support\Facades\Schema::hasColumn('bookings', 'contact_id')) {
-                $contactId = \App\Models\WhatsappContact::query()
-                    ->where('msisdn', $patientPhone)
-                    ->when(strlen($digits) >= 8, fn ($q) => $q->orWhere('msisdn', 'LIKE', "%{$digits}"))
-                    ->value('id');
-            }
-
-            // res_start / res_end MUST be set for slot-blocking, the no-show
-            // sweep and overlap detection to work. The Filament form derives
-            // them on save; mirror that here so v2-created bookings aren't
-            // invisible to those code paths.
-            [$resStart, $resEnd] = $this->deriveSlotWindow(
-                $data['res_date'],
-                $data['res_time'],
-                (int) $data['branch_id'],
-            );
-
-            return Booking::create([
-                'patient_id' => $patientId,
-                'branch_id' => $data['branch_id'],
-                'doctor_id' => $data['doctor_id'],
-                'table_id' => $tableId,
-                'contact_id' => $contactId,
-                'res_date' => $data['res_date'],
-                'res_time' => $data['res_time'],
-                'res_start' => $resStart,
-                'res_end' => $resEnd,
-                'party_size' => $data['party_size'],
-                'notes' => $data['notes'] ?? null,
-                'status' => Booking::S_CONFIRMED,
-                'booking_code' => $this->uniqueManualBookingCode(),
-                'source' => $source,
-                // msisdn is NOT NULL in the DB; fall back to '' (as BookingService
-                // does) when the patient has no phone on file.
-                'msisdn' => $patientPhone ?: '',
-            ]);
-        });
+            throw \Illuminate\Validation\ValidationException::withMessages(['res_time' => $problem]);
+        }
 
         if ($request->wantsJson() || $request->expectsJson()) {
             return response()->json([
@@ -456,21 +477,61 @@ class BookingsController extends Controller
             'notes' => ['nullable', 'string', 'max:2000'],
         ]);
 
-        // Keep the doctor within the booking's branch.
+        $svc = app(WorkingHoursService::class);
+
+        // Keep the doctor within the booking's branch — and bookable at all.
+        // Doctor::where(...) here ran through the branch scope, so a doctor-role
+        // user could never reassign to anyone, and a deactivated doctor passed.
         if (! empty($data['doctor_id'])) {
-            $ok = \App\Models\Doctor::where('id', $data['doctor_id'])->where('branch_id', $booking->branch_id)->exists();
-            if (! $ok) {
-                return response()->json(['ok' => false, 'error' => 'That doctor is not in this booking\'s branch.'], 422);
+            $newDoctor = $svc->bookableDoctor((int) $data['doctor_id']);
+            if (! $newDoctor || (int) $newDoctor->branch_id !== (int) $booking->branch_id) {
+                return response()->json(['ok' => false, 'error' => 'That doctor is not available in this booking\'s branch.'], 422);
             }
         }
 
         $update = [];
-        if ($request->has('doctor_id')) $update['doctor_id'] = $data['doctor_id'] ?? null;
-        if (! empty($data['status'])) $update['status'] = $data['status'];
-        if ($request->has('source')) $update['source'] = $data['source'] ?? null;
-        if (! empty($data['party_size'])) $update['party_size'] = $data['party_size'];
-        if ($request->has('notes')) $update['notes'] = $data['notes'];
-        $booking->update($update);
+        if ($request->has('doctor_id')) {
+            $update['doctor_id'] = $data['doctor_id'] ?? null;
+        }
+        if (! empty($data['status'])) {
+            $update['status'] = $data['status'];
+        }
+        if ($request->has('source')) {
+            $update['source'] = $data['source'] ?? null;
+        }
+        if (! empty($data['party_size'])) {
+            $update['party_size'] = $data['party_size'];
+        }
+        if ($request->has('notes')) {
+            $update['notes'] = $data['notes'];
+        }
+
+        $apply = fn () => $booking->update($update);
+
+        // Handing the appointment to a different doctor has to respect that
+        // doctor's hours and existing bookings — the time isn't moving, but
+        // for them it's a brand-new slot, so it goes through the same lock.
+        $reassigning = ! empty($data['doctor_id'])
+            && (int) $data['doctor_id'] !== (int) $booking->doctor_id
+            && $booking->res_date && $booking->res_time
+            && ! in_array($booking->status, [Booking::S_CANCELLED, Booking::S_COMPLETED, Booking::S_NO_SHOW], true);
+
+        if ($reassigning) {
+            [$ok, $problem] = $svc->guardedBooking(
+                (int) $booking->branch_id,
+                (int) $data['doctor_id'],
+                Carbon::parse($booking->res_date)->toDateString(),
+                substr((string) $booking->res_time, 0, 5),
+                $booking->id,
+                $apply,
+            );
+
+            if (! $ok) {
+                return response()->json(['ok' => false, 'error' => $problem], 422);
+            }
+        } else {
+            $apply();
+        }
 
         return response()->json(['ok' => true]);
     }
@@ -542,7 +603,9 @@ class BookingsController extends Controller
     public function rooms(Request $request, Booking $booking): JsonResponse
     {
         $this->abortIfNotReception();
-        if (! $booking->branch_id) return response()->json(['rooms' => []]);
+        if (! $booking->branch_id) {
+            return response()->json(['rooms' => []]);
+        }
 
         $rooms = \App\Models\RestaurantTable::query()
             ->where('branch_id', $booking->branch_id)
@@ -577,21 +640,43 @@ class BookingsController extends Controller
             'res_time' => 'required|date_format:H:i',
         ]);
 
+        // Same window rules as a fresh booking, ignoring this booking's own
+        // slot so moving it by 15 minutes doesn't clash with itself.
         // Recompute the slot window so the rescheduled booking stays consistent
         // with slot-blocking / no-show / overlap logic (these read res_start /
         // res_end, not res_date / res_time).
-        [$resStart, $resEnd] = $this->deriveSlotWindow(
-            $request->input('res_date'),
-            $request->input('res_time'),
-            (int) $booking->branch_id,
-        );
+        $move = function () use ($booking, $request) {
+            [$resStart, $resEnd] = $this->deriveSlotWindow(
+                $request->input('res_date'),
+                $request->input('res_time'),
+                (int) $booking->branch_id,
+                $booking->doctor_id ? (int) $booking->doctor_id : null,
+            );
 
-        $booking->update([
-            'res_date' => $request->input('res_date'),
-            'res_time' => $request->input('res_time'),
-            'res_start' => $resStart,
-            'res_end' => $resEnd,
-        ]);
+            $booking->update([
+                'res_date' => $request->input('res_date'),
+                'res_time' => $request->input('res_time'),
+                'res_start' => $resStart,
+                'res_end' => $resEnd,
+            ]);
+        };
+
+        if ($booking->doctor_id && $booking->branch_id) {
+            [$ok, $problem] = app(WorkingHoursService::class)->guardedBooking(
+                (int) $booking->branch_id,
+                (int) $booking->doctor_id,
+                $request->input('res_date'),
+                $request->input('res_time'),
+                $booking->id,
+                $move,
+            );
+
+            if (! $ok) {
+                return response()->json(['ok' => false, 'error' => $problem], 422);
+            }
+        } else {
+            $move();
+        }
 
         return response()->json(['ok' => true]);
     }
@@ -604,7 +689,7 @@ class BookingsController extends Controller
      *
      * @return array{0: ?Carbon, 1: ?Carbon}
      */
-    protected function deriveSlotWindow($date, $time, int $branchId): array
+    protected function deriveSlotWindow($date, $time, int $branchId, ?int $doctorId = null): array
     {
         $tz = config('app.timezone', 'Asia/Kuwait');
 
@@ -630,13 +715,10 @@ class BookingsController extends Controller
             return [null, null];
         }
 
-        $rule = \App\Models\BranchAvailabilityRule::query()
-            ->where('branch_id', $branchId)
-            ->where('day_of_week', $start->dayOfWeek)
-            ->first();
-
-        $minutes = (int) ($rule?->slot_length_minutes ?? $rule?->slot_step_minutes ?? config('booking.slot_interval', 30));
-        $minutes = max(5, $minutes);
+        // The doctor's own appointment length wins over the branch's, so the
+        // reserved window matches the slot the picker actually offered.
+        $minutes = app(WorkingHoursService::class)
+            ->slotLength($branchId, (int) $start->dayOfWeek, $doctorId);
 
         return [$start, $start->copy()->addMinutes($minutes)->seconds(0)];
     }
@@ -711,31 +793,55 @@ class BookingsController extends Controller
             return response()->json(['ok' => false, 'error' => 'Doctor has no consultation fee set.'], 422);
         }
 
-        DB::transaction(function () use ($booking, $data) {
-            $visit = Visit::firstOrCreate(
-                ['booking_id' => $booking->id],
-                [
-                    'patient_id' => $booking->patient_id,
-                    'doctor_id' => $booking->doctor_id,
-                    'branch_id' => $booking->branch_id,
-                    'restaurant_table_id' => $booking->table_id,
-                    'source' => $booking->source,
-                    'booking_code' => $booking->booking_code,
-                    'status' => Visit::STATUS_CREATED,
-                ]
-            );
+        $balance = app(\App\Services\Clinic\VisitBalanceService::class);
 
-            VisitPayment::create([
-                'visit_id' => $visit->id,
-                'amount' => (float) $data['amount'],
-                'method' => (string) $data['method'],
-                'reference_no' => $data['reference_no'] ?? null,
-                'status' => 'paid',
-                'kind' => VisitPayment::KIND_CONSULTATION,
-                'collected_by_user_id' => auth()->id(),
-                'paid_at' => now(),
-            ]);
-        });
+        try {
+            DB::transaction(function () use ($booking, $data, $fee, $balance) {
+                $visit = Visit::firstOrCreate(
+                    ['booking_id' => $booking->id],
+                    [
+                        'patient_id' => $booking->patient_id,
+                        'doctor_id' => $booking->doctor_id,
+                        'branch_id' => $booking->branch_id,
+                        'restaurant_table_id' => $booking->table_id,
+                        'source' => $booking->source,
+                        'booking_code' => $booking->booking_code,
+                        'status' => Visit::STATUS_CREATED,
+                    ]
+                );
+
+                // Book the fee before taking money for it — same as the check-in
+                // wizard. Without the charge the visit carries a payment against
+                // a zero bill, so nothing can tell an overpayment from a deposit.
+                \App\Models\VisitCharge::updateOrCreate(
+                    ['visit_id' => $visit->id, 'label' => 'Consultation Fee'],
+                    [
+                        'branch_id' => (int) $visit->branch_id,
+                        'qty' => 1,
+                        'unit_price_snapshot' => $fee,
+                        'line_total' => $fee,
+                        'added_by_user_id' => auth()->id(),
+                    ]
+                );
+
+                if ($reason = $balance->rejectPayment($visit, (float) $data['amount'])) {
+                    throw new \RuntimeException($reason);
+                }
+
+                VisitPayment::create([
+                    'visit_id' => $visit->id,
+                    'amount' => (float) $data['amount'],
+                    'method' => (string) $data['method'],
+                    'reference_no' => $data['reference_no'] ?? null,
+                    'status' => 'paid',
+                    'kind' => VisitPayment::KIND_CONSULTATION,
+                    'collected_by_user_id' => auth()->id(),
+                    'paid_at' => now(),
+                ]);
+            });
+        } catch (\RuntimeException $e) {
+            return response()->json(['ok' => false, 'error' => $e->getMessage(), 'field' => 'amount'], 422);
+        }
 
         return response()->json(['ok' => true]);
     }
@@ -770,6 +876,7 @@ class BookingsController extends Controller
             $m->invoke($flow, $booking, $session);
         } catch (\Throwable $e) {
             \Log::error('v2 resend confirmation failed', ['booking_id' => $booking->id, 'err' => $e->getMessage()]);
+
             return response()->json(['ok' => false, 'error' => 'Could not resend. Check logs.'], 500);
         }
 
@@ -784,7 +891,9 @@ class BookingsController extends Controller
     {
         $when = (string) $request->input('when', 'today');
         $allowedWhen = ['today', 'tomorrow', 'week', 'month', 'past', 'any'];
-        if (! in_array($when, $allowedWhen, true)) $when = 'today';
+        if (! in_array($when, $allowedWhen, true)) {
+            $when = 'today';
+        }
 
         return [
             'q' => trim((string) $request->input('q', '')),
@@ -802,7 +911,7 @@ class BookingsController extends Controller
     {
         $q = Booking::query()->with(['patient', 'doctor', 'branch']);
 
-        if (!empty($f['status'])) {
+        if (! empty($f['status'])) {
             $q->whereIn('status', $f['status']);
         }
         if ($f['branch_id']) {

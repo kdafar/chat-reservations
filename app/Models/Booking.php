@@ -48,7 +48,7 @@ class Booking extends Model
         'res_date', 'res_time', 'res_start', 'res_end',
         'status', 'booking_code', 'notes', 'meta',
         'qr_token', 'table_id', 'checked_in_at', 'contact_id',
-        'patient_id', 'source', 'source_ref',
+        'patient_id', 'source', 'source_ref', 'requested_package_id',
         'cancelled_by_user_id', 'cancelled_at', 'no_show_at',
     ];
 
@@ -97,6 +97,16 @@ class Booking extends Model
     public function cancelledBy(): BelongsTo
     {
         return $this->belongsTo(\App\Models\User::class, 'cancelled_by_user_id');
+    }
+
+    /**
+     * The offer/package the patient picked on the website before booking.
+     * Nullable: WhatsApp/admin bookings and plain "just book me" web bookings
+     * have none. Reception uses it as the intent hint at check-in.
+     */
+    public function requestedPackage(): BelongsTo
+    {
+        return $this->belongsTo(\App\Models\ClinicPackage::class, 'requested_package_id');
     }
 
     // =========================================================================

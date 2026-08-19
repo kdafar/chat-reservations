@@ -71,6 +71,22 @@
         table.items .hint { font-size: 10px; color: var(--muted); }
         table.items .empty { text-align: center; color: var(--muted); font-style: italic; padding: 18px 0; }
 
+        /* Per-line saving: the gross price struck through, the charged price next to it. */
+        table.items .was { color: var(--muted); text-decoration: line-through; font-size: 10px; margin-inline-end: 5px; }
+        table.items .now { font-weight: 700; }
+        table.items .saved-tag { margin-top: 3px; font-size: 9px; font-weight: 700; color: #047857; }
+
+        /* Headline saving — the number the patient should walk away remembering. */
+        .savings-banner {
+            display: flex; align-items: center; justify-content: space-between; gap: 12px;
+            margin-top: 12px; padding: 10px 14px;
+            background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 8px;
+        }
+        .savings-banner .sb-label { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .5px; color: #047857; }
+        .savings-banner .sb-amount { font-size: 17px; font-weight: 800; color: #047857; white-space: nowrap; }
+        .savings-banner .sb-cur { font-size: 10px; font-weight: 700; }
+        .savings-banner .sb-pct { margin-inline-start: 6px; padding: 1px 7px; border-radius: 999px; background: #047857; color: #fff; font-size: 10px; font-weight: 800; }
+
         .sumrow { display: flex; justify-content: space-between; font-size: 12px; padding: 3px 0; }
         .sumrow .lbl { color: var(--muted); }
         .sums { border-top: 1px solid var(--line); padding-top: 10px; }
@@ -175,9 +191,19 @@
                             <td class="desc">
                                 {{ $line['label'] }}
                                 @if(!empty($line['hint']))<div class="hint">{{ $line['hint'] }}</div>@endif
+                                @if($line['discount'] > 0)
+                                    <div class="saved-tag">{{ $line['saved_label'] }} — you save {{ $fmt($line['discount']) }} KD</div>
+                                @endif
                             </td>
                             <td class="qty">{{ rtrim(rtrim(number_format($line['qty'], 2), '0'), '.') }}</td>
-                            <td class="amt">{{ $fmt($line['amount']) }}</td>
+                            <td class="amt">
+                                @if($line['discount'] > 0)
+                                    <span class="was">{{ $fmt($line['amount']) }}</span>
+                                    <span class="now">{{ $fmt($line['net']) }}</span>
+                                @else
+                                    {{ $fmt($line['amount']) }}
+                                @endif
+                            </td>
                         </tr>
                     @empty
                         <tr><td colspan="3" class="empty">No charges recorded for this visit.</td></tr>
@@ -192,7 +218,7 @@
                 </div>
                 @if($lineDiscounts > 0)
                     <div class="sumrow">
-                        <span class="lbl">Offers / promotions</span>
+                        <span class="lbl">Package offers / promotions</span>
                         <span>− {{ $fmt($lineDiscounts) }}</span>
                     </div>
                 @endif
@@ -207,6 +233,16 @@
                     <span><span class="val">{{ $fmt($grandTotal) }}</span> <span class="cur">KD</span></span>
                 </div>
             </div>
+
+            @if($totalSavings > 0.005)
+                <div class="savings-banner">
+                    <span class="sb-label">You saved on this visit</span>
+                    <span class="sb-amount">
+                        {{ $fmt($totalSavings) }} <span class="sb-cur">KD</span>
+                        @if($savingsPercent > 0)<span class="sb-pct">−{{ $savingsPercent }}%</span>@endif
+                    </span>
+                </div>
+            @endif
 
             <div class="pay-block">
                 <div class="pay-head">

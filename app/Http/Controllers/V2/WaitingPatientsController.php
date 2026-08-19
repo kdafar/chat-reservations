@@ -76,11 +76,21 @@ class WaitingPatientsController extends Controller
             ->filter()->unique()->values()->all();
         $policyByPatient = $this->primaryPolicyByPatient($patientIds);
 
+        // Lab state per visit, in one query — so a doctor can see "results ready"
+        // (or "still at the lab") on the queue card without opening the visit.
+        $labByVisit = $this->labStateByVisit($visitRows->pluck('id')->all());
+
+        // The offer the patient picked on the website, carried over from the
+        // booking onto the visit card — two bulk queries for the whole screen.
+        $requestedPackageByVisit = $this->requestedPackageByVisit($visitRows);
+
         $visits = $visitRows->map(fn (Visit $v) => $this->transform(
             $v,
             (float) ($paidByVisit[$v->id] ?? 0),
             (float) ($allPaidByVisit[$v->id] ?? 0),
             $policyByPatient[$v->patient_id] ?? null,
+            $labByVisit[$v->id] ?? null,
+            $requestedPackageByVisit[$v->id] ?? null,
         ));
         $pendingCheckins = $bookingRows->map(fn (Booking $b) => $this->transformBooking(
             $b,
@@ -191,7 +201,7 @@ class WaitingPatientsController extends Controller
     protected function pendingCheckinQuery(): Builder
     {
         return Booking::query()
-            ->with(['patient', 'doctor', 'branch'])
+            ->with(['patient', 'doctor', 'branch', 'requestedPackage'])
             ->whereNull('checked_in_at')
             ->whereIn('status', [Booking::S_PENDING, Booking::S_CONFIRMED])
             ->whereDate('res_date', today())
@@ -232,9 +242,14 @@ class WaitingPatientsController extends Controller
                 'paid_total' => round($paidTotal, 3),
                 'balance' => round(max(0, $fee - $paidTotal), 3),
             ],
-            // No visit yet → no line discounts; surfaced for payload parity.
+            // No visit yet → no line discounts and no labs; both surfaced for
+            // payload parity with the visit cards.
             'discount_total' => 0.0,
             'policy' => $policy,
+            'lab' => null,
+            // The package/offer the patient picked on the website when they
+            // booked. Eager-loaded in pendingCheckinQuery() — never lazily.
+            'requested_package' => $this->formatRequestedPackage($b->requestedPackage, $b->branch_id),
             'patient' => $b->patient ? [
                 'id' => $b->patient->id,
                 'name' => $b->patient->name,
@@ -254,7 +269,130 @@ class WaitingPatientsController extends Controller
         ];
     }
 
-    protected function transform(Visit $v, float $paidConsultation = 0.0, float $paidTotal = 0.0, ?array $policy = null): array
+    /**
+     * Shape the "patient asked for this offer" payload for a card. Null when
+     * there's nothing to show, so every row carries the key either way.
+     *
+     * `branch_mismatch` matters: offers are branch-scoped, so a patient can
+     * pick an offer published by one branch and then book at another. Reception
+     * should be warned rather than silently sell the wrong thing — but only
+     * when the package is actually pinned to a branch (a partner-wide package
+     * with a null branch_id is valid everywhere).
+     */
+    protected function formatRequestedPackage(?\App\Models\ClinicPackage $p, ?int $contextBranchId): ?array
+    {
+        if (! $p) {
+            return null;
+        }
+
+        return [
+            'id' => $p->id,
+            'name' => $p->localized_name,
+            'price' => round((float) $p->effective_price, 3),
+            'has_discount' => (bool) $p->has_discount,
+            'branch_mismatch' => $p->branch_id !== null
+                && $contextBranchId !== null
+                && (int) $p->branch_id !== (int) $contextBranchId,
+        ];
+    }
+
+    /**
+     * Requested package per VISIT id, resolved in bulk (TWO queries total, no
+     * matter how many cards are on screen — this page auto-refreshes every 12s).
+     *
+     * The request lives on the booking, so a checked-in patient would otherwise
+     * lose it the moment reception converts the booking into a visit. It stops
+     * being useful the moment the package is actually on the visit, so rows
+     * where the visit already carries that package are dropped (returned as
+     * absent → the caller renders null).
+     *
+     * Returns [visit_id => array|null] in the formatRequestedPackage() shape.
+     */
+    protected function requestedPackageByVisit(\Illuminate\Support\Collection $visits): array
+    {
+        $bookingIds = $visits->pluck('booking_id')->filter()->unique()->values()->all();
+        if (empty($bookingIds)) {
+            return [];
+        }
+
+        // Query 1: the bookings that carry a request, with their package.
+        $bookings = Booking::query()
+            ->with('requestedPackage')
+            ->whereIn('id', $bookingIds)
+            ->whereNotNull('requested_package_id')
+            ->get(['id', 'branch_id', 'requested_package_id'])
+            ->keyBy('id');
+
+        if ($bookings->isEmpty()) {
+            return [];
+        }
+
+        // Query 2: packages already attached to the visits on screen, so an
+        // honoured request stops shouting once it's been actioned.
+        $attached = \App\Models\VisitPackage::query()
+            ->whereIn('visit_id', $visits->pluck('id')->all())
+            ->get(['visit_id', 'clinic_package_id'])
+            ->groupBy('visit_id')
+            ->map(fn ($rows) => $rows->pluck('clinic_package_id')->map(fn ($id) => (int) $id)->all())
+            ->all();
+
+        $out = [];
+        foreach ($visits as $v) {
+            $booking = $v->booking_id ? ($bookings[$v->booking_id] ?? null) : null;
+            if (! $booking || ! $booking->requestedPackage) {
+                continue;
+            }
+            if (in_array((int) $booking->requested_package_id, $attached[$v->id] ?? [], true)) {
+                continue; // already on the visit — noise from here on.
+            }
+            $out[$v->id] = $this->formatRequestedPackage($booking->requestedPackage, $v->branch_id);
+        }
+
+        return $out;
+    }
+
+    /**
+     * Lab state per visit id, in ONE query across every card on screen.
+     * Returns [visit_id => ['pending' => n, 'ready' => n, 'urgent' => bool,
+     * 'worst_flag' => string|null]] — 'ready' means a released report the doctor
+     * hasn't signed off yet, which is the thing worth interrupting them for.
+     */
+    protected function labStateByVisit(array $visitIds): array
+    {
+        if (empty($visitIds)) {
+            return [];
+        }
+
+        $orders = \App\Models\Lab\LabOrder::query()
+            ->whereIn('visit_id', $visitIds)
+            ->with('items:id,lab_order_id,flag')
+            ->get(['id', 'visit_id', 'status', 'priority', 'reviewed_at']);
+
+        $out = [];
+        foreach ($orders as $o) {
+            $row = $out[$o->visit_id] ?? ['pending' => 0, 'ready' => 0, 'urgent' => false, 'worst_flag' => null];
+
+            if ($o->isOpen()) {
+                $row['pending']++;
+                $row['urgent'] = $row['urgent'] || $o->isUrgent();
+            } elseif ($o->status === \App\Models\Lab\LabOrder::STATUS_COMPLETED) {
+                if ($o->reviewed_at === null) {
+                    $row['ready']++;
+                }
+                $worst = $o->worstFlag();
+                $rank = ['critical' => 4, 'high' => 3, 'low' => 2, 'normal' => 1];
+                if ($worst && ($rank[$worst] ?? 0) > ($rank[$row['worst_flag']] ?? 0)) {
+                    $row['worst_flag'] = $worst;
+                }
+            }
+
+            $out[$o->visit_id] = $row;
+        }
+
+        return $out;
+    }
+
+    protected function transform(Visit $v, float $paidConsultation = 0.0, float $paidTotal = 0.0, ?array $policy = null, ?array $lab = null, ?array $requestedPackage = null): array
     {
         $age = null;
         if ($v->patient && $v->patient->dob) {
@@ -291,6 +429,10 @@ class WaitingPatientsController extends Controller
             ],
             'discount_total' => round($discountTotal, 3),
             'policy' => $policy,
+            'lab' => $lab,
+            // Resolved in bulk by requestedPackageByVisit() — null once the
+            // package is on the visit, or when the booking never asked for one.
+            'requested_package' => $requestedPackage,
             'patient' => $v->patient ? [
                 'id' => $v->patient->id,
                 'name' => $v->patient->name,

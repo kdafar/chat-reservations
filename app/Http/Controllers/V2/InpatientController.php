@@ -209,11 +209,26 @@ class InpatientController extends Controller
         return response()->json(['patients' => $q->get(['id', 'name', 'phone', 'gender', 'dob'])]);
     }
 
+    /**
+     * Doctors selectable as the admitting/attending doctor.
+     *
+     * Optionally narrowed to a branch: an admission belongs to a bed at one
+     * branch, so an admin (who is not limited by BelongsToBranchScope) would
+     * otherwise be offered every doctor in the group and could attach a doctor
+     * who does not work where the patient is admitted.
+     */
     public function lookupDoctors(Request $request): JsonResponse
     {
         $this->ensureCanManage();
+
+        $branchId = $request->input('branch_id', '') !== '' ? (int) $request->input('branch_id') : null;
+
         return response()->json([
-            'doctors' => Doctor::query()->where('is_active', true)->orderBy('name')->get(['id', 'name', 'specialty']),
+            'doctors' => Doctor::query()
+                ->where('is_active', true)
+                ->atBranch($branchId)
+                ->orderBy('name')
+                ->get(['id', 'name', 'specialty']),
         ]);
     }
 

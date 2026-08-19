@@ -40,6 +40,7 @@ const t = computed(() => isRtl.value
         male: 'ذكر', female: 'أنثى',
         when: 'الموعد', branch: 'الفرع', branchPlaceholder: 'اختر الفرع',
         doctor: 'الطبيب', doctorPlaceholder: 'اختر الطبيب',
+        room: 'الغرفة', roomUnassigned: 'لم تُحدَّد غرفة لهذا الطبيب',
         date: 'التاريخ', datePlaceholder: 'اختر التاريخ', time: 'الوقت',
         timesEmpty: 'لا توجد مواعيد متاحة — جرّب تاريخاً آخر.',
         timesPickDoctor: 'اختر طبيباً وتاريخاً لعرض المواعيد المتاحة.',
@@ -47,7 +48,6 @@ const t = computed(() => isRtl.value
         notes: 'ملاحظات', notesPh: 'تفاصيل إضافية تساعد الطاقم…',
         source: 'المصدر',
         sources: { web: 'الموقع', whatsapp: 'واتساب', call: 'هاتف', walk_in: 'حضور', reception: 'الاستقبال' },
-        room: 'الغرفة', roomNone: 'بدون غرفة', roomPickBranch: 'اختر الفرع أولاً',
         partySize: 'عدد الأشخاص',
         consultFee: 'رسوم الاستشارة', kwd: 'د.ك',
         submit: 'إنشاء الحجز', submitting: 'جار الحفظ…', cancel: 'إلغاء',
@@ -65,6 +65,7 @@ const t = computed(() => isRtl.value
         male: 'Male', female: 'Female',
         when: 'When', branch: 'Branch', branchPlaceholder: 'Pick branch',
         doctor: 'Doctor', doctorPlaceholder: 'Pick doctor',
+        room: 'Room', roomUnassigned: 'No room set for this doctor',
         date: 'Date', datePlaceholder: 'Pick date', time: 'Time',
         timesEmpty: 'No available times — try a different date.',
         timesPickDoctor: 'Pick a doctor and date to see available slots.',
@@ -72,7 +73,6 @@ const t = computed(() => isRtl.value
         notes: 'Notes', notesPh: 'Notes the front desk will see…',
         source: 'Source',
         sources: { web: 'Web', whatsapp: 'WhatsApp', call: 'Call', walk_in: 'Walk-in', reception: 'Reception' },
-        room: 'Room', roomNone: '— No room —', roomPickBranch: 'Pick a branch first',
         partySize: 'Party size',
         consultFee: 'Consultation fee', kwd: 'KWD',
         submit: 'Create booking', submitting: 'Saving…', cancel: 'Cancel',
@@ -141,6 +141,16 @@ const submitting = ref(false)
 const errors = ref({})
 const slots = ref([])
 const slotsLoading = ref(false)
+const slotsReason = ref(null)
+
+// Spell out why there's nothing to pick, rather than an unexplained blank.
+const noSlotsMessage = computed(() => {
+    if (!slotsReason.value) return ''
+    if (slotsReason.value === 'branch_closed') return isRtl.value ? 'الفرع مغلق في هذا اليوم.' : 'The branch is closed that day.'
+    if (slotsReason.value === 'doctor_off') return isRtl.value ? 'الطبيب لا يعمل في هذا اليوم.' : "The doctor doesn't work that day."
+    if (slotsReason.value === 'no_branch') return isRtl.value ? 'اختر الفرع أولاً.' : 'Pick a branch first.'
+    return isRtl.value ? 'كل المواعيد محجوزة في هذا اليوم.' : 'Every slot that day is already taken.'
+})
 
 function resetForm() {
     form.patient_id = props.patient?.id ?? null
@@ -179,10 +189,6 @@ if (typeof window !== 'undefined') {
 
 // ─── Derived ───────────────────────────────────────────────────────────────
 const branchItems = computed(() => branches.value.map((b) => ({ value: b.id, label: b.name })))
-// Rooms cascade off the chosen branch.
-const roomItems = computed(() =>
-    rooms.value.filter((r) => Number(r.branch_id) === Number(form.branch_id)).map((r) => ({ value: r.id, label: r.name }))
-)
 const doctorItems = computed(() => {
     const list = form.branch_id
         ? doctors.value.filter((d) => Number(d.branch_id) === Number(form.branch_id))
@@ -194,15 +200,18 @@ const doctorItems = computed(() => {
     }))
 })
 const selectedDoctor = computed(() => doctors.value.find((d) => Number(d.id) === Number(form.doctor_id)) ?? null)
+// The room isn't pickable — it's whatever room the chosen doctor works in.
+const selectedRoomName = computed(() =>
+    rooms.value.find((r) => Number(r.id) === Number(form.table_id))?.name ?? null
+)
 
-// Auto-pick doctor's branch + room
+// The room always follows the doctor, so re-derive it on every change.
 watch(() => form.doctor_id, (id) => {
-    if (!id) return
-    const d = doctors.value.find((x) => Number(x.id) === Number(id))
+    const d = doctors.value.find((x) => Number(x.id) === Number(id)) ?? null
+    form.table_id = d?.restaurant_table_id ?? null
     if (d?.branch_id && !form.branch_id) form.branch_id = d.branch_id
-    if (d?.restaurant_table_id && !form.table_id) form.table_id = d.restaurant_table_id
 })
-// Clear doctor + room that no longer belong when branch changes
+// Clear a doctor that no longer belongs when branch changes (room follows).
 watch(() => form.branch_id, (id) => {
     if (id && form.doctor_id) {
         const d = doctors.value.find((x) => Number(x.id) === Number(form.doctor_id))
@@ -211,9 +220,6 @@ watch(() => form.branch_id, (id) => {
             form.res_time = ''
             slots.value = []
         }
-    }
-    if (form.table_id && !rooms.value.some((r) => Number(r.id) === Number(form.table_id) && Number(r.branch_id) === Number(id))) {
-        form.table_id = null
     }
 })
 
@@ -227,6 +233,8 @@ async function loadSlots() {
         const url = new URL('/admin/v2/api/bookings/slots', window.location.origin)
         url.searchParams.set('doctor_id', String(form.doctor_id))
         url.searchParams.set('date', form.res_date)
+        // The branch's open window bounds the doctor's, so send it along.
+        if (form.branch_id) url.searchParams.set('branch_id', String(form.branch_id))
         const resp = await fetch(url.toString(), {
             credentials: 'same-origin',
             headers: { Accept: 'application/json' },
@@ -234,15 +242,17 @@ async function loadSlots() {
         if (resp.ok) {
             const data = await resp.json()
             slots.value = Array.isArray(data.slots) ? data.slots : []
+            slotsReason.value = data.reason || null
             if (form.res_time && !slots.value.includes(form.res_time)) form.res_time = ''
         } else {
             slots.value = []
+            slotsReason.value = null
         }
     } finally {
         slotsLoading.value = false
     }
 }
-watch(() => [form.doctor_id, form.res_date], loadSlots)
+watch(() => [form.doctor_id, form.res_date, form.branch_id], loadSlots)
 
 function toggleNewPatient() {
     // Only allow if no pinned patient
@@ -282,7 +292,6 @@ async function submit() {
         } : undefined,
         branch_id: form.branch_id,
         doctor_id: form.doctor_id,
-        table_id: form.table_id || null,
         res_date: form.res_date,
         res_time: form.res_time,
         party_size: form.party_size,
@@ -428,15 +437,12 @@ function fmtMoney(n) { return (Number(n) || 0).toFixed(3) }
                                     />
                                     <div v-if="errors.doctor_id" class="nb-err">{{ errors.doctor_id }}</div>
                                 </div>
-                                <div>
+                                <div v-if="form.doctor_id">
                                     <label class="nb-label">{{ t.room }}</label>
-                                    <SearchableSelect
-                                        :model-value="form.table_id"
-                                        :items="roomItems"
-                                        :null-label="form.branch_id ? t.roomNone : t.roomPickBranch"
-                                        @update:model-value="(v) => form.table_id = v"
-                                    />
-                                    <div v-if="errors.table_id" class="nb-err">{{ errors.table_id }}</div>
+                                    <div class="nb-readonly">
+                                        <Icon name="door-open" :size="14" />
+                                        <span>{{ selectedRoomName || t.roomUnassigned }}</span>
+                                    </div>
                                 </div>
                             </div>
                         </section>
@@ -467,7 +473,7 @@ function fmtMoney(n) { return (Number(n) || 0).toFixed(3) }
                                     <Icon name="loader" :size="13" /> {{ t.timesLoading }}
                                 </div>
                                 <div v-else-if="slots.length === 0" class="nb-empty">
-                                    {{ t.timesEmpty }}
+                                    {{ noSlotsMessage || t.timesEmpty }}
                                 </div>
                                 <div v-else style="display: flex; flex-wrap: wrap; gap: 6px;">
                                     <button
@@ -607,6 +613,18 @@ function fmtMoney(n) { return (Number(n) || 0).toFixed(3) }
     letter-spacing: 0.06em;
     font-weight: 600;
     margin-bottom: 6px;
+}
+.nb-readonly {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 36px;
+    padding: 0 12px;
+    font-size: 13px;
+    color: var(--fg);
+    background: var(--bg-sunken);
+    border: 1px solid var(--line);
+    border-radius: 8px;
 }
 .nb-err { color: var(--destructive); font-size: 11.5px; margin-top: 6px; }
 .nb-hint { font-size: 11px; color: var(--fg-subtle); margin-top: 6px; }

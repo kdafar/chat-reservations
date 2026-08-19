@@ -118,7 +118,7 @@ class Branch extends Model
         return null;
     }
 
-    public function getLogoUrlAttribute(): string
+    public function getLogoUrlAttribute(): ?string
     {
         // 1) A stored absolute URL wins (check both columns if you have them)
         $rawLogoUrl = $this->attributes['logo_src_url'] ?? $this->attributes['logo_url'] ?? null;
@@ -142,8 +142,10 @@ class Branch extends Model
             return Storage::disk('public')->url($path);
         }
 
-        // 3) Fallback placeholder in /public/images
-        return asset('images/restaurant-placeholder.jpg');
+        // 3) No logo — return null so callers render their own fallback (the
+        // clinic site shows a branded icon). Pointing at a placeholder file
+        // that doesn't exist just yields a broken image.
+        return null;
     }
 
     public function getOpenNowAttribute(): bool

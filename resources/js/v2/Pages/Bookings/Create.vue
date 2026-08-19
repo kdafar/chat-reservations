@@ -37,6 +37,7 @@ const t = computed(() => isRtl.value
         when: 'الموعد',
         branch: 'الفرع', branchPlaceholder: 'اختر الفرع',
         doctor: 'الطبيب', doctorPlaceholder: 'اختر الطبيب',
+        room: 'الغرفة', roomUnassigned: 'لم تُحدَّد غرفة لهذا الطبيب',
         date: 'التاريخ', datePlaceholder: 'اختر التاريخ',
         time: 'الوقت',
         timesEmpty: 'لا توجد مواعيد متاحة — جرّب تاريخاً آخر.',
@@ -45,7 +46,6 @@ const t = computed(() => isRtl.value
         notes: 'ملاحظات', notesPh: 'تفاصيل إضافية تساعد الطاقم…',
         source: 'المصدر',
         sources: { web: 'الموقع', whatsapp: 'واتساب', call: 'هاتف', walk_in: 'حضور', reception: 'الاستقبال' },
-        room: 'الغرفة', roomNone: 'بدون غرفة', roomPickBranch: 'اختر الفرع أولاً',
         partySize: 'عدد الأشخاص',
         summary: 'الملخص',
         summaryEmpty: 'املأ النموذج لعرض الملخص.',
@@ -77,6 +77,7 @@ const t = computed(() => isRtl.value
         when: 'When',
         branch: 'Branch', branchPlaceholder: 'Pick branch',
         doctor: 'Doctor', doctorPlaceholder: 'Pick doctor',
+        room: 'Room', roomUnassigned: 'No room set for this doctor',
         date: 'Date', datePlaceholder: 'Pick date',
         time: 'Time',
         timesEmpty: 'No available times — try a different date.',
@@ -85,7 +86,6 @@ const t = computed(() => isRtl.value
         notes: 'Notes', notesPh: 'Anything the reception desk should know…',
         source: 'Source',
         sources: { web: 'Web', whatsapp: 'WhatsApp', call: 'Call', walk_in: 'Walk-in', reception: 'Reception' },
-        room: 'Room', roomNone: '— No room —', roomPickBranch: 'Pick a branch first',
         partySize: 'Party size',
         summary: 'Summary',
         summaryEmpty: 'Fill in the form to preview the booking.',
@@ -118,11 +118,6 @@ const form = reactive({
     notes: '',
     source: 'reception',
 })
-
-// Rooms cascade off the chosen branch.
-const roomItems = computed(() =>
-    props.rooms.filter((r) => Number(r.branch_id) === Number(form.branch_id)).map((r) => ({ value: r.id, label: r.name }))
-)
 
 // Single-branch clinics: auto-select so the user never has to pick.
 if (props.branches.length === 1) form.branch_id = props.branches[0].id
@@ -157,16 +152,17 @@ const selectedDoctor = computed(() => props.doctors.find((d) => Number(d.id) ===
 const selectedBranch = computed(() => props.branches.find((b) => Number(b.id) === Number(form.branch_id)) ?? null)
 const selectedPatient = computed(() => props.patients.find((p) => Number(p.id) === Number(form.patient_id)) ?? null)
 
-// Auto-pick the doctor's branch + room if doctor is set first.
+// The room isn't pickable — it's whatever room the chosen doctor works in.
+const selectedRoomName = computed(() =>
+    props.rooms.find((r) => Number(r.id) === Number(form.table_id))?.name ?? null
+)
+
+// Auto-pick the doctor's branch; the room always follows the doctor.
 watch(() => form.doctor_id, (id) => {
-    if (!id) return
-    const d = props.doctors.find((x) => Number(x.id) === Number(id))
+    const d = props.doctors.find((x) => Number(x.id) === Number(id)) ?? null
+    form.table_id = d?.restaurant_table_id ?? null
     if (d && d.branch_id && !form.branch_id) {
         form.branch_id = d.branch_id
-    }
-    // Auto-assign the doctor's own room (don't override a manual pick).
-    if (d && d.restaurant_table_id && !form.table_id) {
-        form.table_id = d.restaurant_table_id
     }
 })
 
@@ -181,19 +177,29 @@ watch(() => form.branch_id, (id) => {
             slots.value = []
         }
     }
-    // Drop a room that doesn't belong to the new branch.
-    if (form.table_id && !props.rooms.some((r) => Number(r.id) === Number(form.table_id) && Number(r.branch_id) === Number(id))) {
-        form.table_id = null
-    }
 })
 
 // --- Slots ---
 const slots = ref([])
 const slotsLoading = ref(false)
+const slotsReason = ref(null)
+const branchHours = ref('')
+
+// Why the picker is empty, in words — "no times" alone sends staff hunting for
+// a bug that isn't there.
+const noSlotsMessage = computed(() => {
+    if (!slotsReason.value) return ''
+    const ar = isRtl.value
+    if (slotsReason.value === 'branch_closed') return ar ? 'الفرع مغلق في هذا اليوم.' : 'The branch is closed that day.'
+    if (slotsReason.value === 'doctor_off') return ar ? 'الطبيب لا يعمل في هذا اليوم.' : "The doctor doesn't work that day."
+    if (slotsReason.value === 'no_branch') return ar ? 'اختر الفرع أولاً.' : 'Pick a branch first.'
+    return ar ? 'كل المواعيد محجوزة في هذا اليوم.' : 'Every slot that day is already taken.'
+})
 
 async function loadSlots() {
     if (!form.doctor_id || !form.res_date) {
         slots.value = []
+        slotsReason.value = null
         return
     }
     slotsLoading.value = true
@@ -201,6 +207,8 @@ async function loadSlots() {
         const url = new URL('/admin/v2/api/bookings/slots', window.location.origin)
         url.searchParams.set('doctor_id', String(form.doctor_id))
         url.searchParams.set('date', form.res_date)
+        // The branch decides the open window, so it has to travel with the request.
+        if (form.branch_id) url.searchParams.set('branch_id', String(form.branch_id))
         const resp = await fetch(url.toString(), {
             credentials: 'same-origin',
             headers: { Accept: 'application/json' },
@@ -208,19 +216,22 @@ async function loadSlots() {
         if (resp.ok) {
             const data = await resp.json()
             slots.value = Array.isArray(data.slots) ? data.slots : []
+            slotsReason.value = data.reason || null
+            branchHours.value = data.branch_hours || ''
             // If selected time isn't in the new list, clear it.
             if (form.res_time && !slots.value.includes(form.res_time)) {
                 form.res_time = ''
             }
         } else {
             slots.value = []
+            slotsReason.value = null
         }
     } finally {
         slotsLoading.value = false
     }
 }
 
-watch(() => [form.doctor_id, form.res_date], loadSlots, { immediate: false })
+watch(() => [form.doctor_id, form.res_date, form.branch_id], loadSlots, { immediate: false })
 
 // Patient toggle
 function toggleNewPatient() {
@@ -260,7 +271,6 @@ function submit() {
         } : undefined,
         branch_id: form.branch_id,
         doctor_id: form.doctor_id,
-        table_id: form.table_id || null,
         res_date: form.res_date,
         res_time: form.res_time,
         party_size: form.party_size,
@@ -399,16 +409,12 @@ const summaryReady = computed(() =>
                                 />
                                 <div v-if="errors.doctor_id" class="cr-err">{{ errors.doctor_id }}</div>
                             </div>
-                            <div style="grid-column: span 2;">
+                            <div v-if="form.doctor_id" style="grid-column: span 2;">
                                 <label class="cr-label">{{ t.room }}</label>
-                                <SearchableSelect
-                                    :model-value="form.table_id"
-                                    :items="roomItems"
-                                    :null-label="form.branch_id ? t.roomNone : t.roomPickBranch"
-                                    :width="'100%'"
-                                    @update:model-value="(v) => form.table_id = v"
-                                />
-                                <div v-if="errors.table_id" class="cr-err">{{ errors.table_id }}</div>
+                                <div class="cr-readonly">
+                                    <Icon name="door-open" :size="14" />
+                                    <span>{{ selectedRoomName || t.roomUnassigned }}</span>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -439,7 +445,10 @@ const summaryReady = computed(() =>
                                 {{ t.timesLoading }}
                             </div>
                             <div v-else-if="slots.length === 0" style="font-size: 12.5px; color: var(--fg-subtle); padding: 14px 12px; background: var(--bg-sunken); border: 1px dashed var(--line); border-radius: 8px;">
-                                {{ t.timesEmpty }}
+                                <div>{{ noSlotsMessage || t.timesEmpty }}</div>
+                                <div v-if="branchHours" style="font-size:11px; color:var(--fg-faint); margin-top:4px;">
+                                    {{ isRtl ? 'ساعات الفرع' : 'Branch hours' }}: {{ branchHours }}
+                                </div>
                             </div>
                             <div v-else style="display: flex; flex-wrap: wrap; gap: 6px;">
                                 <button
@@ -580,6 +589,19 @@ const summaryReady = computed(() =>
     letter-spacing: 0.06em;
     font-weight: 600;
     margin-bottom: 6px;
+}
+
+.cr-readonly {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 36px;
+    padding: 0 12px;
+    font-size: 13px;
+    color: var(--fg);
+    background: var(--bg-sunken);
+    border: 1px solid var(--line);
+    border-radius: 8px;
 }
 
 .cr-err {

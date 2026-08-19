@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import Icon from './Icon.vue'
 import SearchableSelect from './SearchableSelect.vue'
 import DateTimePicker from './DateTimePicker.vue'
@@ -40,16 +40,30 @@ const branchItems = computed(() => branches.value.map((b) => ({ value: b.id, lab
 // admin spans many branches, so offer a picker when there's a choice.
 const needsBranchPick = computed(() => !props.initialBed && branches.value.length > 1)
 
+// Switching branch must re-fetch the doctor list; otherwise the picker keeps
+// showing the previous branch's doctors.
+watch(branchId, () => { if (!props.initialBed) loadDoctors() })
+
 async function searchPatients() {
     const r = await fetch(`/admin/v2/api/inpatient/lookup/patients?q=${encodeURIComponent(patientQ.value)}`, { credentials: 'same-origin' })
     const d = await r.json().catch(() => ({}))
     patients.value = d.patients ?? []
 }
 
+// Doctors are per-branch, so the list follows whichever branch this admission
+// is for — the bed's branch, or the one picked above when there is no bed.
 async function loadDoctors() {
-    const r = await fetch('/admin/v2/api/inpatient/lookup/doctors', { credentials: 'same-origin' })
+    const bid = props.initialBed?.branch_id ?? branchId.value ?? null
+    const url = bid
+        ? `/admin/v2/api/inpatient/lookup/doctors?branch_id=${encodeURIComponent(bid)}`
+        : '/admin/v2/api/inpatient/lookup/doctors'
+    const r = await fetch(url, { credentials: 'same-origin' })
     const d = await r.json().catch(() => ({}))
     doctors.value = d.doctors ?? []
+    // Drop a doctor carried over from another branch.
+    if (selectedDoctorId.value && !doctors.value.some(x => x.id === selectedDoctorId.value)) {
+        selectedDoctorId.value = null
+    }
     if (doctors.value.length === 1) selectedDoctorId.value = doctors.value[0].id
 }
 

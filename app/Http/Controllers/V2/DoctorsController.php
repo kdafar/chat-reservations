@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Doctor;
 use App\Models\Partner;
 use App\Models\User;
+use App\Services\Clinic\WorkingHoursService;
 use App\Support\ResolvesAccessibleClinics;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -109,16 +110,32 @@ class DoctorsController extends Controller
         // full {en,ar} array, which leaks into the table column as raw JSON. Collapse
         // the eager-loaded relation to the localized string (Fluent is Arrayable so
         // `row.branch.name` keeps working on the frontend).
-        $page->getCollection()->each(function ($d) {
+        $svc = app(WorkingHoursService::class);
+
+        $page->getCollection()->each(function ($d) use ($svc) {
             if ($d->relationLoaded('branch') && $d->branch) {
                 $d->setRelation('branch', new \Illuminate\Support\Fluent([
                     'id' => $d->branch->id,
                     'name' => $d->branch->localized_name,
                 ]));
             }
+            // The edit form needs all seven rows, not just the worked days.
+            $d->setAttribute('hours', $svc->doctorHoursPayload($d, $d->branch_id));
+            $d->setAttribute('hours_summary', $svc->normalizeDoctorHours((array) ($d->working_hours ?? [])));
         });
 
         $branches = $this->accessibleBranches()->all();
+
+        // Per-branch weekly windows, so the form can grey out closed days and
+        // clamp the time inputs before the user ever hits Save.
+        $branchWindows = [];
+        $branchSlotLengths = [];
+        foreach ($branches as $b) {
+            $branchWindows[(int) $b['id']] = $svc->branchWindowsForForm((int) $b['id']);
+            // Shown as the placeholder on the doctor's appointment-length field,
+            // so "empty" reads as a value rather than as nothing.
+            $branchSlotLengths[(int) $b['id']] = $svc->branchHoursPayload((int) $b['id'])['settings']['slot_length_minutes'];
+        }
 
         // Partner (clinic) options scoped to the user's clinics — global admin
         // sees all. The form cascades Partner → Branch off this.
@@ -152,6 +169,8 @@ class DoctorsController extends Controller
             'filters' => $filters,
             'page' => $page,
             'branches' => $branches,
+            'branch_windows' => $branchWindows,
+            'branch_slot_lengths' => $branchSlotLengths,
             'partners' => $partners,
             'rooms' => $rooms,
             'counts' => $counts,
@@ -290,6 +309,9 @@ class DoctorsController extends Controller
             'license_number' => ['nullable', 'string', 'max:64', Rule::unique('doctors', 'license_number')->ignore($exceptId)->whereNull('deleted_at')],
             // Consultation fee is mandatory and must be > 0 (matches old admin).
             'consultation_fee' => ['required', 'numeric', 'gt:0'],
+            // How long one appointment with this doctor takes. Empty = inherit
+            // the branch's appointment length.
+            'default_slot_minutes' => ['nullable', 'integer', 'min:5', 'max:480'],
             'partner_id' => ['required', 'integer', Rule::exists('partners', 'id')->where(fn ($q) => $this->scopePartnerRule($q))],
             'branch_id' => ['required', 'integer', Rule::exists('branches', 'id')->where('partner_id', (int) $request->input('partner_id'))],
             // Room: optional, must belong to the chosen branch, and not already
@@ -300,10 +322,69 @@ class DoctorsController extends Controller
             ],
             'bio' => ['nullable', 'string', 'max:2000'],
             'is_active' => ['sometimes', 'boolean'],
+            // Weekly schedule. All seven days are submitted; `is_open` marks the
+            // ones the doctor actually works.
+            'working_hours' => ['sometimes', 'array', 'max:7'],
+            'working_hours.*.day' => ['required', 'integer', 'between:0,6'],
+            'working_hours.*.is_open' => ['required', 'boolean'],
+            'working_hours.*.start' => ['required_if:working_hours.*.is_open,true', 'nullable', 'date_format:H:i'],
+            'working_hours.*.end' => ['required_if:working_hours.*.is_open,true', 'nullable', 'date_format:H:i'],
         ]);
         $data['is_active'] = (bool) $request->input('is_active', true);
+        $data['default_slot_minutes'] = $data['default_slot_minutes'] ?? null;
+
+        if ($request->has('working_hours')) {
+            $data['working_hours'] = $this->validatedWorkingHours(
+                (array) $request->input('working_hours', []),
+                (int) $data['branch_id'],
+            );
+        }
 
         return $data;
+    }
+
+    /**
+     * Normalize the submitted schedule and enforce the core rule: a doctor
+     * can't be scheduled outside their branch's opening hours, or at all on a
+     * day the branch is shut.
+     */
+    protected function validatedWorkingHours(array $submitted, int $branchId): array
+    {
+        $svc = app(WorkingHoursService::class);
+        $hours = $svc->normalizeDoctorHours($submitted);
+
+        // A day switched on but with end <= start is dropped by normalize(),
+        // which would silently swallow the mistake — call it out instead.
+        $errors = [];
+        foreach ($submitted as $i => $row) {
+            if (! is_array($row) || empty($row['is_open'])) {
+                continue;
+            }
+            $start = $svc->toMinutes($row['start'] ?? null);
+            $end = $svc->toMinutes($row['end'] ?? null);
+            if ($start !== null && $end !== null && $end <= $start) {
+                $day = $svc->dayName((int) ($row['day'] ?? 0));
+                $errors["working_hours.{$i}.end"] = "{$day}: the end time must be after the start time.";
+            }
+        }
+        if ($errors) {
+            throw \Illuminate\Validation\ValidationException::withMessages($errors);
+        }
+
+        // Branch-window violations are reported against the row index the form
+        // submitted, so the error lands on the right day.
+        $violations = $svc->validateDoctorHours($hours, $branchId);
+        if ($violations) {
+            $byIndex = [];
+            foreach ($violations as $key => $message) {
+                $dow = (int) substr($key, strrpos($key, '.') + 1);
+                $i = collect($submitted)->search(fn ($r) => is_array($r) && (int) ($r['day'] ?? -1) === $dow);
+                $byIndex[$i === false ? "working_hours.{$dow}" : "working_hours.{$i}.start"] = $message;
+            }
+            throw \Illuminate\Validation\ValidationException::withMessages($byIndex);
+        }
+
+        return $hours;
     }
 
     /** Restrict the partner_id rule to the user's clinics (global admin = any). */

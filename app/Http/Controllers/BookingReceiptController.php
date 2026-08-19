@@ -25,39 +25,47 @@ class BookingReceiptController extends Controller
             abort(404, 'No visit record found for this booking.');
         }
 
-        // Full itemised bill. Each line is shown at its GROSS amount; per-line
-        // promotions/offers are summed and shown as a single deduction, then the
-        // visit-level discount (manual + coupon). Mirrors the v2 console math:
-        // grand = gross − line offers − visit discount.
+        // Full itemised bill. Each line carries its GROSS amount and whatever
+        // was taken off it (package offer / promotion), so the receipt can show
+        // the patient what the line normally costs and what they paid. The
+        // per-line deductions are also summed, then the visit-level discount
+        // (manual + coupon) applies on top:
+        //   grand = gross − line offers − visit discount.
         $lines = [];
         $lineDiscounts = 0.0;
 
         foreach ($visit->visitCharges as $c) {
             $lineDiscounts += (float) $c->discount_amount;
-            $lines[] = [
-                'label' => $c->label ?: 'Consultation Fee',
-                'hint' => $booking->doctor->name ?? null,
-                'qty' => (float) ($c->qty ?? 1),
-                'amount' => (float) $c->line_total,
-            ];
+            $lines[] = $this->line(
+                label: $c->label ?: 'Consultation Fee',
+                hint: $booking->doctor->name ?? null,
+                qty: (float) ($c->qty ?? 1),
+                amount: (float) $c->line_total,
+                discount: (float) $c->discount_amount,
+                source: $c->discount_source,
+            );
         }
         foreach ($visit->visitPackages as $vp) {
             $lineDiscounts += (float) $vp->discount_amount;
-            $lines[] = [
-                'label' => $this->resolveName($vp->package->name ?? null) ?: ('Service #'.$vp->clinic_package_id),
-                'hint' => 'Service',
-                'qty' => (float) ($vp->qty ?? 1),
-                'amount' => (float) $vp->line_total,
-            ];
+            $lines[] = $this->line(
+                label: $this->resolveName($vp->package->name ?? null) ?: ('Service #'.$vp->clinic_package_id),
+                hint: 'Package',
+                qty: (float) ($vp->qty ?? 1),
+                amount: (float) $vp->line_total,
+                discount: (float) $vp->discount_amount,
+                source: $vp->discount_source,
+            );
         }
         foreach ($visit->visitItems as $it) {
             $lineDiscounts += (float) $it->discount_amount;
-            $lines[] = [
-                'label' => $this->resolveName($it->clinicItem->name ?? null) ?: ('Item #'.$it->clinic_item_id),
-                'hint' => 'Item',
-                'qty' => (float) ($it->qty ?? 1),
-                'amount' => (float) $it->line_price_total,
-            ];
+            $lines[] = $this->line(
+                label: $this->resolveName($it->clinicItem->name ?? null) ?: ('Item #'.$it->clinic_item_id),
+                hint: 'Item',
+                qty: (float) ($it->qty ?? 1),
+                amount: (float) $it->line_price_total,
+                discount: (float) $it->discount_amount,
+                source: $it->discount_source,
+            );
         }
 
         $subtotal = round(array_sum(array_column($lines, 'amount')), 3);   // gross
@@ -65,6 +73,11 @@ class BookingReceiptController extends Controller
         $visitDiscount = round((float) ($visit->discount_total ?? 0), 3);   // manual + coupon
         $couponCode = $visit->coupon_code;
         $grandTotal = round(max(0, $subtotal - $lineDiscounts - $visitDiscount), 3);
+
+        // Everything the patient did NOT pay: per-line offers plus the
+        // visit-level discount. Printed as one headline figure.
+        $totalSavings = round($lineDiscounts + $visitDiscount, 3);
+        $savingsPercent = $subtotal > 0 ? (int) round(($totalSavings / $subtotal) * 100) : 0;
 
         // All settled payments on this visit (voided ones are soft-deleted out).
         $payments = VisitPayment::where('visit_id', $visit->id)
@@ -90,11 +103,51 @@ class BookingReceiptController extends Controller
             'lineDiscounts' => $lineDiscounts,
             'visitDiscount' => $visitDiscount,
             'couponCode' => $couponCode,
+            'totalSavings' => $totalSavings,
+            'savingsPercent' => $savingsPercent,
             'grandTotal' => $grandTotal,
             'paid' => $paid,
             'balance' => $balance,
             'insurance' => $insurance,
         ]);
+    }
+
+    /**
+     * One printed bill line. `discount` is what came off this line (a package
+     * offer price or a promotion) and `net` is what the patient is actually
+     * charged for it — the receipt prints both so the saving is visible where
+     * it was earned, not just as a lump sum at the bottom.
+     */
+    private function line(
+        string $label,
+        ?string $hint,
+        float $qty,
+        float $amount,
+        float $discount,
+        ?string $source = null,
+    ): array {
+        $discount = round(max(0, min($discount, $amount)), 3);
+
+        return [
+            'label' => $label,
+            'hint' => $hint,
+            'qty' => $qty,
+            'amount' => round($amount, 3),
+            'discount' => $discount,
+            'net' => round($amount - $discount, 3),
+            'saved_label' => $discount > 0 ? $this->savingLabel($source) : null,
+        ];
+    }
+
+    /** How a line's saving is described to the patient. */
+    private function savingLabel(?string $source): string
+    {
+        return match ($source) {
+            'offer' => 'Package offer',
+            'promo' => 'Promotion',
+            'manual' => 'Discount',
+            default => 'Saving',
+        };
     }
 
     /**

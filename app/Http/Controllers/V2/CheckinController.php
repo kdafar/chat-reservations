@@ -44,7 +44,7 @@ class CheckinController extends Controller
         $q = trim((string) $request->query('q', ''));
 
         $query = Booking::query()
-            ->with(['patient', 'doctor', 'branch'])
+            ->with(['patient', 'doctor', 'branch', 'requestedPackage'])
             ->whereDate('res_date', today())
             ->whereIn('status', ['confirmed', 'pending']);
 
@@ -73,7 +73,7 @@ class CheckinController extends Controller
     public function booking(Request $request, Booking $booking): JsonResponse
     {
         $this->abortIfNotReception();
-        $booking->load(['patient', 'doctor', 'branch']);
+        $booking->load(['patient', 'doctor', 'branch', 'requestedPackage']);
 
         $paid = (float) VisitPayment::query()
             ->whereIn('visit_id', Visit::where('booking_id', $booking->id)->pluck('id'))
@@ -164,20 +164,32 @@ class CheckinController extends Controller
             return response()->json(['ok' => false, 'error' => 'Doctor has no consultation fee set.'], 422);
         }
 
-        DB::transaction(function () use ($booking, $data, $fee) {
-            $visit = $this->ensureVisitWithFeeCharge($booking, $fee);
+        $balance = app(\App\Services\Clinic\VisitBalanceService::class);
 
-            VisitPayment::create([
-                'visit_id' => $visit->id,
-                'amount' => (float) $data['amount'],
-                'method' => (string) $data['method'],
-                'reference_no' => $data['reference_no'] ?? null,
-                'status' => 'paid',
-                'kind' => VisitPayment::KIND_CONSULTATION,
-                'collected_by_user_id' => auth()->id(),
-                'paid_at' => now(),
-            ]);
-        });
+        try {
+            DB::transaction(function () use ($booking, $data, $fee, $balance) {
+                $visit = $this->ensureVisitWithFeeCharge($booking, $fee);
+
+                // The charge now exists, so the visit knows what it is owed —
+                // refuse anything above it rather than banking the difference.
+                if ($reason = $balance->rejectPayment($visit, (float) $data['amount'])) {
+                    throw new \RuntimeException($reason);
+                }
+
+                VisitPayment::create([
+                    'visit_id' => $visit->id,
+                    'amount' => (float) $data['amount'],
+                    'method' => (string) $data['method'],
+                    'reference_no' => $data['reference_no'] ?? null,
+                    'status' => 'paid',
+                    'kind' => VisitPayment::KIND_CONSULTATION,
+                    'collected_by_user_id' => auth()->id(),
+                    'paid_at' => now(),
+                ]);
+            });
+        } catch (\RuntimeException $e) {
+            return response()->json(['ok' => false, 'error' => $e->getMessage(), 'field' => 'amount'], 422);
+        }
 
         return $this->booking($request, $booking);
     }
@@ -394,6 +406,9 @@ class CheckinController extends Controller
             'doctor_room_id' => $doctorRoomId,
             'doctor_room_name' => $doctorRoom?->name,
             'doctor_room_busy' => $doctorRoomBusy,
+            // Only admins / branch managers may freely pick a room. Front-desk
+            // staff always route the patient into the booking doctor's own room.
+            'can_choose_room' => $this->isAdminUser(),
         ]);
     }
 
@@ -458,6 +473,15 @@ class CheckinController extends Controller
         }
 
         $roomId = $request->input('room_id');
+
+        // Room policy: only admins / branch managers may choose a room freely.
+        // For front-desk staff (reception, nurse, doctor) the patient always goes
+        // into the booking doctor's OWN assigned room — each doctor works from
+        // their own room — regardless of what the client sent. Falls back to the
+        // client value only if the doctor has no room configured.
+        if (! $this->isAdminUser()) {
+            $roomId = $booking->doctor?->restaurant_table_id ?: $roomId;
+        }
 
         try {
             $visit = DB::transaction(function () use ($booking, $roomId) {
@@ -543,7 +567,38 @@ class CheckinController extends Controller
             // matched an existing patient under a *different* name. Reception
             // resolves it at check-in via confirm-identity / split-patient.
             'identity_review' => $this->identityReviewPayload($b),
+            // The offer the patient picked on the public site. Reception
+            // confirms it at check-in and it gets added to the new visit.
+            'requested_package' => $this->formatRequestedPackage($b->requestedPackage, $b->branch_id),
         ], $extra);
+    }
+
+    /**
+     * Shape the "patient asked for this offer" payload. Deliberately IDENTICAL
+     * to WaitingPatientsController::formatRequestedPackage() — the queue card
+     * and the check-in modal must never disagree about name, price or the
+     * branch warning. Keep the two in sync if either changes.
+     *
+     * `branch_mismatch`: offers are branch-scoped, so a patient can pick an
+     * offer published by one branch and then book at another. Only flagged
+     * when the package is actually pinned to a branch (a partner-wide package
+     * with a null branch_id is valid everywhere).
+     */
+    protected function formatRequestedPackage(?\App\Models\ClinicPackage $p, ?int $contextBranchId): ?array
+    {
+        if (! $p) {
+            return null;
+        }
+
+        return [
+            'id' => $p->id,
+            'name' => $p->localized_name,
+            'price' => round((float) $p->effective_price, 3),
+            'has_discount' => (bool) $p->has_discount,
+            'branch_mismatch' => $p->branch_id !== null
+                && $contextBranchId !== null
+                && (int) $p->branch_id !== (int) $contextBranchId,
+        ];
     }
 
     /**
