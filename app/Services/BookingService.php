@@ -51,9 +51,12 @@ class BookingService
         $resDate = $this->normalizeDateString($resDateRaw);
         $resTime = $this->normalizeTimeString($resTimeRaw);
 
-        // Build res_start and res_end based on BranchAvailabilityRule
+        // Build res_start and res_end based on BranchAvailabilityRule — or the
+        // doctor's own appointment length when they have one, so the reserved
+        // window matches the slot the patient was actually offered.
         $resStart = Carbon::parse("{$resDate} {$resTime}", $tz)->seconds(0);
-        $resEnd = $this->calculateSlotEnd($resStart, $branchId);
+        $slotDoctorId = isset($attrs['doctor_id']) && (int) $attrs['doctor_id'] > 0 ? (int) $attrs['doctor_id'] : null;
+        $resEnd = $this->calculateSlotEnd($resStart, $branchId, $slotDoctorId);
 
         $msisdn = (string) ($attrs['msisdn'] ?? $hold['msisdn'] ?? '');
         $msisdn = trim($msisdn);
@@ -158,6 +161,16 @@ class BookingService
                 $payload['source_ref'] = $sourceRef;
             }
 
+            // The offer the patient chose on the website (already validated by the
+            // caller against the published offers). Absent for WhatsApp/admin
+            // bookings, hence the null default — reception just sees no hint then.
+            $requestedPackageId = isset($attrs['requested_package_id']) && (int) $attrs['requested_package_id'] > 0
+                ? (int) $attrs['requested_package_id']
+                : null;
+            if (Schema::hasColumn('bookings', 'requested_package_id')) {
+                $payload['requested_package_id'] = $requestedPackageId;
+            }
+
             // Meta merge: never wipe existing meta
             $metaPatch = [
                 'slot_key' => (string) ($hold['slot_key'] ?? ''),
@@ -186,7 +199,16 @@ class BookingService
                     if ($b->msisdn && $msisdnFinal && $b->msisdn !== $msisdnFinal) {
                         $b = null; // force create new below
                     } else {
-                        $b->fill($payload);
+                        // Same "do not override" rule as source/source_ref below:
+                        // a re-confirm that carries no package (e.g. the patient
+                        // finishes on WhatsApp) must not erase the offer they
+                        // picked on the website earlier.
+                        $fillPayload = $payload;
+                        if ($requestedPackageId === null) {
+                            unset($fillPayload['requested_package_id']);
+                        }
+
+                        $b->fill($fillPayload);
 
                         // Keep existing booking_code if present; else generate
                         if (empty($b->booking_code)) {
@@ -259,25 +281,15 @@ class BookingService
     /**
      * Slot end calculation aligned with your BookingResource/AvailabilityService day mapping.
      */
-    protected function calculateSlotEnd(Carbon $start, int $branchId): Carbon
+    protected function calculateSlotEnd(Carbon $start, int $branchId, ?int $doctorId = null): Carbon
     {
         // IMPORTANT: keep same convention as AvailabilityService:
         // dayOfWeekIso: 1..7 (Mon..Sun) => map Sun(7) to 0, keep Mon..Sat as 1..6
         $dowIso = (int) $start->dayOfWeekIso;        // 1..7
         $dowZeroBased = $dowIso === 7 ? 0 : $dowIso; // 0..6 (Sun=0)
 
-        $rule = BranchAvailabilityRule::query()
-            ->where('branch_id', $branchId)
-            ->where('day_of_week', $dowZeroBased)
-            ->first();
-
-        $minutes = (int) (
-            $rule?->slot_length_minutes
-            ?? $rule?->slot_step_minutes
-            ?? config('booking.slot_interval', 30)
-        );
-
-        $minutes = max(5, $minutes);
+        $minutes = app(\App\Services\Clinic\WorkingHoursService::class)
+            ->slotLength($branchId, $dowZeroBased, $doctorId);
 
         return $start->copy()->addMinutes($minutes)->seconds(0);
     }

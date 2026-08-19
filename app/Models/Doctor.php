@@ -26,6 +26,21 @@ class Doctor extends Model
         'consultation_fee' => 'decimal:3',
     ];
 
+    /**
+     * Narrow a doctor list to one branch, for filter dropdowns that sit next to
+     * a branch picker. A null/empty branch means "no branch chosen" and leaves
+     * the query untouched, so callers can pass the filter value straight in.
+     *
+     * BelongsToBranchScope already limits non-admins to their own branches, but
+     * it does nothing for an admin — who is exactly the person using the branch
+     * picker. Without this the dropdown offered every doctor in the group and
+     * picking one returned an empty report.
+     */
+    public function scopeAtBranch($query, ?int $branchId)
+    {
+        return $branchId ? $query->where('branch_id', $branchId) : $query;
+    }
+
     public function partner(): BelongsTo
     {
         return $this->belongsTo(Partner::class);

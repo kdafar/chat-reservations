@@ -7,8 +7,6 @@ use App\Models\BookingHold;
 use App\Models\Branch;
 use App\Models\BranchAvailabilityRule;
 use App\Models\BranchBlackout;
-use App\Models\Doctor;
-use App\Models\DoctorShift;
 use App\Models\RestaurantTable;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -24,12 +22,18 @@ class AvailabilityService
         $tz = config('app.timezone');
         $today = now($tz)->startOfDay();
 
-        $rules = BranchAvailabilityRule::where('branch_id', $branchId)->get()->keyBy('day_of_week');
-        $blackouts = BranchBlackout::where('branch_id', $branchId)
+        $rules = BranchAvailabilityRule::withoutGlobalScopes()->where('branch_id', $branchId)->get()->keyBy('day_of_week');
+        $blackouts = BranchBlackout::withoutGlobalScopes()->where('branch_id', $branchId)
             ->where('date', '>=', $today->toDateString())
             ->pluck('date')->map(fn ($d) => (string) $d)->all();
 
-        $cacheKey = sprintf('avail:nextDates:%d:%d:%s:%d', $branchId, $partySize, $today->toDateString(), $days);
+        // The version suffix lets a working-hours edit invalidate this instantly
+        // instead of waiting out the 5-minute TTL.
+        $cacheKey = sprintf(
+            'avail:nextDates:%d:%d:%s:%d:v%d',
+            $branchId, $partySize, $today->toDateString(), $days,
+            \App\Services\Clinic\WorkingHoursService::scheduleVersion($branchId),
+        );
 
         return Cache::remember($cacheKey, 300, function () use ($today, $days, $rules, $blackouts, $partySize, $branchId) {
             $out = [];
@@ -68,8 +72,21 @@ class AvailabilityService
         $dow = (int) $day->dayOfWeekIso;            // 1..7
         $dowZeroBased = $dow === 7 ? 0 : $dow;      // Sun=0, Mon=1..Sat=6
 
+        // 0) A branch that's switched off takes no bookings on any channel.
+        // Only the public branch list used to check this, so deep links, v2,
+        // WhatsApp and follow-up auto-booking all walked straight past it.
+        if (! app(\App\Services\Clinic\WorkingHoursService::class)->branchIsBookable($branchId)) {
+            return [];
+        }
+
         // 1) Branch rule
-        $rule = BranchAvailabilityRule::where('branch_id', $branchId)
+        //
+        // withoutGlobalScopes throughout this method: BelongsToBranchScope
+        // narrows these tables to the caller's own branch/doctor, which turns
+        // a colleague's schedule into an empty grid and — worse, on bookings —
+        // hides the clashes that are supposed to block a slot.
+        $rule = BranchAvailabilityRule::withoutGlobalScopes()
+            ->where('branch_id', $branchId)
             ->where('day_of_week', $dowZeroBased)
             ->first();
 
@@ -78,7 +95,7 @@ class AvailabilityService
         }
 
         // 2) Blackout
-        if (BranchBlackout::where('branch_id', $branchId)->whereDate('date', $day->toDateString())->exists()) {
+        if (BranchBlackout::withoutGlobalScopes()->where('branch_id', $branchId)->whereDate('date', $day->toDateString())->exists()) {
             return [];
         }
 
@@ -97,18 +114,51 @@ class AvailabilityService
                 return []; // Doctor not working today or cancelled/invalid shift
             }
 
-            // Intersect windows
+            // A doctor with their own appointment length overrides the branch's
+            // — a 60-minute laser session and a 10-minute follow-up can't share
+            // one branch-wide number. Their slots then run back-to-back at that
+            // length, so recompute the last usable start from the new duration.
+            $ownLength = app(\App\Services\Clinic\WorkingHoursService::class)->doctorSlotMinutes($doctorId);
+            if ($ownLength) {
+                $effectiveClose->addMinutes($duration - $ownLength);
+                $duration = $ownLength;
+                $step = $ownLength;
+            }
+
+            // Intersect windows. $effectiveClose is the last time a slot may
+            // START, so the doctor's end has to lose the appointment length
+            // too — otherwise the final slot runs past the end of their shift.
             if ($docStart->gt($start)) {
                 $start = $docStart->copy()->ceilMinutes($step);
             }
 
-            if ($docEnd->lt($effectiveClose)) {
-                $effectiveClose = $docEnd->copy();
+            $docLastStart = $docEnd->copy()->subMinutes($duration);
+            if ($docLastStart->lt($effectiveClose)) {
+                $effectiveClose = $docLastStart;
             }
 
             if ($start->gte($effectiveClose)) {
                 return [];
             }
+        }
+
+        // The doctor's booked slots for this window, fetched once. This used to
+        // be an exists() per slot, which made nextDates — 25 dates × 32 slots
+        // per doctor — run hundreds of queries to answer one date list.
+        //
+        // No branch filter: the guard (bookingProblem) blocks on any overlapping
+        // booking for this doctor, so filtering by branch here would offer a
+        // slot the guard then rejects.
+        $taken = collect();
+        if ($doctorId) {
+            $taken = Booking::query()->withoutGlobalScopes()
+                ->where('doctor_id', $doctorId)
+                ->whereIn('status', ['confirmed', 'pending'])
+                ->when($ignoreBookingId, fn ($q) => $q->whereKeyNot($ignoreBookingId))
+                ->whereNotNull('res_start')
+                ->where('res_start', '<', $effectiveClose->copy()->addMinutes($duration)->toDateTimeString())
+                ->where('res_end', '>', $start->toDateTimeString())
+                ->get(['res_start', 'res_end']);
         }
 
         // 5) Generate slots
@@ -119,24 +169,15 @@ class AvailabilityService
 
             if ($doctorId) {
                 $slotEnd = $t->copy()->addMinutes($duration);
-                $blockingStatuses = ['confirmed', 'pending'];
 
-                $q = Booking::query()
-                    ->where('doctor_id', $doctorId)
-                    ->where('branch_id', $branchId)
-                    ->whereIn('status', $blockingStatuses);
+                // res_start/res_end are cast to Carbon, so these compare as
+                // instants, not strings. A booking with no end is treated as a
+                // point in time — the same reading slotsFor() uses.
+                $isAvailable = ! $taken->contains(function ($b) use ($t, $slotEnd) {
+                    $bookedEnd = $b->res_end ?: $b->res_start->copy()->addMinute();
 
-                if ($ignoreBookingId) {
-                    $q->whereKeyNot($ignoreBookingId);
-                }
-
-                $isBooked = $q->where(function ($q) use ($t, $slotEnd) {
-                    $q->where('res_start', '<', $slotEnd->toDateTimeString())
-                        ->where('res_end', '>', $t->toDateTimeString());
-                })
-                    ->exists();
-
-                $isAvailable = ! $isBooked;
+                    return $b->res_start->lt($slotEnd) && $bookedEnd->gt($t);
+                });
             } else {
                 // Restaurant/generic mode (tables)
                 if ($partySize > $this->maxAllowedSize($branchId, $rule)) {
@@ -159,66 +200,27 @@ class AvailabilityService
     /**
      * Returns [docStart, docEnd] or [null, null] if doctor not available.
      * Priority: doctor_shifts (daily overrides) -> doctor.working_hours (weekly).
+     *
+     * WorkingHoursService owns this answer. There used to be a second copy of
+     * the rules here, and the two drifted: this one honoured an overnight
+     * window while the booking guard silently dropped it, so the grid offered
+     * times the guard then refused. One implementation, one answer.
      */
     protected function doctorWindowForDate(int $doctorId, int $branchId, Carbon $day, string $tz): array
     {
-        // 1) Daily override (doctor_shifts)
-        $shift = DoctorShift::query()
-            ->where('doctor_id', $doctorId)
-            ->where('branch_id', $branchId)
-            ->whereDate('shift_date', $day->toDateString())
-            ->where('is_cancelled', 0)
-            ->first();
+        [$startMin, $endMin] = app(\App\Services\Clinic\WorkingHoursService::class)
+            ->doctorWindowForDate($doctorId, $branchId, $day->toDateString());
 
-        if ($shift) {
-            $startStr = (string) ($shift->start_time ?? '');
-            $endStr = (string) ($shift->end_time ?? '');
-
-            if ($startStr === '' || $endStr === '') {
-                return [null, null];
-            }
-
-            $docStart = Carbon::parse($day->toDateString().' '.$startStr, $tz);
-            $docEnd = Carbon::parse($day->toDateString().' '.$endStr, $tz);
-
-            if ($docEnd->lte($docStart)) {
-                $docEnd->addDay();
-            }
-
-            return [$docStart, $docEnd];
-        }
-
-        // 2) Weekly fallback (doctor.working_hours)
-        $doctor = Doctor::find($doctorId);
-        if (! $doctor || empty($doctor->working_hours)) {
+        if ($startMin === null || $endMin === null) {
             return [null, null];
         }
 
-        $dow = (int) $day->dayOfWeekIso;           // 1..7
-        $dowZeroBased = $dow === 7 ? 0 : $dow;     // 0..6
-
-        $schedule = collect($doctor->working_hours);
-        $wh = $schedule->firstWhere('day', $dowZeroBased);
-
-        if (! $wh || ! is_array($wh)) {
-            return [null, null];
-        }
-
-        $startStr = (string) ($wh['start'] ?? '');
-        $endStr = (string) ($wh['end'] ?? '');
-
-        if ($startStr === '' || $endStr === '') {
-            return [null, null];
-        }
-
-        $docStart = Carbon::parse($day->toDateString().' '.$startStr, $tz);
-        $docEnd = Carbon::parse($day->toDateString().' '.$endStr, $tz);
-
-        if ($docEnd->lte($docStart)) {
-            $docEnd->addDay();
-        }
-
-        return [$docStart, $docEnd];
+        // Minutes past this date's midnight — an overnight window comes back
+        // over 1440 and lands on the next day, which is what we want.
+        return [
+            $day->copy()->startOfDay()->addMinutes($startMin),
+            $day->copy()->startOfDay()->addMinutes($endMin),
+        ];
     }
 
     /* ---------------- Branch helpers ---------------- */
@@ -253,9 +255,13 @@ class AvailabilityService
             $minStart = $lead > 0 ? $now->copy()->addMinutes($lead) : $now;
 
             if ($minStart->gt($open)) {
-                $open = $minStart->ceilMinutes($step);
-            } elseif ($open->lt($now)) {
-                $open = $now->copy()->ceilMinutes($step);
+                // Advance along the grid the branch already uses rather than
+                // ceilMinutes(), which snaps to absolute clock boundaries: with
+                // an open_at of 09:10 that hands today a 09:15/09:30 grid while
+                // every other day runs 09:10/09:25, and the two disagree about
+                // which times exist.
+                $skip = (int) ceil($open->diffInMinutes($minStart) / $step);
+                $open = $open->copy()->addMinutes($skip * $step);
             }
         }
 
@@ -284,8 +290,29 @@ class AvailabilityService
         return max(0, $tablesAble - $confirmed - $holds);
     }
 
+    /**
+     * Is any slot bookable on this date?
+     *
+     * A branch with doctors is a clinic, and a clinic's calendar is decided by
+     * who is on shift. This used to always fall through to the table-capacity
+     * path, which tied the appointment calendar to `restaurant_tables` rows:
+     * party sizes above the largest table emptied the whole date list, and a
+     * clinic with no table rows at all had no bookable dates.
+     */
     protected function hasAnyTimesForDate(int $branchId, string $date, int $partySize, BranchAvailabilityRule $rule): bool
     {
+        $doctorIds = app(\App\Services\Clinic\WorkingHoursService::class)->bookableDoctorIds($branchId);
+
+        if ($doctorIds !== []) {
+            foreach ($doctorIds as $doctorId) {
+                if ($this->timesFor($branchId, $date, $partySize, $doctorId) !== []) {
+                    return true; // one free doctor is enough to offer the date
+                }
+            }
+
+            return false;
+        }
+
         return count($this->timesFor($branchId, $date, $partySize)) > 0;
     }
 
