@@ -61,8 +61,13 @@ class ClaimsController extends Controller
         // Insurer/branch scope is applied to BOTH the list and the tab counts so
         // the numbers on the tabs always match the rows the current filter shows.
         $scope = function ($qb) use ($insurer, $branch) {
-            if ($insurer) $qb->whereHas('patientPolicy', fn ($p) => $p->where('insurer_id', $insurer));
-            if ($branch) $qb->where('branch_id', $branch);
+            if ($insurer) {
+                $qb->whereHas('patientPolicy', fn ($p) => $p->where('insurer_id', $insurer));
+            }
+            if ($branch) {
+                $qb->where('branch_id', $branch);
+            }
+
             return $qb;
         };
 
@@ -120,6 +125,7 @@ class ClaimsController extends Controller
             // time once sent, else creation time. Only meaningful while open.
             $ref = $c->submitted_at ?? $c->created_at;
             $c->setAttribute('age_days', $ref ? (int) $ref->copy()->startOfDay()->diffInDays(now()->startOfDay()) : null);
+
             return $c;
         });
 
@@ -189,8 +195,7 @@ class ClaimsController extends Controller
         return match (true) {
             $c->status === InsuranceClaim::STATUS_DRAFT => 'submit',
             in_array($c->status, [InsuranceClaim::STATUS_SUBMITTED, InsuranceClaim::STATUS_UNDER_REVIEW], true) => 'await',
-            in_array($c->status, [InsuranceClaim::STATUS_APPROVED, InsuranceClaim::STATUS_PARTIALLY_APPROVED], true)
-                => $c->balanceDue() > 0.0005 ? 'record_payment' : 'settled',
+            in_array($c->status, [InsuranceClaim::STATUS_APPROVED, InsuranceClaim::STATUS_PARTIALLY_APPROVED], true) => $c->balanceDue() > 0.0005 ? 'record_payment' : 'settled',
             $c->status === InsuranceClaim::STATUS_PAID => 'settled',
             $c->status === InsuranceClaim::STATUS_REJECTED => 'rejected',
             default => 'none',
@@ -429,7 +434,9 @@ class ClaimsController extends Controller
     public function createFromVisit(Request $request): RedirectResponse
     {
         $this->authorizeAccess($request);
-        if (! $request->user()->can('create_insurance_claims')) abort(403);
+        if (! $request->user()->can('create_insurance_claims')) {
+            abort(403);
+        }
 
         $data = $request->validate([
             'visit_id' => ['required', 'integer', Rule::exists('visits', 'id')],
@@ -447,6 +454,7 @@ class ClaimsController extends Controller
         }
 
         $claim = $this->insurance->createClaimFromVisit($visit, $policy, $request->user());
+
         return back()->with('flash', ['type' => 'success', 'message' => "Claim {$claim->claim_number} drafted."]);
     }
 
@@ -466,11 +474,16 @@ class ClaimsController extends Controller
 
     public function approve(Request $request, InsuranceClaim $claim): RedirectResponse
     {
+        // An insurer can approve less than was claimed, never more — the excess
+        // would be money nobody billed, and it drives balanceDue() negative.
+        $payable = number_format(max(0, (float) $claim->insurer_payable), 3, '.', '');
+
         $data = $request->validate([
-            'approved_amount' => ['required', 'numeric', 'min:0'],
+            'approved_amount' => ['required', 'numeric', 'min:0', 'max:'.$payable],
             'reference_no' => ['nullable', 'string', 'max:64'],
             'decision_notes' => ['nullable', 'string', 'max:2000'],
-        ]);
+        ], ['approved_amount.max' => "Approved amount can't exceed the claimed KWD {$payable}."]);
+
         return $this->transition($request, $claim, InsuranceClaim::STATUS_APPROVED, 'insurance_decide_claim',
             $data['decision_notes'] ?? null, [
                 'approved_amount' => $data['approved_amount'],
@@ -481,11 +494,27 @@ class ClaimsController extends Controller
 
     public function partiallyApprove(Request $request, InsuranceClaim $claim): RedirectResponse
     {
+        $payable = max(0, round((float) $claim->insurer_payable, 3));
+        $payableLabel = number_format($payable, 3, '.', '');
+
         $data = $request->validate([
-            'approved_amount' => ['required', 'numeric', 'min:0'],
-            'rejected_amount' => ['required', 'numeric', 'min:0'],
+            'approved_amount' => ['required', 'numeric', 'min:0', 'max:'.$payableLabel],
+            'rejected_amount' => ['required', 'numeric', 'min:0', 'max:'.$payableLabel],
             'decision_notes' => ['nullable', 'string', 'max:2000'],
+        ], [
+            'approved_amount.max' => "Approved amount can't exceed the claimed KWD {$payableLabel}.",
+            'rejected_amount.max' => "Rejected amount can't exceed the claimed KWD {$payableLabel}.",
         ]);
+
+        // The split has to add up too: approving 40 and rejecting 40 on a 50 KWD
+        // claim would settle 80 against a 50 KWD bill.
+        $split = round((float) $data['approved_amount'] + (float) $data['rejected_amount'], 3);
+        if ($split > $payable + 0.005) {
+            return back()->withErrors([
+                'approved_amount' => "Approved + rejected (KWD {$split}) can't exceed the claimed KWD {$payableLabel}.",
+            ]);
+        }
+
         return $this->transition($request, $claim, InsuranceClaim::STATUS_PARTIALLY_APPROVED, 'insurance_decide_claim',
             $data['decision_notes'] ?? null, [
                 'approved_amount' => $data['approved_amount'],
@@ -499,6 +528,7 @@ class ClaimsController extends Controller
         $data = $request->validate([
             'decision_notes' => ['required', 'string', 'max:2000'],
         ]);
+
         return $this->transition($request, $claim, InsuranceClaim::STATUS_REJECTED, 'insurance_decide_claim',
             $data['decision_notes'], ['decision_notes' => $data['decision_notes']]);
     }
@@ -506,15 +536,20 @@ class ClaimsController extends Controller
     public function void(Request $request, InsuranceClaim $claim): RedirectResponse
     {
         $this->authorizeAccess($request);
-        if (! $request->user()->can('insurance_void')) abort(403);
+        if (! $request->user()->can('insurance_void')) {
+            abort(403);
+        }
         $data = $request->validate(['reason' => ['required', 'string', 'max:2000']]);
+
         return $this->transition($request, $claim, InsuranceClaim::STATUS_VOID, null, $data['reason'], []);
     }
 
     public function recordPayment(Request $request, InsuranceClaim $claim): RedirectResponse
     {
         $this->authorizeAccess($request);
-        if (! $request->user()->can('insurance_record_payment')) abort(403);
+        if (! $request->user()->can('insurance_record_payment')) {
+            abort(403);
+        }
 
         // Never let a payment exceed what is still owed — that would drive
         // balanceDue() negative. Cap at the current outstanding balance.
@@ -546,7 +581,9 @@ class ClaimsController extends Controller
     public function writeOff(Request $request, InsuranceClaim $claim): RedirectResponse
     {
         $this->authorizeAccess($request);
-        if (! $request->user()->can('insurance_writeoff')) abort(403);
+        if (! $request->user()->can('insurance_writeoff')) {
+            abort(403);
+        }
 
         // A write-off can't forgive more than is still outstanding.
         $balance = number_format(max(0, $this->roundedBalance($claim)), 3, '.', '');
@@ -569,6 +606,7 @@ class ClaimsController extends Controller
     protected function runTransition(Request $request, InsuranceClaim $claim, string $to, string $permission, array $rules): RedirectResponse
     {
         $data = $request->validate($rules);
+
         return $this->transition($request, $claim, $to, $permission, $data['notes'] ?? null, []);
     }
 
@@ -576,7 +614,9 @@ class ClaimsController extends Controller
     protected function transition(Request $request, InsuranceClaim $claim, string $to, ?string $permission, ?string $notes, array $payload): RedirectResponse
     {
         $this->authorizeAccess($request);
-        if ($permission && ! $request->user()->can($permission)) abort(403);
+        if ($permission && ! $request->user()->can($permission)) {
+            abort(403);
+        }
 
         try {
             $this->insurance->transition($claim, $to, $request->user(), $notes, $payload);
@@ -598,6 +638,7 @@ class ClaimsController extends Controller
     protected function capabilities(Request $request): array
     {
         $u = $request->user();
+
         return [
             'create' => (bool) $u?->can('create_insurance_claims'),
             'submit' => (bool) $u?->can('insurance_submit_claim'),

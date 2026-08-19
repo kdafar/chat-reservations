@@ -55,6 +55,10 @@ class InsuranceClaim extends Model
         'paid_at',
         'eob_path',
         'reference_no',
+        'follow_up_at',
+        'last_chased_at',
+        'chase_count',
+        'follow_up_note',
         'meta',
     ];
 
@@ -70,6 +74,9 @@ class InsuranceClaim extends Model
         'submitted_at' => 'datetime',
         'decided_at' => 'datetime',
         'paid_at' => 'datetime',
+        'follow_up_at' => 'date',
+        'last_chased_at' => 'datetime',
+        'chase_count' => 'integer',
     ];
 
     public function visit(): BelongsTo

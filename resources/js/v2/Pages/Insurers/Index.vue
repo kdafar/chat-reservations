@@ -94,6 +94,7 @@ const rowArchived = row => !!row.deleted_at || !row.is_active
                     <p style="margin:6px 0 0; font-size:13px; color:var(--fg-subtle); max-width:640px;">{{ t.desc }}</p>
                 </div>
                 <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                    <Link class="btn btn-sm btn-outline" :href="route('v2.insurance.follow-up.index')"><Icon name="bell" :size="13" /><span>{{ isRtl ? 'متابعة التحصيل' : 'Follow-up' }}</span></Link>
                     <ImportButton type="insurers" />
                     <a class="btn btn-sm btn-outline" :href="route('v2.insurance.insurers.export', { ...f })"><Icon name="download" :size="13" /><span>{{ isRtl ? 'تصدير Excel' : 'Export Excel' }}</span></a>
                     <button v-if="can_edit" class="btn btn-primary" @click="openCreate"><Icon name="plus" :size="14" /><span>{{ t.new }}</span></button>
@@ -120,7 +121,7 @@ const rowArchived = row => !!row.deleted_at || !row.is_active
 
             <div class="card" style="overflow:hidden;">
                 <table class="table">
-                    <thead><tr><th v-if="can_edit" style="width:34px; text-align:center;"><input type="checkbox" :checked="sel.allSelected.value" @change="sel.toggleAll()" /></th><th>{{ t.col.name }}</th><th>{{ t.col.code }}</th><th>{{ t.col.plans }}</th><th>{{ t.col.email }}</th><th>{{ t.col.phone }}</th><th style="text-align:end;">{{ t.col.terms }}</th><th>{{ t.col.status }}</th><th style="width:60px;"></th></tr></thead>
+                    <thead><tr><th v-if="can_edit" style="width:34px; text-align:center;"><input type="checkbox" :checked="sel.allSelected.value" @change="sel.toggleAll()" /></th><th>{{ t.col.name }}</th><th>{{ t.col.code }}</th><th>{{ t.col.plans }}</th><th>{{ t.col.email }}</th><th>{{ t.col.phone }}</th><th style="text-align:end;">{{ t.col.terms }}</th><th>{{ t.col.status }}</th><th style="width:96px;"></th></tr></thead>
                     <tbody>
                         <tr v-if="page.data.length === 0">
                             <td :colspan="can_edit ? 9 : 8" style="text-align:center; padding:48px; color:var(--fg-faint);"><Icon name="shield" :size="32" style="margin-bottom:8px; opacity:0.4;" /><div style="font-weight:600;">{{ t.empty }}</div><div style="font-size:12px; margin-top:4px;">{{ t.emptyDesc }}</div></td>
@@ -135,6 +136,7 @@ const rowArchived = row => !!row.deleted_at || !row.is_active
                             <td class="mono" style="text-align:end;">{{ row.payment_terms_days || '—' }}</td>
                             <td><span :class="rowArchived(row) ? 'badge-muted' : 'badge-ok'">{{ rowArchived(row) ? t.active.inactive : t.active.active }}</span></td>
                             <td @click.stop>
+                                <Link class="btn btn-ghost btn-sm btn-icon" :href="route('v2.insurance.follow-up.index', { insurer: row.id, tab: 'all' })" :title="isRtl ? 'متابعة التحصيل' : 'Follow up on what they owe'"><Icon name="bell" :size="14" /></Link>
                                 <button v-if="can_edit && !rowArchived(row)" class="btn btn-ghost btn-sm btn-icon" @click="archive(row)"><Icon name="archive" :size="14" /></button>
                                 <button v-else-if="can_edit" class="btn btn-ghost btn-sm btn-icon" @click="restore(row)"><Icon name="undo-2" :size="14" /></button>
                             </td>
