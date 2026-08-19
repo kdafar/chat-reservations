@@ -50,6 +50,11 @@ class DemoStaffUsersSeeder extends Seeder
                 'email' => 'admin@accountant.com',
                 'role' => 'accountant',
             ],
+            [
+                'name' => 'Lab Assistant',
+                'email' => 'admin@lab.com',
+                'role' => 'clinic_lab',
+            ],
         ];
 
         foreach ($accounts as $acct) {

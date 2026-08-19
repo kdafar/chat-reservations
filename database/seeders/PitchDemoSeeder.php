@@ -92,6 +92,7 @@ class PitchDemoSeeder extends Seeder
                 'ordered_by_user_id' => 1,
                 'status' => \App\Models\Lab\LabOrder::STATUS_COMPLETED,
                 'completed_at' => now(),
+                'completed_by_user_id' => 1,
             ]);
             foreach ($bundle as $line) {
                 $test = $tests->get($line['code']);

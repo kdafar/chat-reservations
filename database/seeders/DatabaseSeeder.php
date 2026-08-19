@@ -568,6 +568,9 @@ class DatabaseSeeder extends Seeder
             // Canonical role structure (nurse role + removing legacy roles).
             // Idempotent; run after the permission catalog is built.
             ClinicRoleStructureSeeder::class,
+            // Lab assistant role + the bench permissions nurses need to cover
+            // the lab. Runs after the canonical structure so it stays additive.
+            ClinicLabRoleSeeder::class,
             // Re-skin the whole seeded catalog as a beauty / aesthetic clinic.
             // Runs LAST so it overrides the generic-medical defaults above.
             BeautyClinicDataSeeder::class,

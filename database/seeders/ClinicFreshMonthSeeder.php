@@ -487,6 +487,7 @@ class ClinicFreshMonthSeeder extends Seeder
         $visit->update([
             'status' => 'in_progress', // booted() hook sets service_started_at
             'accepted_at' => Carbon::now(),
+            'accepted_by_user_id' => $doctor->user_id,
         ]);
 
         // ------- 5. Apply package (~30%) -------
@@ -617,8 +618,15 @@ class ClinicFreshMonthSeeder extends Seeder
         if ($isToday) {
             $stageRoll = mt_rand() / mt_getrandmax();
             if ($stageRoll < 0.20) {
-                // Leave a fraction in awaiting_doctor (skip discharge)
-                $visit->update(['status' => 'awaiting_doctor']);
+                // Leave a fraction in awaiting_doctor (skip discharge). Clear the
+                // acceptance stamps too — a queued visit that still looks
+                // accepted blocks the doctor's Start button.
+                $visit->update([
+                    'status' => 'awaiting_doctor',
+                    'accepted_at' => null,
+                    'accepted_by_user_id' => null,
+                    'service_started_at' => null,
+                ]);
 
                 return;
             }

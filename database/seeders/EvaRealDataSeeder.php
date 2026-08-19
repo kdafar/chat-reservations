@@ -27,6 +27,9 @@ class EvaRealDataSeeder extends Seeder
             PostingAccountMapSeeder::class,
             EvaTreatmentsSeeder::class,
             EvaInventorySeeder::class,
+            // Links the treatments to the consumables they burn, so completed
+            // visits move stock instead of freezing it at the opening balance.
+            ServiceBomSeeder::class,
         ]);
 
         $this->command?->info('EVA real data load complete.');

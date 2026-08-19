@@ -20,6 +20,19 @@ class DemoDataSeeder extends Seeder
 {
     public function run(): void
     {
+        // This install is an aesthetic clinic, not the food-delivery template
+        // this seeder was written for. Running it used to re-create the "Food /
+        // مطاعم" category (with pizza/burger promotions behind it), which then
+        // showed up as a treatment category on the public booking site.
+        //
+        // Left in place for reference rather than deleted — but it no longer
+        // seeds anything. Clinic demo data lives in BeautyClinicDataSeeder /
+        // EvaRealDataSeeder / EurekaDemoSeeder.
+        $this->command?->warn('DemoDataSeeder is disabled: this install is a clinic, not a food-delivery demo.');
+
+        return;
+
+        // @phpstan-ignore-next-line — legacy restaurant demo data below.
         // ---- Services
         $food = Service::updateOrCreate(
             ['slug' => 'food'],

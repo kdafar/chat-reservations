@@ -71,24 +71,29 @@ class BeautyClinicDataSeeder extends Seeder
      */
     private function reskinServiceCategories(): void
     {
-        // current slug => [en, ar, icon]
+        // The icon column used to hold an emoji, which rendered as a different
+        // cartoon on every OS (🍔 next to a KD 300 laser course). It now holds a
+        // semantic key that the public site draws as a line icon — see
+        // ICON_BY_KEY in resources/js/clinic/components/Shared.jsx.
+        //
+        // current slug => [en, ar, icon key]
         $map = [
-            'general-practice'   => ['Cosmetic Consultation', 'استشارة تجميلية',     '💬'],
-            'pediatrics'         => ['Facials & Skincare',    'العناية بالبشرة',     '🧖'],
-            'dermatology'        => ['Dermatology',           'الجلدية',             '✨'],
-            'dentistry'          => ['Injectables & Fillers', 'الحقن والفيلر',       '💉'],
-            'cardiology'         => ['Laser & Hair Removal',  'الليزر وإزالة الشعر',  '🔆'],
-            'orthopedics'        => ['Body Contouring',       'نحت الجسم',           '💃'],
-            'gynecology'         => ['Hair Restoration',      'زراعة وعلاج الشعر',    '💇'],
-            'ophthalmology'      => ['Lashes & Brows',        'الرموش والحواجب',      '👁️'],
-            'ent'                => ['Skin Treatments',       'علاجات البشرة',        '🌿'],
-            'internal-medicine'  => ['Wellness & IV Drips',   'العافية والمغذيات',    '💧'],
-            'neurology'          => ['Anti-Aging',            'مكافحة الشيخوخة',      '⏳'],
-            'psychiatry'         => ['Bridal & Events',       'العرائس والمناسبات',   '👰'],
-            'nutrition'          => ['Skin Nutrition',        'تغذية البشرة',        '🍓'],
-            'physical-therapy'   => ['Slimming & Massage',    'التنحيف والمساج',     '💆'],
-            'radiology'          => ['Skin Imaging (VISIA)',  'تصوير البشرة',        '📷'],
-            'laboratory'         => ['Lab & Diagnostics',     'المختبر والتحاليل',   '🧪'],
+            'general-practice'   => ['Cosmetic Consultation', 'استشارة تجميلية',     'consultation'],
+            'pediatrics'         => ['Facials & Skincare',    'العناية بالبشرة',     'facial'],
+            'dermatology'        => ['Dermatology',           'الجلدية',             'derm'],
+            'dentistry'          => ['Injectables & Fillers', 'الحقن والفيلر',       'injectable'],
+            'cardiology'         => ['Laser & Hair Removal',  'الليزر وإزالة الشعر',  'laser'],
+            'orthopedics'        => ['Body Contouring',       'نحت الجسم',           'body'],
+            'gynecology'         => ['Hair Restoration',      'زراعة وعلاج الشعر',    'hair'],
+            'ophthalmology'      => ['Lashes & Brows',        'الرموش والحواجب',      'lashes'],
+            'ent'                => ['Skin Treatments',       'علاجات البشرة',        'skin'],
+            'internal-medicine'  => ['Wellness & IV Drips',   'العافية والمغذيات',    'iv'],
+            'neurology'          => ['Anti-Aging',            'مكافحة الشيخوخة',      'antiaging'],
+            'psychiatry'         => ['Bridal & Events',       'العرائس والمناسبات',   'bridal'],
+            'nutrition'          => ['Skin Nutrition',        'تغذية البشرة',        'nutrition'],
+            'physical-therapy'   => ['Slimming & Massage',    'التنحيف والمساج',     'massage'],
+            'radiology'          => ['Skin Imaging (VISIA)',  'تصوير البشرة',        'imaging'],
+            'laboratory'         => ['Lab & Diagnostics',     'المختبر والتحاليل',   'lab'],
         ];
 
         foreach ($map as $slug => [$en, $ar, $icon]) {
@@ -99,12 +104,42 @@ class BeautyClinicDataSeeder extends Seeder
             ]);
         }
 
-        // Retire the leftover restaurant-template "Food / مطاعم" category so it
-        // never surfaces on the aesthetic-clinic public site.
-        DB::table('services')->where('slug', 'food')->update(['is_active' => false, 'updated_at' => now()]);
-        DB::table('branch_service')
-            ->whereIn('service_id', DB::table('services')->where('slug', 'food')->pluck('id'))
-            ->delete();
+        // Drop the leftover restaurant-template "Food / مطاعم" category outright
+        // — this install is a clinic, so it has nothing to be inactive about.
+        // Its promotions are pizza/burger offers from the same template.
+        $foodIds = DB::table('services')->where('slug', 'food')->pluck('id');
+        if ($foodIds->isNotEmpty()) {
+            DB::table('promotions')->whereIn('service_id', $foodIds)->delete();
+            DB::table('branch_service')->whereIn('service_id', $foodIds)->delete();
+            DB::table('partner_service')->whereIn('service_id', $foodIds)->delete();
+            DB::table('services')->whereIn('id', $foodIds)->delete();
+        }
+
+        $this->linkServicesToBranches();
+    }
+
+    /**
+     * Every branch offers every treatment category.
+     *
+     * The public site filters clinics by category (/clinic/clinics?service_id=),
+     * and that filter goes through the branch_service pivot — which the medical
+     * template never populated, so every category page came back empty.
+     */
+    private function linkServicesToBranches(): void
+    {
+        $serviceIds = DB::table('services')->where('is_active', true)->pluck('id');
+        $branchIds = DB::table('branches')->pluck('id');
+
+        $rows = [];
+        foreach ($branchIds as $branchId) {
+            foreach ($serviceIds as $serviceId) {
+                $rows[] = ['branch_id' => $branchId, 'service_id' => $serviceId];
+            }
+        }
+
+        foreach (array_chunk($rows, 500) as $chunk) {
+            DB::table('branch_service')->insertOrIgnore($chunk);
+        }
     }
 
     /**
