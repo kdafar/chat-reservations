@@ -25,22 +25,37 @@ use Leandrocfe\FilamentApexCharts\FilamentApexChartsPlugin;
 
 class AdminPanelProvider extends PanelProvider
 {
+    /**
+     * Is the legacy admin UI still reachable?
+     *
+     * When false the panel is still registered — /admin/login is the only login
+     * in the system and everything, v2 included, depends on it — but it carries
+     * no resources, pages or widgets, and RedirectLegacyAdmin sends any other
+     * panel URL to the v2 dashboard. See config('clinic.legacy_admin_enabled').
+     */
+    protected function legacyEnabled(): bool
+    {
+        return (bool) config('clinic.legacy_admin_enabled', false);
+    }
+
     public function panel(Panel $panel): Panel
     {
-        return $panel
+        $legacy = $this->legacyEnabled();
+
+        $panel = $panel
             ->default()
             ->id('admin')
             ->path('admin')
             ->login()
             // Bridge to the isolated WhatsApp module panel (app/Wa) so it is
             // reachable from the main admin sidebar.
-            ->navigationItems([
+            ->navigationItems($legacy ? [
                 \Filament\Navigation\NavigationItem::make('WhatsApp Platform')
                     ->url(fn (): string => url('/whatsapp/admin'), shouldOpenInNewTab: true)
                     ->icon('heroicon-o-chat-bubble-left-right')
                     ->group('WhatsApp')
                     ->sort(99),
-            ])
+            ] : [])
             ->databaseNotifications()
             ->databaseNotificationsPolling('5s')
             ->renderHook(
@@ -87,7 +102,7 @@ class AdminPanelProvider extends PanelProvider
                 ],
             ])
 
-            ->resources([
+            ->resources($legacy ? [
                 \App\Filament\Resources\BookingResource::class,
                 \App\Filament\Resources\BranchAvailabilityRuleResource::class,
                 \App\Filament\Resources\BranchBlackoutResource::class,
@@ -158,8 +173,8 @@ class AdminPanelProvider extends PanelProvider
 
                 // --- Platform ---
                 \App\Filament\Resources\ActivityResource::class,
-            ])
-            ->pages([
+            ] : [])
+            ->pages($legacy ? [
                 \App\Filament\Pages\Inpatient\InpatientReports::class,
                 \App\Filament\Pages\AdminDashboardRoute::class,
                 \App\Filament\Pages\ClinicReportingDashboard::class,
@@ -186,8 +201,8 @@ class AdminPanelProvider extends PanelProvider
                 \App\Filament\Pages\Accounting\ProfitAndLossReport::class,
                 \App\Filament\Pages\Accounting\BalanceSheetReport::class,
                 \App\Filament\Pages\Accounting\CashFlowReport::class,
-            ])
-            ->widgets([
+            ] : [])
+            ->widgets($legacy ? [
                 \App\Filament\Widgets\WhatsAppStatusWidget::class,
                 \App\Filament\Widgets\BookingFunnel::class,
                 \App\Filament\Widgets\DailyHourlyChart::class,
@@ -202,11 +217,11 @@ class AdminPanelProvider extends PanelProvider
                 \App\Filament\Widgets\Clinic\ClinicTopDoctors::class,
                 \App\Filament\Widgets\Clinic\ClinicTopItems::class,
                 \App\Filament\Widgets\Inpatient\BedOccupancyWidget::class,
-            ])
+            ] : [])
 
             // ORDER GROUPS HERE (TOP → BOTTOM)
             // Make sure these labels match your resources/pages navigationGroup strings.
-            ->navigationGroups([
+            ->navigationGroups($legacy ? [
                 NavigationGroup::make()->label(fn () => __('common.nav.clinic_operations')),
                 NavigationGroup::make()->label(fn () => __('common.nav.clinic_scheduling')),
                 NavigationGroup::make()->label(fn () => __('common.nav.clinic_setup')),
@@ -223,7 +238,7 @@ class AdminPanelProvider extends PanelProvider
                 NavigationGroup::make()->label('Messaging'),
                 NavigationGroup::make()->label('WhatsApp'),
                 NavigationGroup::make()->label('System'),
-            ])
+            ] : [])
 
             // Optional: If you want *only* these groups and nothing else auto-created:
             // ->navigationGroups([...])->navigationGroupsAreCollapsible(true)
@@ -243,6 +258,9 @@ class AdminPanelProvider extends PanelProvider
                 VerifyCsrfToken::class,
                 SubstituteBindings::class,
                 \App\Http\Middleware\SetLocaleFromUser::class,
+                // Sends any legacy admin page to its v2 replacement while the
+                // panel keeps serving /admin/login. No-op when legacy is on.
+                \App\Http\Middleware\RedirectLegacyAdmin::class,
             ])
             ->userMenuItems([
                 // Locale switcher: persists to users.preferred_locale.
@@ -256,5 +274,7 @@ class AdminPanelProvider extends PanelProvider
                     ])),
             ])
             ->authMiddleware([Authenticate::class]);
+
+        return $panel;
     }
 }

@@ -8,6 +8,7 @@ import ConfirmDialog from './ConfirmDialog.vue'
 import QuickPhrases from './QuickPhrases.vue'
 import RxBuilder from './RxBuilder.vue'
 import LabPicker from './LabPicker.vue'
+import LabOrderPanel from './LabOrderPanel.vue'
 import QuickPicks from './QuickPicks.vue'
 import PrintMenu from './PrintMenu.vue'
 import { pushToast } from '../Composables/useNotificationState.js'
@@ -1284,6 +1285,25 @@ function copyPaymentLink() {
                             </span>
                         </div>
 
+                        <!-- Offer the patient picked on the website when booking (read-only).
+                             Same payload + suppression rule as the queue and the Visit
+                             Console; disappears once the package is on the visit. -->
+                        <div v-if="visit?.requested_package" class="vs-checkin-banner">
+                            <Icon
+                                :name="visit.requested_package.branch_mismatch ? 'alert-triangle' : 'sparkles'"
+                                :size="14"
+                                :style="{ color: visit.requested_package.branch_mismatch ? 'var(--destructive)' : 'var(--primary)', flexShrink: 0 }"
+                            />
+                            <span>
+                                <strong>{{ isRtl ? 'طلب المريض' : 'Patient requested' }}:</strong>
+                                {{ visit.requested_package.name }}
+                                <span class="tnum" style="color: var(--fg-muted);">· {{ fmtMoney(visit.requested_package.price) }} KWD</span>
+                                <span v-if="visit.requested_package.branch_mismatch" style="color: var(--destructive); margin-inline-start: 6px;">
+                                    — {{ isRtl ? 'هذا العرض يخص فرعًا آخر' : 'this offer belongs to another branch' }}
+                                </span>
+                            </span>
+                        </div>
+
                         <!-- Insurance banner: decision required before discharge -->
                         <div v-if="insuranceRequiresDecision" class="vs-insurance-banner" style="flex-direction: column; align-items: stretch; gap: 12px;">
                             <div style="display: flex; align-items: center; gap: 10px; min-width: 0;">
@@ -1477,6 +1497,15 @@ function copyPaymentLink() {
                                         />
                                         <LabPicker v-if="canEditClinical && visit" :visit-id="visit.id" @insert="(txt) => appendToField('lab_requests', txt)" />
                                     </div>
+                                    <!--
+                                        Tracked lab orders. The free-text field above stays for
+                                        imaging and outside referrals; anything in our own catalogue
+                                        goes through here so the lab actually sees it and the result
+                                        comes back onto this sheet.
+                                    -->
+                                    <div class="card" style="padding: 14px 16px;">
+                                        <LabOrderPanel v-if="visit" :visit-id="visit.id" :can-edit="canEditClinical" compact />
+                                    </div>
                                     <div class="card" style="padding: 14px 16px;">
                                         <div class="eyebrow" style="margin-bottom: 6px;">{{ t.labels.patientInstructions }}</div>
                                         <EditableField
@@ -1572,7 +1601,8 @@ function copyPaymentLink() {
                                                 <div style="min-width: 0;">
                                                     <div style="font-size: 13px; font-weight: 500; display: flex; align-items: center; gap: 6px;">
                                                         <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ vp.name }}</span>
-                                                        <span v-if="vp.discount_source === 'promo'" class="badge badge-gold" style="font-size: 9px; flex-shrink: 0;">{{ isRtl ? 'عرض' : 'Promo' }}</span>
+                                                        <span v-if="vp.discount_source === 'promo'" class="badge badge-gold" style="font-size: 9px; flex-shrink: 0;">{{ isRtl ? 'عرض ترويجي' : 'Promo' }}</span>
+                                                        <span v-else-if="vp.discount_source === 'offer'" class="badge badge-gold" style="font-size: 9px; flex-shrink: 0;">{{ isRtl ? 'عرض' : 'Offer' }}</span>
                                                     </div>
                                                     <div v-if="vp.contents && vp.contents.length" style="font-size: 11px; color: var(--fg-subtle); margin-top: 2px; line-height: 1.4;">
                                                         {{ isRtl ? 'يشمل: ' : 'Includes: ' }}{{ vp.contents.map((c) => c.name + (Number(c.qty) > 1 ? ' ×' + Number(c.qty) : '')).join(' · ') }}

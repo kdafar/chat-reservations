@@ -140,12 +140,12 @@ class FollowUpService
             $time = (string) $slots[0]['value']; // 'HH:MM:00'
             $resStart = \Illuminate\Support\Carbon::parse($date.' '.$time, config('app.timezone'));
 
-            // res_end = start + the branch's slot length for that weekday (fallback 30m).
+            // res_end = start + the appointment length: the doctor's own if
+            // they have one, else the branch's for that weekday.
             $dow = $resStart->dayOfWeekIso;
             $dowZero = $dow === 7 ? 0 : $dow;
-            $slotLen = (int) (\App\Models\BranchAvailabilityRule::query()
-                ->where('branch_id', $branchId)->where('day_of_week', $dowZero)
-                ->value('slot_length_minutes') ?: 30);
+            $slotLen = app(\App\Services\Clinic\WorkingHoursService::class)
+                ->slotLength($branchId, $dowZero, $doctorId);
 
             $payload = [
                 'branch_id' => $branchId,
@@ -169,6 +169,29 @@ class FollowUpService
                 // bookings.booking_code is NOT NULL + unique + varchar(16)
                 'booking_code' => $this->generateBookingCode16(),
             ];
+
+            // The slot came from the availability grid a moment ago, but two
+            // visits closing at once can pick the same one — re-check against
+            // the live schedule before writing. guardedBooking holds a lock on
+            // the doctor across both steps, so the second visit's re-check
+            // actually sees the first one's booking instead of racing past it.
+            if ($doctorId) {
+                [$ok, , $booking] = app(\App\Services\Clinic\WorkingHoursService::class)
+                    ->guardedBooking(
+                        $branchId,
+                        $doctorId,
+                        $date,
+                        substr($time, 0, 5),
+                        null,
+                        fn () => \App\Models\Booking::query()->create($payload),
+                    );
+
+                if (! $ok) {
+                    return ['booking_id' => null, 'status' => 'needs_scheduling'];
+                }
+
+                return ['booking_id' => (int) $booking->id, 'status' => 'booked'];
+            }
 
             $booking = \App\Models\Booking::query()->create($payload);
 

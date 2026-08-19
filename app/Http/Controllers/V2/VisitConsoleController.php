@@ -28,7 +28,9 @@ class VisitConsoleController extends Controller
         if (! $this->visitIsTerminal($visit)) {
             $this->recomputeTotals($visit);
         }
-        $visit->load(['patient', 'doctor', 'branch', 'room', 'visitItems.clinicItem', 'payments', 'visitPackages.package.items.clinicItem']);
+        // `booking.requestedPackage` is eager-loaded (never lazy) so the "patient
+        // requested this offer" banner costs no extra query per render.
+        $visit->load(['patient', 'doctor', 'branch', 'room', 'visitItems.clinicItem', 'payments', 'visitPackages.package.items.clinicItem', 'booking.requestedPackage']);
 
         return Inertia::render('Visit/Console', [
             'visit' => $this->transformVisit($visit),
@@ -48,7 +50,9 @@ class VisitConsoleController extends Controller
         if (! $this->visitIsTerminal($visit)) {
             $this->recomputeTotals($visit);
         }
-        $visit->load(['patient', 'doctor', 'branch', 'room', 'visitItems.clinicItem', 'payments', 'visitPackages.package.items.clinicItem']);
+        // Same eager-load set as show() — transformVisit() reads
+        // booking.requestedPackage and must never lazy-load it.
+        $visit->load(['patient', 'doctor', 'branch', 'room', 'visitItems.clinicItem', 'payments', 'visitPackages.package.items.clinicItem', 'booking.requestedPackage']);
 
         return response()->json([
             'ok' => true,
@@ -162,7 +166,7 @@ class VisitConsoleController extends Controller
             ->orderBy('id', 'desc')
             ->limit(60)
             ->with(['items.clinicItem'])
-            ->get(['id', 'branch_id', 'name', 'default_price'])
+            ->get(['id', 'branch_id', 'name', 'default_price', 'discount_price', 'offer_starts_at', 'offer_ends_at'])
             // Branch isolation: a package's components are resolved through the
             // (branch-scoped) ClinicItem relation, so a component outside the
             // user's branch/clinic loads as a null clinicItem. Hide any package
@@ -176,13 +180,21 @@ class VisitConsoleController extends Controller
         $promoSvc = app(\App\Services\Clinic\ClinicPromotionService::class);
         $rows = $rows->map(function ($pkg) use ($promoSvc, $visit) {
             $price = (float) ($pkg->default_price ?? 0);
-            $perUnit = $promoSvc->discountForPackage($pkg, $price, (int) $visit->branch_id);
+
+            // Same layering as reapplyPromotions(): the package's own offer
+            // price first, then any promotion on top of the reduced price.
+            $offerPerUnit = min((float) $pkg->savings_amount, $price);
+            $perUnit = $promoSvc->discountForPackage($pkg, max(0, $price - $offerPerUnit), (int) $visit->branch_id);
             $promo = $perUnit > 0.0001 ? $promoSvc->bestPackagePromotion($pkg, (int) $visit->branch_id) : null;
+            $perUnit += $offerPerUnit;
 
             return [
                 'id' => $pkg->id,
                 'name' => $this->resolveName($pkg->name),
                 'price' => $price,
+                'offer_price' => $pkg->has_discount ? $pkg->effective_price : null,
+                'saves' => round($perUnit, 3),
+                'save_percent' => $price > 0 ? (int) round(($perUnit / $price) * 100) : 0,
                 'net_price' => round(max(0, $price - $perUnit), 3),
                 'promo' => $promo ? [
                     'name' => $this->resolveName($promo->name),
@@ -471,6 +483,7 @@ class VisitConsoleController extends Controller
             $this->recomputeTotals($visit);
         } catch (\Throwable $e) {
             report($e);
+
             return response()->json(['ok' => false, 'error' => $e->getMessage()], 422);
         }
 
@@ -720,9 +733,14 @@ class VisitConsoleController extends Controller
      */
     protected function resolveName($raw): string
     {
-        if (is_string($raw)) return $raw;
-        if (! is_array($raw)) return '';
+        if (is_string($raw)) {
+            return $raw;
+        }
+        if (! is_array($raw)) {
+            return '';
+        }
         $locale = app()->getLocale();
+
         return (string) ($raw[$locale] ?? $raw['en'] ?? $raw['ar'] ?? reset($raw) ?? '');
     }
 
@@ -883,7 +901,7 @@ class VisitConsoleController extends Controller
      * the visit is skipped, so an item being dispensed via the manual stock
      * flow is never deducted twice. Non-blocking — failures are logged, not thrown.
      *
-     * @return string|null  issue mode ('issued'|'request'|'disabled') or null when nothing was deducted
+     * @return string|null issue mode ('issued'|'request'|'disabled') or null when nothing was deducted
      */
     private function autoDeductStock(Visit $visit, \App\Models\ClinicItem $clinicItem, float $qty, ?string $qtyNote = null): ?string
     {
@@ -1005,20 +1023,49 @@ class VisitConsoleController extends Controller
             ], 422);
         }
 
-        \Illuminate\Support\Facades\DB::transaction(function () use ($visit, $data) {
-            VisitPayment::create([
-                'visit_id' => $visit->id,
-                'amount' => $data['amount'],
-                'method' => $data['method'],
-                'kind' => $data['kind'],
-                'reference_no' => $data['reference_no'] ?? null,
-                'status' => 'paid',
-                'collected_by_user_id' => auth()->id(),
-                'paid_at' => now(),
-            ]);
+        // Never collect more than the visit owes. Without this an operator
+        // typo (270 for 27) is accepted in full and the visit sits overpaid.
+        $balance = app(\App\Services\Clinic\VisitBalanceService::class);
+        if ($reason = $balance->rejectPayment($visit, (float) $data['amount'])) {
+            return response()->json([
+                'ok' => false,
+                'error' => $reason,
+                'field' => 'amount',
+                'outstanding' => $balance->outstanding($visit),
+            ], 422);
+        }
 
-            $this->recomputeTotals($visit);
-        });
+        try {
+            \Illuminate\Support\Facades\DB::transaction(function () use ($visit, $data, $balance) {
+                // Re-check under a row lock: two receptionists collecting at the
+                // same moment would each pass the check above and together
+                // overshoot the balance.
+                $locked = Visit::query()->lockForUpdate()->findOrFail($visit->id);
+                if ($reason = $balance->rejectPayment($locked, (float) $data['amount'])) {
+                    throw new \RuntimeException($reason);
+                }
+
+                VisitPayment::create([
+                    'visit_id' => $visit->id,
+                    'amount' => $data['amount'],
+                    'method' => $data['method'],
+                    'kind' => $data['kind'],
+                    'reference_no' => $data['reference_no'] ?? null,
+                    'status' => 'paid',
+                    'collected_by_user_id' => auth()->id(),
+                    'paid_at' => now(),
+                ]);
+
+                $this->recomputeTotals($visit);
+            });
+        } catch (\RuntimeException $e) {
+            return response()->json([
+                'ok' => false,
+                'error' => $e->getMessage(),
+                'field' => 'amount',
+                'outstanding' => $balance->outstanding($visit->refresh()),
+            ], 422);
+        }
 
         return response()->json(['ok' => true]);
     }
@@ -1423,7 +1470,22 @@ class VisitConsoleController extends Controller
         }
 
         \Illuminate\Support\Facades\DB::transaction(function () use ($visit, $payment) {
-            $payment->delete();
+            // Flip the status rather than delete the row. VisitPaymentAccounting-
+            // Observer reverses the journal entry on a status change to 'void';
+            // a delete fires no `updated` event, so the cash/AR entry survived a
+            // void and the ledger kept money the visit no longer counted. Every
+            // balance query filters on status='paid', so the voided row drops out
+            // of the totals while staying visible (and auditable) on the visit.
+            $payment->forceFill([
+                'status' => 'void',
+                'meta' => array_merge((array) ($payment->meta ?? []), [
+                    'void' => [
+                        'at' => now()->toIso8601String(),
+                        'by_user_id' => auth()->id(),
+                    ],
+                ]),
+            ])->save();
+
             $this->recomputeTotals($visit);
         });
 
@@ -1480,11 +1542,21 @@ class VisitConsoleController extends Controller
                 if (! $pkg) {
                     continue;
                 }
+                // Two discounts can apply to a package line and they layer in a
+                // fixed order: the package's own offer price comes off the main
+                // price first, then any time-bound promotion is calculated
+                // against that already-reduced price (never against the main
+                // price, which would give the deal away twice).
                 $unit = (float) ($vp->unit_price_snapshot ?? 0);
-                $perUnit = $promo->discountForPackage($pkg, $unit, $branchId);
+                $offerPerUnit = min((float) $pkg->savings_amount, $unit);
+                $promoPerUnit = $promo->discountForPackage($pkg, max(0, $unit - $offerPerUnit), $branchId);
+                $perUnit = $offerPerUnit + $promoPerUnit;
+
                 $disc = round(min($perUnit * (float) $vp->qty, (float) $vp->line_total), 3);
-                if ((float) ($vp->discount_amount ?? 0) !== $disc || ($disc > 0 && $vp->discount_source !== 'promo')) {
-                    $vp->forceFill(['discount_amount' => $disc, 'discount_source' => $disc > 0 ? 'promo' : null])->save();
+                $source = $promoPerUnit > 0 ? 'promo' : ($offerPerUnit > 0 ? 'offer' : null);
+
+                if ((float) ($vp->discount_amount ?? 0) !== $disc || ($disc > 0 && $vp->discount_source !== $source)) {
+                    $vp->forceFill(['discount_amount' => $disc, 'discount_source' => $source])->save();
                 }
             }
         } catch (\Throwable $e) {
@@ -1500,6 +1572,7 @@ class VisitConsoleController extends Controller
         try {
             if (config('clinic.visit_financials_enabled', false)) {
                 app(\App\Services\Clinic\VisitCostingService::class)->compute($visit, (int) (auth()->id() ?? 0));
+
                 return;
             }
         } catch (\Throwable $e) {
@@ -1537,8 +1610,11 @@ class VisitConsoleController extends Controller
                     throw new \RuntimeException('Patient has not been checked in yet.');
                 }
 
-                // Already accepted by someone else (race-condition guard).
-                if ($fresh->accepted_at && (int) $fresh->accepted_by_user_id !== (int) (auth()->id() ?? 0)) {
+                // Already accepted by someone else (race-condition guard). Keyed
+                // on accepted_by_user_id, not accepted_at: a stale accepted_at
+                // with no owner (a visit pushed back to the queue, or seeded
+                // data) is not a claim by another doctor and must not block.
+                if ($fresh->accepted_by_user_id && (int) $fresh->accepted_by_user_id !== (int) (auth()->id() ?? 0)) {
                     throw new \RuntimeException('This visit has already been accepted by another doctor.');
                 }
 
@@ -1565,7 +1641,9 @@ class VisitConsoleController extends Controller
                 $now = now();
                 $fresh->status = Visit::STATUS_IN_PROGRESS;
                 $fresh->service_started_at = $fresh->service_started_at ?? $now;
-                $fresh->accepted_at = $fresh->accepted_at ?? $now;
+                // An unowned accepted_at is stale — this acceptance is the real
+                // one, so stamp both together and keep them consistent.
+                $fresh->accepted_at = $fresh->accepted_by_user_id ? $fresh->accepted_at : $now;
                 $fresh->accepted_by_user_id = $fresh->accepted_by_user_id ?? auth()->id();
                 $fresh->updated_by_user_id = auth()->id();
                 $fresh->save();
@@ -1782,10 +1860,14 @@ class VisitConsoleController extends Controller
             ->where('patient_id', $visit->patient_id)
             ->exists();
 
-        if (! $hasActive) return false;
+        if (! $hasActive) {
+            return false;
+        }
 
         // Already explicitly skipped — let it through.
-        if (! empty($visit->insurance_claim_skipped_at)) return false;
+        if (! empty($visit->insurance_claim_skipped_at)) {
+            return false;
+        }
 
         // Already filed a (non-void) claim — let it through.
         $hasClaim = \App\Models\Insurance\InsuranceClaim::query()
@@ -1863,6 +1945,7 @@ class VisitConsoleController extends Controller
                 ->createClaimFromVisit($visit, $policy, $actor);
         } catch (\Throwable $e) {
             report($e);
+
             return response()->json(['ok' => false, 'error' => $e->getMessage()], 422);
         }
 
@@ -1938,6 +2021,7 @@ class VisitConsoleController extends Controller
                 );
         } catch (\Throwable $e) {
             report($e);
+
             return response()->json(['ok' => false, 'error' => $e->getMessage()], 422);
         }
 
@@ -1972,6 +2056,7 @@ class VisitConsoleController extends Controller
                 ->fulfill($req, (int) (auth()->id() ?? 0), $request->input('notes'), $resume);
         } catch (\Throwable $e) {
             report($e);
+
             return response()->json(['ok' => false, 'error' => $e->getMessage()], 422);
         }
 
@@ -2011,42 +2096,27 @@ class VisitConsoleController extends Controller
             ], 422);
         }
 
-        // Live balance recompute (don't trust snapshot columns). MUST mirror
-        // transformVisit()'s net SQL exactly — lines net of each per-line
-        // discount, then the visit-level discount, then payments. Using gross
-        // line totals here would reject a discharge the UI shows as allowed
-        // whenever a package/item carries a line discount or promo.
-        $feesSum     = (float) \App\Models\VisitCharge::query()->where('visit_id', $visit->id)
-            ->selectRaw('COALESCE(SUM(CASE WHEN line_total - discount_amount > 0 THEN line_total - discount_amount ELSE 0 END), 0) as t')->value('t');
-        $packagesSum = (float) \App\Models\VisitPackage::query()->where('visit_id', $visit->id)
-            ->selectRaw('COALESCE(SUM(CASE WHEN line_total - discount_amount > 0 THEN line_total - discount_amount ELSE 0 END), 0) as t')->value('t');
-        $itemsSum    = (float) \App\Models\VisitItem::query()->where('visit_id', $visit->id)
-            ->selectRaw('COALESCE(SUM(CASE WHEN line_price_total - discount_amount > 0 THEN line_price_total - discount_amount ELSE 0 END), 0) as t')->value('t');
-        $discount    = (float) ($visit->discount_total ?? 0);
-        $paid        = (float) \App\Models\VisitPayment::query()
-            ->where('visit_id', $visit->id)
-            ->where('status', 'paid')
-            ->sum('amount');
+        // Live balance recompute (don't trust snapshot columns), through the
+        // same service the payment endpoints cap against — lines net of each
+        // per-line discount, then the visit-level discount, then payments.
+        // Using gross line totals here would reject a discharge the UI shows as
+        // allowed whenever a package/item carries a line discount or promo.
+        $balanceSvc = app(\App\Services\Clinic\VisitBalanceService::class);
+        $balance = round($balanceSvc->billed($visit) - $balanceSvc->paid($visit), 3);
 
-        $balance = round(($feesSum + $packagesSum + $itemsSum - $discount) - $paid, 3);
-
-        if ($balance > 0.005) {
+        if ($balance > \App\Services\Clinic\VisitBalanceService::TOLERANCE) {
             return response()->json([
                 'ok' => false,
                 'error' => 'Cannot discharge — outstanding balance: '.number_format($balance, 3).' KWD. Collect payment first.',
             ], 422);
         }
 
-        // Also require that consultation was actually paid (defensive: matches
-        // Filament's hasConsultationPaid guard).
-        $consultPaid = (float) \App\Models\VisitPayment::query()
-            ->where('visit_id', $visit->id)
-            ->where('kind', \App\Models\VisitPayment::KIND_CONSULTATION)
-            ->where('status', 'paid')
-            ->sum('amount');
-        if ($consultPaid <= 0) {
-            return response()->json(['ok' => false, 'error' => 'Consultation fee must be paid before discharge.'], 422);
-        }
+        // Deliberately no "a payment tagged kind=consultation must exist" gate
+        // here. `kind` is a revenue-posting label the cashier picks, not proof
+        // of collection: settling the whole bill under 'other' (or 'services')
+        // used to leave this check at zero and refuse a discharge on a visit
+        // that owed nothing. The zero-balance check above already guarantees
+        // every charge on the visit — consultation included — has been paid.
 
         try {
             \Illuminate\Support\Facades\DB::transaction(function () use ($visit) {
@@ -2080,6 +2150,7 @@ class VisitConsoleController extends Controller
             });
         } catch (\Throwable $e) {
             report($e);
+
             return response()->json(['ok' => false, 'error' => $e->getMessage()], 422);
         }
 
@@ -2196,7 +2267,10 @@ class VisitConsoleController extends Controller
     {
         $age = null;
         if ($v->patient && $v->patient->dob) {
-            try { $age = Carbon::parse($v->patient->dob)->age; } catch (\Throwable) {}
+            try {
+                $age = Carbon::parse($v->patient->dob)->age;
+            } catch (\Throwable) {
+            }
         }
 
         $feeAmount = (float) ($v->doctor->consultation_fee ?? 0);
@@ -2243,9 +2317,15 @@ class VisitConsoleController extends Controller
             // rows have no stock concept, so the UI shows nothing for them.
             $state = null;
             if ($isStockable) {
-                if ($shortage > 0)        $state = 'out';      // need to request
-                elseif ($onHand <= $needed) $state = 'low';    // exactly covered or tight
-                else                       $state = 'in_stock';
+                if ($shortage > 0) {
+                    $state = 'out';
+                }      // need to request
+                elseif ($onHand <= $needed) {
+                    $state = 'low';
+                }    // exactly covered or tight
+                else {
+                    $state = 'in_stock';
+                }
             }
 
             if ($isStockable && $shortage > 0) {
@@ -2449,6 +2529,10 @@ class VisitConsoleController extends Controller
             'packages' => $packages,
             'payments' => $payments,
 
+            // Offer the patient selected on the public website when booking.
+            // Null when there was none, or once it's already on the visit.
+            'requested_package' => $this->requestedPackagePayload($v),
+
             // Filament fallbacks for actions we haven't ported yet.
             'edit_url' => '/admin/visits/'.$v->id.'/edit',
 
@@ -2511,9 +2595,57 @@ class VisitConsoleController extends Controller
         ];
     }
 
+    /**
+     * The offer the patient picked on the public website when they booked, so
+     * the doctor sees it the moment they open the console instead of hunting
+     * for it. The request lives on the BOOKING, which would otherwise be lost
+     * once reception converts it into a visit.
+     *
+     * Returns null once the package is actually on the visit — an honoured
+     * request is noise from that point on. Same rule (and same payload shape)
+     * as WaitingPatientsController::formatRequestedPackage() /
+     * requestedPackageByVisit(); the two are duplicated on purpose so neither
+     * controller depends on the other. Keep them in sync if either changes.
+     *
+     * No extra queries: `booking.requestedPackage` and `visitPackages` are both
+     * eager-loaded by show()/showJson().
+     */
+    protected function requestedPackagePayload(Visit $v): ?array
+    {
+        $booking = $v->relationLoaded('booking') ? $v->booking : null;
+        $p = $booking?->relationLoaded('requestedPackage') ? $booking->requestedPackage : null;
+        if (! $p) {
+            return null;
+        }
+
+        // Already applied to this visit → the banner has served its purpose.
+        $alreadyOnVisit = $v->visitPackages
+            ->contains(fn ($vp) => (int) $vp->clinic_package_id === (int) $p->id);
+        if ($alreadyOnVisit) {
+            return null;
+        }
+
+        return [
+            'id' => $p->id,
+            'name' => $p->localized_name,
+            'price' => round((float) $p->effective_price, 3),
+            'has_discount' => (bool) $p->has_discount,
+            // Offers are branch-scoped: a patient can pick an offer published by
+            // one branch and then be seen at another. Warn rather than silently
+            // sell the wrong thing — but only when the package is pinned to a
+            // branch (a partner-wide package with a null branch_id is valid
+            // everywhere).
+            'branch_mismatch' => $p->branch_id !== null
+                && $v->branch_id !== null
+                && (int) $p->branch_id !== (int) $v->branch_id,
+        ];
+    }
+
     protected function recentVisitsFor(Visit $visit): array
     {
-        if (! $visit->patient_id) return [];
+        if (! $visit->patient_id) {
+            return [];
+        }
 
         return Visit::query()
             ->where('patient_id', $visit->patient_id)

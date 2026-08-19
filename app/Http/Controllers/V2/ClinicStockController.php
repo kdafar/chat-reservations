@@ -49,13 +49,22 @@ class ClinicStockController extends Controller
         if ($q !== '') {
             $query->whereHas('clinicItem', fn ($i) => $i->where('name->en', 'like', "%{$q}%")->orWhere('name->ar', 'like', "%{$q}%"));
         }
-        if ($low) { $query->whereNotNull('min_qty_threshold_base')->whereColumn('qty_on_hand_base', '<=', 'min_qty_threshold_base'); }
+        if ($low) {
+            $query->whereNotNull('min_qty_threshold_base')->whereColumn('qty_on_hand_base', '<=', 'min_qty_threshold_base');
+        }
 
         return \Maatwebsite\Excel\Facades\Excel::download(
             new \App\Exports\V2\StyledQueryExport(
                 $query->orderBy('id'),
                 ['ID', 'Item', 'Branch', 'On hand', 'Min threshold', 'Bin', 'Low stock'],
-                fn ($s) => [$s->id, $s->clinicItem?->localized_name, $s->branch?->localized_name, $s->qty_on_hand_base, $s->min_qty_threshold_base, $s->bin_location, $isLow ? 'Yes' : 'No'],
+                fn ($s) => [
+                    $s->id, $s->clinicItem?->localized_name, $s->branch?->localized_name,
+                    $s->qty_on_hand_base, $s->min_qty_threshold_base, $s->bin_location,
+                    // Same rule the list uses — an undefined $isLow used to make
+                    // this column read "No" on every row, including low ones.
+                    $s->min_qty_threshold_base !== null
+                        && (float) $s->qty_on_hand_base <= (float) $s->min_qty_threshold_base ? 'Yes' : 'No',
+                ],
                 'Clinic Stock',
                 app()->getLocale() === 'ar',
             ),
@@ -63,7 +72,7 @@ class ClinicStockController extends Controller
         );
     }
 
-        public function index(Request $request): Response
+    public function index(Request $request): Response
     {
         $this->authorizeAccess($request);
 
@@ -104,6 +113,7 @@ class ClinicStockController extends Controller
             $s->setAttribute('branch_name', $s->branch?->localized_name);
             $s->setAttribute('is_low', $s->min_qty_threshold_base !== null
                 && (float) $s->qty_on_hand_base <= (float) $s->min_qty_threshold_base);
+
             return $s;
         });
 
@@ -125,7 +135,9 @@ class ClinicStockController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $this->authorizeAccess($request);
-        if (! $request->user()->can('create_clinic_item_stocks')) abort(403);
+        if (! $request->user()->can('create_clinic_item_stocks')) {
+            abort(403);
+        }
 
         $data = $request->validate([
             'branch_id' => ['required', 'integer', 'exists:branches,id'],
@@ -143,13 +155,16 @@ class ClinicStockController extends Controller
         }
 
         ClinicItemStock::create($data + ['qty_on_hand_base' => 0]);
+
         return back()->with('flash', ['type' => 'success', 'message' => 'Stock record created.']);
     }
 
     public function update(Request $request, ClinicItemStock $stock): RedirectResponse
     {
         $this->authorizeAccess($request);
-        if (! $this->canEdit($request)) abort(403);
+        if (! $this->canEdit($request)) {
+            abort(403);
+        }
 
         // Only the threshold + bin are editable; qty moves via stock movements.
         $data = $request->validate([
@@ -157,14 +172,18 @@ class ClinicStockController extends Controller
             'bin_location' => ['nullable', 'string', 'max:191'],
         ]);
         $stock->update($data);
+
         return back()->with('flash', ['type' => 'success', 'message' => 'Stock record updated.']);
     }
 
     public function destroy(Request $request, ClinicItemStock $stock): RedirectResponse
     {
         $this->authorizeAccess($request);
-        if (! $request->user()->can('delete_clinic_item_stocks')) abort(403);
+        if (! $request->user()->can('delete_clinic_item_stocks')) {
+            abort(403);
+        }
         $stock->delete();
+
         return back()->with('flash', ['type' => 'success', 'message' => 'Stock record removed.']);
     }
 
@@ -172,7 +191,9 @@ class ClinicStockController extends Controller
     public function receive(Request $request): RedirectResponse
     {
         $this->authorizeAccess($request);
-        if (! $this->canEdit($request)) abort(403);
+        if (! $this->canEdit($request)) {
+            abort(403);
+        }
 
         $data = $request->validate([
             'branch_id' => ['required', 'integer', 'exists:branches,id'],

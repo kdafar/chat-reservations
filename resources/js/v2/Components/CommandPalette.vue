@@ -6,6 +6,7 @@ import Icon from './Icon.vue'
 const open = defineModel('open', { type: Boolean, default: false })
 
 const page = usePage()
+const legacyAdminEnabled = computed(() => page.props.app?.legacy_admin_enabled === true)
 const locale = computed(() => page.props.locale ?? 'en')
 const isRtl = computed(() => locale.value === 'ar')
 
@@ -59,7 +60,7 @@ const quickActions = computed(() => {
         { type: 'action', icon: 'users-round',   title: isRtl.value ? 'قائمة الانتظار'   : 'Waiting patients',    url: '/admin/v2/waiting-patients', show: canQueue },
         { type: 'action', icon: 'log-in',        title: isRtl.value ? 'تسجيل وصول مريض' : 'Check-in patient',     url: '/admin/v2/checkin',          show: frontDesk },
         { type: 'action', icon: 'calendar-plus', title: isRtl.value ? 'حجز جديد'        : 'New booking',          url: '/admin/v2/bookings/new',     show: frontDesk },
-        { type: 'action', icon: 'layout-grid',   title: isRtl.value ? 'الإدارة الكلاسيكية' : 'Open classic admin',  url: '/admin',                     show: true },
+        { type: 'action', icon: 'layout-grid',   title: isRtl.value ? 'الإدارة الكلاسيكية' : 'Open classic admin',  url: '/admin',                     show: legacyAdminEnabled.value },
     ].filter(a => a.show)
 })
 

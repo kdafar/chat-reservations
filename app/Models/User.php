@@ -128,7 +128,7 @@ class User extends Authenticatable implements MustVerifyEmailContract
 
     public function branchLinks(): BelongsToMany
     {
-        return $this->belongsToMany(Branch::class, 'branch_user');
+        return $this->belongsToMany(Branch::class, 'branch_user')->withTimestamps();
     }
 
     public function doctorProfile(): HasOne

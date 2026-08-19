@@ -88,7 +88,11 @@ class VisitPackageService
                     continue;
                 }
 
+                // Snapshot the MAIN price on the line and carry the offer
+                // saving in discount_amount, so the patient's bill shows what
+                // the package normally costs and what they saved on it.
                 $unit = (float) ($pkg->default_price ?? 0);
+                $saveUnit = (float) $pkg->savings_amount;
                 $lineTotal = $qty * $unit;
 
                 // Unique(visit_id, clinic_package_id) => update existing
@@ -107,6 +111,8 @@ class VisitPackageService
                     $vp->qty = $qty;
                     $vp->unit_price_snapshot = $unit;
                     $vp->line_total = $lineTotal;
+                    $vp->discount_amount = round($qty * $saveUnit, 3);
+                    $vp->discount_source = $saveUnit > 0 ? 'offer' : null;
                     $vp->save();
                 } else {
                     // Conservative behavior: increment qty rather than overwrite
@@ -121,6 +127,7 @@ class VisitPackageService
 
                     $vp->qty = $newQty;
                     $vp->line_total = $newQty * $existingUnit;
+                    $vp->discount_amount = round($newQty * $this->savingPerUnit($vp, $saveUnit), 3);
 
                     if ($performedByUserId > 0 && ! $vp->added_by_user_id) {
                         $vp->added_by_user_id = $performedByUserId;
@@ -148,6 +155,24 @@ class VisitPackageService
                 true
             );
         });
+    }
+
+    /**
+     * Per-unit saving to keep on an existing visit_packages row when its qty
+     * grows. Mirrors how the unit price snapshot is held stable: whatever
+     * saving the line was booked at (staff may have edited it) wins, and the
+     * package's current saving is only used for a line that has none yet.
+     */
+    protected function savingPerUnit(VisitPackage $vp, float $packageSaveUnit): float
+    {
+        $qty = (float) ($vp->getOriginal('qty') ?? 0);
+        $booked = (float) ($vp->getOriginal('discount_amount') ?? 0);
+
+        if ($qty > 0 && $booked > 0) {
+            return $booked / $qty;
+        }
+
+        return $packageSaveUnit;
     }
 
     protected function normalizeLines(array $lines): Collection
@@ -277,6 +302,7 @@ class VisitPackageService
                 }
 
                 $unit = (float) ($pkg->default_price ?? 0);
+                $saveUnit = (float) $pkg->savings_amount;
 
                 $vp = VisitPackage::query()->lockForUpdate()
                     ->where('visit_id', $freshVisit->id)
@@ -292,6 +318,8 @@ class VisitPackageService
                     $vp->qty = $qty;
                     $vp->unit_price_snapshot = $unit;
                     $vp->line_total = $qty * $unit;
+                    $vp->discount_amount = round($qty * $saveUnit, 3);
+                    $vp->discount_source = $saveUnit > 0 ? 'offer' : null;
                     $vp->save();
                 } else {
                     $newQty = ((float) $vp->qty) + $qty;
@@ -302,6 +330,7 @@ class VisitPackageService
                     }
                     $vp->qty = $newQty;
                     $vp->line_total = $newQty * $existingUnit;
+                    $vp->discount_amount = round($newQty * $this->savingPerUnit($vp, $saveUnit), 3);
                     if ($performedByUserId > 0 && ! $vp->added_by_user_id) {
                         $vp->added_by_user_id = $performedByUserId;
                     }

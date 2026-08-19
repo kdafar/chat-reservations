@@ -94,7 +94,7 @@ function sendTpl() {
         <aside class="wa-list">
             <div class="wa-list-head">
                 <div class="wa-me">
-                    <div class="wa-avatar" style="background:linear-gradient(135deg,#34d399,#059669);">{{ initials(pageProps.props.auth?.user?.name) }}</div>
+                    <div class="wa-avatar" style="background:var(--primary-soft); color:var(--primary);">{{ initials(pageProps.props.auth?.user?.name) }}</div>
                     <span class="wa-me-label">{{ t.messages }}</span>
                 </div>
                 <div style="display:flex; gap:2px;">

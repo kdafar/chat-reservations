@@ -42,18 +42,21 @@ const initials = (s) => (s || '?').slice(0, 2).toUpperCase()
     <Head :title="t.title" />
     <div style="padding:24px; max-width:1180px; margin:0 auto;">
         <!-- hero -->
-        <div style="border-radius:16px; padding:22px 24px; margin-bottom:18px; background:linear-gradient(120deg,#075e54,#128c7e 55%,#25D366); color:#fff; display:flex; justify-content:space-between; align-items:center; gap:16px; flex-wrap:wrap; box-shadow:0 6px 20px rgba(18,140,126,.25);">
+        <div style="border-radius:12px; padding:20px 22px; margin-bottom:18px; background:var(--bg-elev); border:1px solid var(--line); display:flex; justify-content:space-between; align-items:center; gap:16px; flex-wrap:wrap;">
             <div>
-                <div style="display:flex; align-items:center; gap:8px; font-size:12px; opacity:.9;">
-                    <span style="display:inline-flex; align-items:center; gap:5px; background:rgba(255,255,255,.18); padding:3px 10px; border-radius:20px;">
-                        <span :style="{ height:'7px', width:'7px', borderRadius:'50%', background: configured ? '#4ade80' : '#fca5a5' }"></span>
+                <div style="display:flex; align-items:center; gap:8px; font-size:12px;">
+                    <span :style="{ display:'inline-flex', alignItems:'center', gap:'5px', padding:'3px 10px', borderRadius:'20px', fontWeight:500,
+                                    background: configured ? 'var(--success-soft)' : 'var(--bg-sunken)',
+                                    color: configured ? 'var(--success)' : 'var(--fg-muted)',
+                                    border: '1px solid ' + (configured ? 'color-mix(in srgb, var(--success) 30%, transparent)' : 'var(--line)') }">
+                        <span :style="{ height:'6px', width:'6px', borderRadius:'50%', background: configured ? 'var(--success)' : 'var(--fg-faint)' }"></span>
                         {{ configured ? t.live : 'offline' }}
                     </span>
                 </div>
-                <h1 style="margin:8px 0 0; font-size:24px; font-weight:700;">{{ t.title }}</h1>
-                <p style="margin:4px 0 0; font-size:13px; opacity:.85;">{{ t.desc }}</p>
+                <h1 style="margin:8px 0 0; font-size:20px; font-weight:600; color:var(--fg);">{{ t.title }}</h1>
+                <p style="margin:4px 0 0; font-size:13px; color:var(--fg-muted);">{{ t.desc }}</p>
             </div>
-            <a :href="route('v2.wa-module.settings')" class="btn" style="background:rgba(255,255,255,.18); color:#fff; border:0;"><Icon name="settings" :size="15" /> {{ t.open }}</a>
+            <a :href="route('v2.wa-module.settings')" class="btn btn-outline"><Icon name="settings" :size="15" /> {{ t.open }}</a>
         </div>
 
         <div v-if="!configured" class="card" style="padding:12px 14px; margin-bottom:16px; display:flex; gap:10px; align-items:center; border-inline-start:3px solid #f59e0b;">

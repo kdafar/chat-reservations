@@ -5,6 +5,7 @@ import Popover from './Popover.vue'
 import Icon from './Icon.vue'
 
 const page = usePage()
+const legacyAdminEnabled = computed(() => page.props.app?.legacy_admin_enabled === true)
 const user = computed(() => page.props.auth?.user ?? null)
 const locale = computed(() => page.props.locale ?? 'en')
 
@@ -39,13 +40,42 @@ const initials = computed(() => {
     return n.split(/\s+/).filter(Boolean).slice(0, 2).map((s) => s[0]).join('').toUpperCase()
 })
 
+const branchList = computed(() => {
+    const u = user.value
+    return Array.isArray(u?.branches) ? u.branches : []
+})
+
+/**
+ * Compact label for the topbar.
+ *
+ * A group-level user can be attached to a dozen branches, and joining every
+ * name ran the header off the screen. Past two branches the count says the same
+ * thing in a fixed width; the names themselves stay available in the dropdown
+ * and on hover.
+ */
 const branchLabel = computed(() => {
     const u = user.value
     if (!u) return ''
-    if (u.is_admin) return locale.value === 'ar' ? 'جميع الفروع' : 'All branches'
-    // Prefer the full branch list shared from the server; fall back to the
-    // doctor's single branch for doctor accounts.
-    const list = Array.isArray(u.branches) ? u.branches : []
+    const ar = locale.value === 'ar'
+    if (u.is_global_admin) return ar ? 'جميع الفروع' : 'All branches'
+
+    const list = branchList.value
+    if (list.length > 2) {
+        const n = list.length
+        return ar ? (n <= 10 ? `${n} فروع` : `${n} فرعًا`) : `${n} branches`
+    }
+    if (list.length) return list.map((b) => b.name).join(' · ')
+
+    // Doctor accounts carry a single branch rather than the list.
+    return u.doctor_branch_name || (u.doctor_branch_id ? `#${u.doctor_branch_id}` : '')
+})
+
+/** Every branch name — for the dropdown row and its hover tooltip. */
+const branchLabelFull = computed(() => {
+    const u = user.value
+    if (!u) return ''
+    if (u.is_global_admin) return locale.value === 'ar' ? 'جميع الفروع' : 'All branches'
+    const list = branchList.value
     if (list.length) return list.map((b) => b.name).join(' · ')
     return u.doctor_branch_name || (u.doctor_branch_id ? `#${u.doctor_branch_id}` : '')
 })
@@ -104,7 +134,7 @@ function logout() {
                 >{{ initials }}</span>
                 <span class="um-id-text" style="display: flex; flex-direction: column; align-items: start; line-height: 1.1; text-align: start;">
                     <span style="font-size: 12px; font-weight: 500; color: var(--fg);">{{ user?.name }}</span>
-                    <span style="font-size: 10.5px; color: var(--fg-subtle);">{{ branchLabel }}</span>
+                    <span class="um-branch" :title="branchLabelFull" style="font-size: 10.5px; color: var(--fg-subtle);">{{ branchLabel }}</span>
                 </span>
                 <Icon name="chevron-down" :size="13" class="um-id-chev" style="color: var(--fg-faint);" />
             </button>
@@ -147,8 +177,8 @@ function logout() {
                     <div style="font-size: 10.5px; color: var(--fg-subtle); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600;">
                         {{ locale === 'ar' ? 'الفرع' : 'Branch' }}
                     </div>
-                    <div style="font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                        {{ branchLabel || '—' }}
+                    <div class="um-branch-full" :title="branchLabelFull">
+                        {{ branchLabelFull || '—' }}
                     </div>
                 </div>
             </div>
@@ -215,6 +245,7 @@ function logout() {
                     </a>
                 </template>
                 <a
+                    v-if="legacyAdminEnabled"
                     href="/admin"
                     class="menu-item"
                     style="text-decoration: none;"
@@ -242,6 +273,21 @@ function logout() {
 /* Language + theme live in the header on desktop; on phones they move here. */
 @media (max-width: 640px) {
     .um-mobile-prefs { display: flex !important; }
+}
+
+/* The trigger must never grow with its contents — a long clinic or branch name
+   would otherwise push the topbar sideways and run off the screen. */
+.um-id-text { min-width: 0; max-width: 180px; }
+.um-id-text > span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Dropdown has room to breathe: wrap the full list over a few lines instead of
+   ellipsing it to a useless fragment, but cap the height so twelve branches
+   can't push the logout button off the panel. */
+.um-branch-full {
+    font-size: 13px; font-weight: 500; line-height: 1.45;
+    /* Exactly three lines (3 × 1.45em) so the scroll cuts between rows rather
+       than through the middle of one, which reads as a rendering fault. */
+    max-height: 4.35em; overflow-y: auto; overflow-wrap: anywhere;
 }
 .menu-item {
     display: flex;

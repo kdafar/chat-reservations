@@ -91,7 +91,8 @@ class VisitsController extends Controller
         return Inertia::render('Visits/Index', [
             'filters' => $filters,
             'page' => $page,
-            'doctors' => Doctor::query()->orderBy('name')->get(['id', 'name'])
+            // Scoped to the chosen branch so the picker matches the branch filter.
+            'doctors' => Doctor::query()->atBranch($filters['branch_id'])->orderBy('name')->get(['id', 'name'])
                 ->map(fn ($d) => ['id' => $d->id, 'name' => $d->name ?? ('#'.$d->id)])->all(),
             'branches' => Branch::forUser($request->user())->get(['id', 'name'])
                 ->map(fn ($b) => ['id' => $b->id, 'name' => $b->localized_name ?? ('#'.$b->id)])->all(),

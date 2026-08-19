@@ -39,7 +39,7 @@ class PatientFile extends Model
     ];
 
     protected $fillable = [
-        'patient_id', 'visit_id', 'branch_id',
+        'patient_id', 'visit_id', 'lab_order_id', 'branch_id',
         'file_path', 'original_filename', 'mime_type', 'size_bytes',
         'category', 'uploaded_by_user_id', 'notes', 'meta',
     ];
@@ -57,6 +57,15 @@ class PatientFile extends Model
     public function visit(): BelongsTo
     {
         return $this->belongsTo(Visit::class);
+    }
+
+    /**
+     * The lab order this file belongs to, when it is a lab report (the scan or
+     * analyser printout the technician attached, or a report we generated).
+     */
+    public function labOrder(): BelongsTo
+    {
+        return $this->belongsTo(\App\Models\Lab\LabOrder::class, 'lab_order_id');
     }
 
     public function uploadedBy(): BelongsTo

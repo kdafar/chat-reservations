@@ -256,8 +256,17 @@ class JournalEntry extends Model
     {
         $d = $entryDate instanceof Carbon ? $entryDate->copy() : Carbon::parse($entryDate);
         $prefix = 'JE-'.$d->format('Ymd');
-        $count = self::where('code', 'like', $prefix.'-%')->count() + 1;
 
-        return $prefix.'-'.str_pad((string) $count, 5, '0', STR_PAD_LEFT);
+        // Continue from the highest sequence already issued for the day rather
+        // than from a row count. A count only equals the last sequence while the
+        // day's codes are gapless — delete or purge any entry and the count
+        // rewinds onto a code that still exists, so the next insert dies on the
+        // unique key.
+        $last = (int) DB::table('journal_entries')
+            ->where('code', 'like', $prefix.'-%')
+            ->selectRaw('MAX(CAST(SUBSTRING(code, ?) AS UNSIGNED)) as seq', [strlen($prefix) + 2])
+            ->value('seq');
+
+        return $prefix.'-'.str_pad((string) ($last + 1), 5, '0', STR_PAD_LEFT);
     }
 }

@@ -22,14 +22,38 @@ use Inertia\Response;
  */
 class DashboardController extends Controller
 {
+    /**
+     * Where to send a user who cannot open the dashboard.
+     *
+     * This used to hardcode the waiting queue, which assumed every non-reporting
+     * role could see it. Lab staff cannot (WaitingPatientsController allows only
+     * admin / reception / doctor / nurse), so they logged in and landed straight
+     * on a 403. Pick the first entry point the user is actually allowed to open
+     * instead; the system guide is the last resort because it is open to all.
+     */
+    protected function landingForCurrentUser(): string
+    {
+        $u = auth()->user();
+
+        $maySeeQueue = $u && (
+            $u->hasRole(['admin', 'super_admin', 'clinic_admin', 'clinic_reception', 'clinic_doctor', 'clinic_nurse'])
+        );
+
+        return match (true) {
+            $maySeeQueue => 'v2.waiting-patients',
+            (bool) $u?->can('view_any_lab_orders') => 'v2.lab-orders.index',
+            (bool) $u?->can('view_any_visits') => 'v2.visits.index',
+            default => 'v2.guide',
+        };
+    }
+
     public function index(): Response|RedirectResponse
     {
         // The dashboard surfaces clinic-wide revenue + utilization, so it is
-        // restricted to management/reporting roles. Other staff who land here
-        // (e.g. via the "switch to v2" button) are sent to the live queue
-        // instead of hitting a 403 on their entry point.
+        // restricted to management/reporting roles. Everyone else is forwarded
+        // to a page they can actually open — see landingForCurrentUser().
         if (! auth()->user()?->can('view_clinic_reports')) {
-            return redirect()->route('v2.waiting-patients');
+            return redirect()->route($this->landingForCurrentUser());
         }
 
         $tz = config('app.timezone', 'Asia/Kuwait');

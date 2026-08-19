@@ -25,7 +25,9 @@ const branches = computed(() => {
     const b = user.value?.branches
     return Array.isArray(b) ? b : []
 })
-const isAdmin = computed(() => !!user.value?.is_admin)
+// Only a true GLOBAL admin is "All branches"; a clinic_admin (branch manager)
+// is scoped to their branch list, so fall through to the branch name(s).
+const isAdmin = computed(() => !!user.value?.is_global_admin)
 
 const t = computed(() => locale.value === 'ar'
     ? { all: 'جميع الفروع', none: 'لا يوجد فرع', branches: 'الفروع', more: (n) => `+${n}`, full: 'وصول كامل لكل الفروع' }

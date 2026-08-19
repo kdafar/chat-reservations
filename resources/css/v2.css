@@ -398,6 +398,11 @@ input[type="radio"]:disabled { opacity: 0.5; cursor: not-allowed; }
     display: inline-flex; align-items: center; gap: 6px;
     transition: background 0.15s, color 0.15s;
     height: 100%;
+    /* .seg is a fixed 36px, so a label allowed to wrap gets clipped into
+       stacked fragments rather than simply running long. Names in particular
+       ("Dr. Al-Fadhli") broke across three lines. */
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 .seg button:hover { color: var(--fg); }
 .seg button.is-active {

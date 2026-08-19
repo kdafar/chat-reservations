@@ -75,28 +75,49 @@ function buildOption() {
         bgElev: cssVar('--bg-elev', '#ffffff'),
     }
     const L = props.labels
+    // Validated categorical palette (dataviz skill): harmonious + colour-blind
+    // safe, selected per theme (not an auto-flip). Adjacent slots clear the CVD
+    // and normal-vision floors in both light and dark. Kept identical to the
+    // reference instance so it stays validated.
+    const isDark = document.documentElement.classList.contains('dark')
+    const palette = isDark
+        ? ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#008300', '#9085e9', '#e66767']
+        : ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7', '#e34948']
     const base = {
-        color: [c.primary, c.success, c.info, c.violet, c.warning, c.destructive],
+        color: palette,
         textStyle: { fontFamily: 'inherit', color: c.fgFaint },
         grid: { left: 6, right: 8, top: props.toolbox ? 30 : 14, bottom: 2, containLabel: true },
         tooltip: {
             backgroundColor: c.bgElev, borderColor: c.line, borderWidth: 1,
             textStyle: { color: c.fg, fontSize: 12 }, confine: true,
-            axisPointer: { lineStyle: { color: c.line }, crossStyle: { color: c.line } },
+            // Kill the tooltip's follow-animation + axis-pointer animation — the
+            // main source of "flicker" as the cursor moves across the chart.
+            transitionDuration: 0,
+            axisPointer: {
+                animation: false,
+                lineStyle: { color: c.line }, crossStyle: { color: c.line },
+            },
         },
     }
     if (props.toolbox) {
+        // Zoom + line/bar switch only make sense on cartesian charts (x/y axes).
+        // On a pie/donut they do nothing (the mark stays a circle), so omit them
+        // there and keep just data-view / restore / save.
+        const isCartesian = !!(props.option.xAxis || props.option.yAxis)
+        const feature = {
+            dataView: { readOnly: true, title: L.dataView, lang: [L.dataView, L.close, L.refresh], backgroundColor: c.bgElev, textColor: c.fg },
+            restore: { title: L.restore },
+            saveAsImage: { title: L.save, pixelRatio: 2, backgroundColor: c.bgElev },
+        }
+        if (isCartesian) {
+            feature.dataZoom = { yAxisIndex: 'none', title: { zoom: L.zoom, back: L.back } }
+            feature.magicType = { type: ['line', 'bar'], title: { line: L.line, bar: L.bar } }
+        }
         base.toolbox = {
             right: 6, top: 0, itemSize: 14, itemGap: 9,
             iconStyle: { borderColor: c.fgFaint },
             emphasis: { iconStyle: { borderColor: c.primary } },
-            feature: {
-                dataZoom: { yAxisIndex: 'none', title: { zoom: L.zoom, back: L.back } },
-                magicType: { type: ['line', 'bar'], title: { line: L.line, bar: L.bar } },
-                dataView: { readOnly: true, title: L.dataView, lang: [L.dataView, L.close, L.refresh], backgroundColor: c.bgElev, textColor: c.fg },
-                restore: { title: L.restore },
-                saveAsImage: { title: L.save, pixelRatio: 2, backgroundColor: c.bgElev },
-            },
+            feature,
         }
     }
     if (props.option.legend) {
@@ -120,22 +141,50 @@ function buildOption() {
 
 function render() {
     if (!chart) return
-    chart.setOption(buildOption(), { notMerge: true })
+    chart.setOption(buildOption(), { notMerge: true, lazyUpdate: true })
 }
+
+let lastW = 0
+let lastH = 0
+let rafId = null
 
 onMounted(() => {
     chart = echarts.init(el.value, null, { renderer: 'canvas' })
     render()
-    ro = new ResizeObserver(() => chart && chart.resize())
+    lastW = el.value.clientWidth
+    lastH = el.value.clientHeight
+
+    // Resize only on a real size change, coalesced to one frame. A bare
+    // resize()-on-every-callback re-renders the canvas mid-hover → flicker.
+    ro = new ResizeObserver(() => {
+        if (!chart || !el.value) return
+        const w = el.value.clientWidth
+        const h = el.value.clientHeight
+        if (w === 0 || h === 0 || (w === lastW && h === lastH)) return
+        lastW = w
+        lastH = h
+        if (rafId) cancelAnimationFrame(rafId)
+        rafId = requestAnimationFrame(() => chart && chart.resize())
+    })
     ro.observe(el.value)
-    // Re-theme when the app toggles the `.dark` class on <html>.
-    mo = new MutationObserver(() => render())
+
+    // Re-theme ONLY when dark mode actually flips — not on every unrelated
+    // class mutation on <html> (which would re-init the canvas on hover).
+    let wasDark = document.documentElement.classList.contains('dark')
+    mo = new MutationObserver(() => {
+        const isDark = document.documentElement.classList.contains('dark')
+        if (isDark !== wasDark) {
+            wasDark = isDark
+            render()
+        }
+    })
     mo.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
 })
 
 watch(() => props.option, render, { deep: true })
 
 onBeforeUnmount(() => {
+    if (rafId) cancelAnimationFrame(rafId)
     if (ro) ro.disconnect()
     if (mo) mo.disconnect()
     if (chart) { chart.dispose(); chart = null }

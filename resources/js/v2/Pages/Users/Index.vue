@@ -12,6 +12,7 @@ const props = defineProps({
     filters: { type: Object, required: true },
     page: { type: Object, required: true },
     roles: { type: Array, required: true },
+    branches: { type: Array, default: () => [] },
     counts: { type: Object, required: true },
 })
 
@@ -26,17 +27,32 @@ const t = computed(() => isRtl.value
         searchPh: 'ابحث بالاسم، البريد، أو الهاتف…',
         new: 'مستخدم جديد',
         status: { all: 'الكل', active: 'فعّال', inactive: 'غير فعّال' },
-        col: { name: 'الاسم', email: 'البريد', phone: 'الهاتف', roles: 'الأدوار', status: 'الحالة' },
+        col: { name: 'الاسم', email: 'البريد', phone: 'الهاتف', roles: 'الأدوار', branches: 'الفروع', status: 'الحالة' },
         empty: 'لا يوجد مستخدمون', emptyDesc: 'أنشئ حسابًا للموظفين.',
-        clear: 'مسح', allRoles: 'كل الأدوار', previous: 'السابق', next: 'التالي', showing: 'عرض', of: 'من',
+        clear: 'مسح', allRoles: 'كل الأدوار', allBranches: 'كل الفروع', previous: 'السابق', next: 'التالي', showing: 'عرض', of: 'من',
         modal: {
             createTitle: 'مستخدم جديد', editTitle: 'تحرير المستخدم',
             name: 'الاسم', email: 'البريد', phone: 'الهاتف', status: 'الحالة',
             password: 'كلمة المرور', passwordEdit: 'كلمة مرور جديدة (اتركها فارغة لتركها كما هي)',
-            roles: 'الأدوار', save: 'حفظ', cancel: 'إلغاء',
+            roles: 'الأدوار', branches: 'الفروع (نطاق الوصول)',
+            branchesHint: 'يحدّد الفروع التي يرى المستخدم بياناتها. فرع الطبيب الأساسي محفوظ دائمًا.',
+            noBranches: 'لا توجد فروع متاحة.',
+            save: 'حفظ', cancel: 'إلغاء',
             deleteConfirm: 'سيتم تعطيل هذا الحساب. متابعة؟',
         },
-        stats: { total: 'الكل', active: 'فعّال', inactive: 'غير فعّال' },
+        stats: { total: 'الكل', active: 'فعّال', inactive: 'غير فعّال', unassigned: 'بدون فرع' },
+        bulk: {
+            selected: 'محدد', clear: 'إلغاء التحديد',
+            manageBranches: 'إدارة الفروع',
+            title: 'إدارة فروع المستخدمين المحددين',
+            mode: 'الإجراء',
+            add: 'إضافة إلى الفروع', remove: 'إزالة من الفروع', replace: 'استبدال الفروع',
+            addHint: 'تُضاف الفروع المحددة دون المساس بالفروع الحالية.',
+            removeHint: 'تُزال الفروع المحددة فقط. فرع الطبيب الأساسي محفوظ.',
+            replaceHint: 'يُستبدل نطاق الفروع بالكامل بما هو محدد. الاختيار الفارغ يزيل كل الفروع.',
+            apply: 'تطبيق', pickBranch: 'اختر فرعًا واحدًا على الأقل.',
+            confirmReplace: 'سيتم استبدال نطاق الفروع للمستخدمين المحددين. متابعة؟',
+        },
     }
     : {
         title: 'Users', eyebrow: 'Platform',
@@ -44,50 +60,68 @@ const t = computed(() => isRtl.value
         searchPh: 'Search by name, email, or phone…',
         new: 'New user',
         status: { all: 'All', active: 'Active', inactive: 'Inactive' },
-        col: { name: 'Name', email: 'Email', phone: 'Phone', roles: 'Roles', status: 'Status' },
+        col: { name: 'Name', email: 'Email', phone: 'Phone', roles: 'Roles', branches: 'Branches', status: 'Status' },
         empty: 'No users', emptyDesc: 'Create an account for your team.',
-        clear: 'Clear', allRoles: 'All roles', previous: 'Previous', next: 'Next', showing: 'Showing', of: 'of',
+        clear: 'Clear', allRoles: 'All roles', allBranches: 'All branches', previous: 'Previous', next: 'Next', showing: 'Showing', of: 'of',
         modal: {
             createTitle: 'New user', editTitle: 'Edit user',
             name: 'Name', email: 'Email', phone: 'Phone', status: 'Status',
             password: 'Password', passwordEdit: 'New password (leave empty to keep current)',
-            roles: 'Roles', save: 'Save', cancel: 'Cancel',
+            roles: 'Roles', branches: 'Branches (access scope)',
+            branchesHint: "Controls which branches' data this user can see. A doctor's own branch is always kept.",
+            noBranches: 'No branches available.',
+            save: 'Save', cancel: 'Cancel',
             deleteConfirm: 'Deactivate this account?',
         },
-        stats: { total: 'Total', active: 'Active', inactive: 'Inactive' },
+        stats: { total: 'Total', active: 'Active', inactive: 'Inactive', unassigned: 'No branch' },
+        bulk: {
+            selected: 'selected', clear: 'Clear selection',
+            manageBranches: 'Manage branches',
+            title: 'Manage branches for selected users',
+            mode: 'Action',
+            add: 'Add to branches', remove: 'Remove from branches', replace: 'Replace branches',
+            addHint: 'The selected branches are added; existing ones are left alone.',
+            removeHint: "Only the selected branches are removed. A doctor's own branch is kept.",
+            replaceHint: 'The whole branch scope is replaced by your selection. An empty selection clears all branches.',
+            apply: 'Apply', pickBranch: 'Pick at least one branch.',
+            confirmReplace: 'This replaces the branch scope for the selected users. Continue?',
+        },
     })
 
 const roleItems = computed(() => props.roles.map((r) => ({ value: r.name, label: r.name })))
+const branchItems = computed(() => props.branches.map((b) => ({ value: b.id, label: b.name })))
 
 const f = reactive({
     q: props.filters.q || '',
     role: props.filters.role || '',
     status: props.filters.status || 'all',
+    branch: props.filters.branch || '',
 })
 let qTimer = null
 watch(() => f.q, () => { clearTimeout(qTimer); qTimer = setTimeout(apply, 250) })
-watch(() => [f.role, f.status], () => apply(), { deep: true })
+watch(() => [f.role, f.status, f.branch], () => apply(), { deep: true })
 
 function apply() {
     router.get(route('v2.users.index'), {
         q: f.q || undefined, role: f.role || undefined,
         status: f.status === 'all' ? undefined : f.status,
+        branch: f.branch || undefined,
     }, { preserveState: true, preserveScroll: true, replace: true })
 }
-function clearFilters() { f.q = ''; f.role = ''; f.status = 'all'; apply() }
+function clearFilters() { f.q = ''; f.role = ''; f.status = 'all'; f.branch = ''; apply() }
 
 const modalOpen = ref(false)
 const modalMode = ref('create')
 const editing = ref(null)
 const form = reactive({
-    name: '', email: '', phone: '', status: 'active', password: '', roles: [],
+    name: '', email: '', phone: '', status: 'active', password: '', roles: [], branches: [],
 })
 const errors = ref({})
 const saving = ref(false)
 
 function openCreate() {
     modalMode.value = 'create'; editing.value = null
-    Object.assign(form, { name: '', email: '', phone: '', status: 'active', password: '', roles: [] })
+    Object.assign(form, { name: '', email: '', phone: '', status: 'active', password: '', roles: [], branches: [] })
     errors.value = {}; modalOpen.value = true
 }
 function openEdit(row) {
@@ -96,6 +130,7 @@ function openEdit(row) {
         name: row.name, email: row.email, phone: row.phone || '',
         status: row.status || 'active', password: '',
         roles: (row.roles || []).map(r => r.name),
+        branches: (row.branches || []).map(b => b.id),
     })
     errors.value = {}; modalOpen.value = true
 }
@@ -127,6 +162,68 @@ function toggleRole(name) {
     const i = form.roles.indexOf(name)
     if (i === -1) form.roles.push(name); else form.roles.splice(i, 1)
 }
+function toggleBranch(id) {
+    const i = form.branches.indexOf(id)
+    if (i === -1) form.branches.push(id); else form.branches.splice(i, 1)
+}
+
+/* ---- bulk branch assignment ---------------------------------------- */
+
+const selected = ref([])
+// A page change swaps the rows underneath us; drop any id that's no longer here.
+watch(() => props.page.data, (rows) => {
+    const ids = new Set(rows.map(r => r.id))
+    selected.value = selected.value.filter(id => ids.has(id))
+})
+const allChecked = computed(() => props.page.data.length > 0 && selected.value.length === props.page.data.length)
+function toggleAll() {
+    selected.value = allChecked.value ? [] : props.page.data.map(r => r.id)
+}
+function toggleRow(id) {
+    const i = selected.value.indexOf(id)
+    if (i === -1) selected.value.push(id); else selected.value.splice(i, 1)
+}
+
+const bulkOpen = ref(false)
+const bulkSaving = ref(false)
+const bulkError = ref('')
+const bulk = reactive({ mode: 'add', branches: [] })
+
+function openBulk() {
+    Object.assign(bulk, { mode: 'add', branches: [] })
+    bulkError.value = ''; bulkOpen.value = true
+}
+function closeBulk() { bulkOpen.value = false; bulkSaving.value = false }
+function toggleBulkBranch(id) {
+    const i = bulk.branches.indexOf(id)
+    if (i === -1) bulk.branches.push(id); else bulk.branches.splice(i, 1)
+}
+const bulkHint = computed(() => t.value.bulk[`${bulk.mode}Hint`])
+
+function submitBulk() {
+    bulkError.value = ''
+    // Only "replace" is meaningful with an empty selection (it clears the scope).
+    if (bulk.branches.length === 0 && bulk.mode !== 'replace') {
+        bulkError.value = t.value.bulk.pickBranch
+        return
+    }
+    const send = () => {
+        bulkSaving.value = true
+        router.post(route('v2.users.bulk-branches'), {
+            user_ids: selected.value, mode: bulk.mode, branches: bulk.branches,
+        }, {
+            preserveScroll: true,
+            onSuccess: () => { closeBulk(); selected.value = [] },
+            onError: (errs) => { bulkError.value = Object.values(errs)[0] || ''; bulkSaving.value = false },
+            onFinish: () => { bulkSaving.value = false },
+        })
+    }
+    if (bulk.mode === 'replace') {
+        confirm({ body: t.value.bulk.confirmReplace, tone: 'destructive', onConfirm: send })
+    } else {
+        send()
+    }
+}
 </script>
 
 <template>
@@ -150,6 +247,7 @@ function toggleRole(name) {
                 <div class="stat-chip"><span class="stat-chip-num">{{ counts.total }}</span><span class="stat-chip-lbl">{{ t.stats.total }}</span></div>
                 <div class="stat-chip"><span class="stat-chip-num" style="color:var(--ok);">{{ counts.active }}</span><span class="stat-chip-lbl">{{ t.stats.active }}</span></div>
                 <div class="stat-chip"><span class="stat-chip-num" style="color:var(--fg-faint);">{{ counts.inactive }}</span><span class="stat-chip-lbl">{{ t.stats.inactive }}</span></div>
+                <div class="stat-chip"><span class="stat-chip-num" :style="counts.unassigned ? 'color:var(--warn, #d97706);' : ''">{{ counts.unassigned }}</span><span class="stat-chip-lbl">{{ t.stats.unassigned }}</span></div>
             </div>
 
             <div class="card" style="padding:12px; margin-bottom:12px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
@@ -158,41 +256,59 @@ function toggleRole(name) {
                     <input v-model="f.q" type="search" :placeholder="t.searchPh" class="input" style="padding-inline-start:32px;" />
                 </div>
                 <SearchableSelect v-model="f.role" :items="roleItems" :null-label="t.allRoles" :width="200" />
+                <SearchableSelect v-model="f.branch" :items="branchItems" :null-label="t.allBranches" :width="200" />
                 <div class="seg seg-sm">
                     <button :class="f.status === 'all' ? 'is-active' : ''" @click="f.status = 'all'">{{ t.status.all }}</button>
                     <button :class="f.status === 'active' ? 'is-active' : ''" @click="f.status = 'active'">{{ t.status.active }}</button>
                     <button :class="f.status === 'inactive' ? 'is-active' : ''" @click="f.status = 'inactive'">{{ t.status.inactive }}</button>
                 </div>
-                <button v-if="f.q || f.role || f.status !== 'all'" class="btn btn-ghost btn-sm" @click="clearFilters">{{ t.clear }}</button>
+                <button v-if="f.q || f.role || f.branch || f.status !== 'all'" class="btn btn-ghost btn-sm" @click="clearFilters">{{ t.clear }}</button>
+            </div>
+
+            <div v-if="selected.length" class="card bulk-bar">
+                <span style="font-size:13px; font-weight:600;">{{ selected.length }} {{ t.bulk.selected }}</span>
+                <button class="btn btn-sm btn-primary" @click="openBulk"><Icon name="building" :size="13" /><span>{{ t.bulk.manageBranches }}</span></button>
+                <button class="btn btn-sm btn-ghost" @click="selected = []">{{ t.bulk.clear }}</button>
             </div>
 
             <div class="card" style="overflow:hidden;">
                 <table class="table">
                     <thead>
                         <tr>
+                            <th style="width:36px;" @click.stop>
+                                <input type="checkbox" :checked="allChecked" @change="toggleAll" />
+                            </th>
                             <th>{{ t.col.name }}</th>
                             <th>{{ t.col.email }}</th>
                             <th>{{ t.col.phone }}</th>
                             <th>{{ t.col.roles }}</th>
+                            <th>{{ t.col.branches }}</th>
                             <th>{{ t.col.status }}</th>
                             <th style="width:80px;"></th>
                         </tr>
                     </thead>
                     <tbody>
                         <tr v-if="page.data.length === 0">
-                            <td colspan="6" style="text-align:center; padding:48px 12px; color:var(--fg-faint);">
+                            <td colspan="8" style="text-align:center; padding:48px 12px; color:var(--fg-faint);">
                                 <Icon name="users" :size="32" style="margin-bottom:8px; opacity:0.4;" />
                                 <div style="font-weight:600;">{{ t.empty }}</div>
                                 <div style="font-size:12px; margin-top:4px;">{{ t.emptyDesc }}</div>
                             </td>
                         </tr>
                         <tr v-for="row in page.data" :key="row.id" @click="openEdit(row)" style="cursor:pointer;">
+                            <td @click.stop>
+                                <input type="checkbox" :checked="selected.includes(row.id)" @change="toggleRow(row.id)" />
+                            </td>
                             <td style="font-weight:600;">{{ row.name }}</td>
                             <td>{{ row.email }}</td>
                             <td class="mono" style="font-size:12px;">{{ row.phone || '—' }}</td>
                             <td>
                                 <span v-for="r in (row.roles || [])" :key="r.id" class="badge-role">{{ r.name }}</span>
                                 <span v-if="!(row.roles || []).length" style="color:var(--fg-faint);">—</span>
+                            </td>
+                            <td>
+                                <span v-for="b in (row.branches || [])" :key="b.id" class="badge-role">{{ b.name }}</span>
+                                <span v-if="!(row.branches || []).length" class="badge-warn">{{ t.stats.unassigned }}</span>
                             </td>
                             <td>
                                 <span :class="(row.status === 'active') ? 'badge-ok' : 'badge-muted'">
@@ -259,9 +375,58 @@ function toggleRole(name) {
                         </div>
                     </div>
 
+                    <div style="grid-column:span 2;">
+                        <label class="label">{{ t.modal.branches }}</label>
+                        <div v-if="branches.length" style="display:flex; flex-wrap:wrap; gap:8px;">
+                            <label v-for="b in branches" :key="b.id" class="role-check">
+                                <input type="checkbox" :checked="form.branches.includes(b.id)" @change="toggleBranch(b.id)" />
+                                <span>{{ b.name }}</span>
+                            </label>
+                        </div>
+                        <div v-else style="font-size:12px; color:var(--fg-faint);">{{ t.modal.noBranches }}</div>
+                        <div style="font-size:11px; color:var(--fg-faint); margin-top:6px;">{{ t.modal.branchesHint }}</div>
+                        <div v-if="errors.branches" class="err">{{ errors.branches }}</div>
+                    </div>
+
                     <div style="grid-column:span 2; display:flex; justify-content:flex-end; gap:8px; margin-top:8px; padding-top:12px; border-top:1px solid var(--line);">
                         <button type="button" class="btn btn-ghost" @click="closeModal">{{ t.modal.cancel }}</button>
                         <button type="submit" class="btn btn-primary" :disabled="saving">{{ saving ? '…' : t.modal.save }}</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div v-if="bulkOpen" class="modal-backdrop" @click.self="closeBulk">
+            <div class="modal-panel" role="dialog" aria-modal="true" style="max-width:560px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; padding:14px 16px; border-bottom:1px solid var(--line);">
+                    <h3 style="margin:0; font-size:15px; font-weight:600;">{{ t.bulk.title }}</h3>
+                    <button class="btn btn-ghost btn-sm btn-icon" @click="closeBulk"><Icon name="x" :size="14" /></button>
+                </div>
+                <form @submit.prevent="submitBulk" style="padding:16px; display:flex; flex-direction:column; gap:12px; max-height:75vh; overflow-y:auto;">
+                    <div style="font-size:13px; color:var(--fg-subtle);">{{ selected.length }} {{ t.bulk.selected }}</div>
+                    <div>
+                        <label class="label">{{ t.bulk.mode }}</label>
+                        <div class="seg seg-sm">
+                            <button type="button" :class="bulk.mode === 'add' ? 'is-active' : ''" @click="bulk.mode = 'add'">{{ t.bulk.add }}</button>
+                            <button type="button" :class="bulk.mode === 'remove' ? 'is-active' : ''" @click="bulk.mode = 'remove'">{{ t.bulk.remove }}</button>
+                            <button type="button" :class="bulk.mode === 'replace' ? 'is-active' : ''" @click="bulk.mode = 'replace'">{{ t.bulk.replace }}</button>
+                        </div>
+                        <div style="font-size:11px; color:var(--fg-faint); margin-top:6px;">{{ bulkHint }}</div>
+                    </div>
+                    <div>
+                        <label class="label">{{ t.col.branches }}</label>
+                        <div v-if="branches.length" style="display:flex; flex-wrap:wrap; gap:8px;">
+                            <label v-for="b in branches" :key="b.id" class="role-check">
+                                <input type="checkbox" :checked="bulk.branches.includes(b.id)" @change="toggleBulkBranch(b.id)" />
+                                <span>{{ b.name }}</span>
+                            </label>
+                        </div>
+                        <div v-else style="font-size:12px; color:var(--fg-faint);">{{ t.modal.noBranches }}</div>
+                    </div>
+                    <div v-if="bulkError" class="err">{{ bulkError }}</div>
+                    <div style="display:flex; justify-content:flex-end; gap:8px; padding-top:12px; border-top:1px solid var(--line);">
+                        <button type="button" class="btn btn-ghost" @click="closeBulk">{{ t.modal.cancel }}</button>
+                        <button type="submit" class="btn btn-primary" :disabled="bulkSaving">{{ bulkSaving ? '…' : t.bulk.apply }}</button>
                     </div>
                 </form>
             </div>
@@ -280,6 +445,8 @@ function toggleRole(name) {
 .badge-role { display:inline-block; padding:2px 8px; font-size:10.5px; font-weight:600; border:1px solid var(--line); background:var(--bg-hover); color:var(--fg-subtle); border-radius:999px; margin-inline-end:4px; }
 .badge-ok { display:inline-block; padding:2px 8px; font-size:11px; font-weight:600; border:1px solid var(--ok); color:var(--ok); border-radius:999px; }
 .badge-muted { display:inline-block; padding:2px 8px; font-size:11px; font-weight:600; border:1px solid var(--fg-faint); color:var(--fg-faint); border-radius:999px; }
+.badge-warn { display:inline-block; padding:2px 8px; font-size:10.5px; font-weight:600; border:1px solid var(--warn, #d97706); color:var(--warn, #d97706); border-radius:999px; }
+.bulk-bar { display:flex; align-items:center; gap:10px; padding:10px 12px; margin-bottom:12px; }
 .role-check { display:inline-flex; align-items:center; gap:6px; font-size:13px; padding:6px 10px; border:1px solid var(--line); border-radius:6px; cursor:pointer; }
 .role-check:hover { background:var(--bg-hover); }
 .label { display:block; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.04em; color:var(--fg-faint); margin-bottom:4px; }

@@ -100,6 +100,11 @@ class HandleInertiaRequests extends Middleware
                     // Server still enforces — these are presentation hints only.
                     'is_admin' => method_exists($user, 'hasRole')
                         && ($user->hasRole('admin') || $user->hasRole('super_admin') || $user->hasRole('clinic_admin')),
+                    // True GLOBAL admin only (not a branch manager). Used by the
+                    // topbar branch badge / user menu so a clinic_admin scoped to
+                    // one branch shows THAT branch, not the "All branches" label.
+                    'is_global_admin' => method_exists($user, 'hasRole')
+                        && ($user->hasRole('admin') || $user->hasRole('super_admin')),
                     'is_reception' => method_exists($user, 'hasRole')
                         && ($user->hasRole('clinic_reception')
                             || $user->hasRole('admin') || $user->hasRole('super_admin') || $user->hasRole('clinic_admin')),
@@ -108,6 +113,9 @@ class HandleInertiaRequests extends Middleware
                     'can_import' => \App\Imports\V2\ImportRegistry::authorizationsFor($user),
                     'is_doctor' => $doctorId !== null,
                     'is_nurse' => method_exists($user, 'hasRole') && $user->hasRole('clinic_nurse'),
+                    // Lab bench staff — drives the lab-first landing and the
+                    // "enter results" affordances. Server still enforces.
+                    'is_lab' => method_exists($user, 'hasRole') && $user->hasRole('clinic_lab'),
                     'doctor_id' => $doctorId,
                     'doctor_branch_id' => $doctorBranchId,
                     'doctor_branch_name' => $doctorBranchName,
@@ -122,6 +130,10 @@ class HandleInertiaRequests extends Middleware
             'app' => [
                 'name' => config('app.name'),
                 'logo_url' => config('app.logo_url'),
+                // Hides the "Open classic admin" entries when the legacy
+                // Filament UI is switched off — those links now bounce straight
+                // back to v2, which is the confusion we removed it to avoid.
+                'legacy_admin_enabled' => (bool) config('clinic.legacy_admin_enabled', false),
             ],
 
             'locale' => app()->getLocale(),

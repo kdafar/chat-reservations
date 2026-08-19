@@ -9,6 +9,7 @@ import ConfirmDialog from '../../Components/ConfirmDialog.vue'
 import QuickPhrases from '../../Components/QuickPhrases.vue'
 import RxBuilder from '../../Components/RxBuilder.vue'
 import LabPicker from '../../Components/LabPicker.vue'
+import LabOrderPanel from '../../Components/LabOrderPanel.vue'
 import QuickPicks from '../../Components/QuickPicks.vue'
 import PrintMenu from '../../Components/PrintMenu.vue'
 import { pushToast } from '../../Composables/useNotificationState.js'
@@ -314,6 +315,30 @@ async function submitAddPackage() {
         router.reload({ only: ['visit'], preserveScroll: true })
     } finally { addPkgLoading.value = false }
 }
+// The offer the patient picked on the website (visit.requested_package). One
+// click applies it via the SAME endpoint the package picker uses — no new
+// package-application logic here, and submitAddPackage() is untouched.
+const requestedPkg = computed(() => props.visit.requested_package || null)
+const addRequestedLoading = ref(false)
+async function addRequestedPackage() {
+    if (!requestedPkg.value || addRequestedLoading.value) return
+    addRequestedLoading.value = true
+    try {
+        const resp = await fetch(`/admin/v2/api/visits/${props.visit.id}/packages`, {
+            method: 'POST', credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf(), Accept: 'application/json' },
+            body: JSON.stringify({ clinic_package_id: requestedPkg.value.id, qty: 1 }),
+        })
+        const data = await resp.json().catch(() => ({}))
+        if (!resp.ok || !data.ok) {
+            pushToast({ kind: 'warning', icon: 'alert-triangle', title: isRtl.value ? 'تعذّر إضافة الباقة' : 'Could not add package', desc: data.error })
+            return
+        }
+        pushToast({ kind: 'success', icon: 'check', title: `${isRtl.value ? 'أُضيفت' : 'Added'} ${requestedPkg.value.name}` })
+        router.reload({ only: ['visit'], preserveScroll: true })
+    } finally { addRequestedLoading.value = false }
+}
+
 async function confirmDeletePackage() {
     if (!confirmDeletePkgId.value) return
     deletePkgLoading.value = true
@@ -584,6 +609,12 @@ const t = computed(() => isRtl.value
             kinds: { consultation: 'استشارة', medicines: 'أصناف', services: 'خدمات', other: 'أخرى' },
             methods: { cash: 'كاش', card: 'بطاقة', knet: 'كي-نت', link: 'رابط', transfer: 'تحويل', insurance: 'تأمين' },
         },
+        requested: {
+            label: 'طلب المريض',
+            offerPrice: 'سعر العرض',
+            mismatch: 'هذا العرض يخص فرعًا آخر',
+            add: 'إضافة إلى الزيارة',
+        },
         insurance: {
             apply: 'تطبيق التأمين', title: 'تطبيق دفعات التأمين',
             alreadyApplied: 'مطبّقة', totalSelected: 'إجمالي المحدد', notePh: 'ملاحظة (اختياري)',
@@ -637,6 +668,12 @@ const t = computed(() => isRtl.value
             voided: 'Voided',
             kinds: { consultation: 'Consultation', medicines: 'Items', services: 'Packages', other: 'Other' },
             methods: { cash: 'Cash', card: 'Card', knet: 'K-Net', link: 'Link', transfer: 'Transfer', insurance: 'Insurance' },
+        },
+        requested: {
+            label: 'Patient requested',
+            offerPrice: 'Offer price',
+            mismatch: 'This offer belongs to another branch',
+            add: 'Add to visit',
         },
         insurance: {
             apply: 'Apply insurance', title: 'Apply insurance payments',
@@ -873,6 +910,47 @@ const primaryPolicy = computed(() => {
                             </button>
                         </div>
 
+                        <!-- Offer the patient picked on the website when booking.
+                             Disappears once the package is actually on the visit. -->
+                        <div
+                            v-if="requestedPkg"
+                            style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 16px; padding: 10px 12px; border-radius: 10px; background: var(--bg-sunken);"
+                            :style="{ border: `1px solid var(${requestedPkg.branch_mismatch ? '--destructive' : '--line'})` }"
+                        >
+                            <Icon
+                                :name="requestedPkg.branch_mismatch ? 'alert-triangle' : 'sparkles'"
+                                :size="14"
+                                :style="{ color: requestedPkg.branch_mismatch ? 'var(--destructive)' : 'var(--primary)', flexShrink: 0 }"
+                            />
+                            <span style="font-size: 13px; color: var(--fg-muted);">{{ t.requested.label }}:</span>
+                            <span style="font-size: 13.5px; font-weight: 500; color: var(--fg);">{{ requestedPkg.name }}</span>
+                            <span class="tnum" style="font-size: 13px; color: var(--fg-muted);">
+                                · {{ fmtMoney(requestedPkg.price) }}
+                                <span style="font-size: 10px; color: var(--fg-subtle);">KWD</span>
+                            </span>
+                            <span v-if="requestedPkg.has_discount" class="badge badge-violet">
+                                <Icon name="tag" :size="10" />
+                                {{ t.requested.offerPrice }}
+                            </span>
+                            <span
+                                v-if="requestedPkg.branch_mismatch"
+                                style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--destructive);"
+                            >
+                                {{ t.requested.mismatch }}
+                            </span>
+                            <button
+                                v-if="visit.permissions?.can_manage_packages"
+                                type="button"
+                                class="btn btn-ghost btn-sm"
+                                style="margin-inline-start: auto;"
+                                :disabled="addRequestedLoading"
+                                @click="addRequestedPackage"
+                            >
+                                <Icon name="plus" :size="13" />
+                                {{ t.requested.add }}
+                            </button>
+                        </div>
+
                         <!-- Timeline strip -->
                         <div class="rgrid-4" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line);">
                             <div>
@@ -1005,6 +1083,15 @@ const primaryPolicy = computed(() => {
                                     </div>
                                 </div>
 
+                                <!--
+                                    Tracked lab orders. The free-text field above stays for imaging
+                                    and outside referrals; anything in our own catalogue is ordered
+                                    here so the lab sees it and the result lands back on this page.
+                                -->
+                                <div class="card" style="padding: 18px;">
+                                    <LabOrderPanel :visit-id="visit.id" :can-edit="true" />
+                                </div>
+
                                 <div class="rgrid-2" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
                                     <div class="card" style="padding: 18px;">
                                         <div class="eyebrow" style="margin-bottom: 8px;">{{ t.labels.sickLeave }}</div>
@@ -1076,7 +1163,8 @@ const primaryPolicy = computed(() => {
                                 <div style="display: flex; align-items: center; gap: 8px; min-width: 0;">
                                     <span style="width: 26px; height: 26px; border-radius: 8px; background: var(--primary-soft); color: var(--primary); display: inline-flex; align-items: center; justify-content: center;"><Icon name="layers" :size="13" /></span>
                                     <span style="font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ vp.name }}</span>
-                                    <span v-if="vp.discount_source === 'promo'" class="badge badge-gold" style="font-size: 9px; flex-shrink: 0;">{{ isRtl ? 'عرض' : 'Promo' }}</span>
+                                    <span v-if="vp.discount_source === 'promo'" class="badge badge-gold" style="font-size: 9px; flex-shrink: 0;">{{ isRtl ? 'عرض ترويجي' : 'Promo' }}</span>
+                                                        <span v-else-if="vp.discount_source === 'offer'" class="badge badge-gold" style="font-size: 9px; flex-shrink: 0;">{{ isRtl ? 'عرض' : 'Offer' }}</span>
                                 </div>
                                 <div class="tnum" style="font-size: 13px; text-align: end;">{{ vp.qty }}</div>
                                 <div class="tnum" style="font-size: 13px; text-align: end;">{{ fmtMoney(vp.unit_price) }}</div>
