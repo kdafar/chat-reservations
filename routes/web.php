@@ -201,6 +201,8 @@ Route::group(['prefix' => 'clinic', 'middleware' => ['web']], function () {
     Route::post('/api/bookings/cancel', [ClinicBookingController::class, 'cancel']);
 
     Route::get('/api/services', [ClinicBookingController::class, 'services']);
+    Route::get('/api/offers', [ClinicBookingController::class, 'offers']);
+    Route::get('/api/gallery', [ClinicBookingController::class, 'gallery']);
     Route::get('/api/stats', [ClinicBookingController::class, 'stats']);
     Route::get('/api/branches/index', [ClinicBookingController::class, 'branchesIndex']);
     Route::get('/api/branches/{branch:slug}', [ClinicBookingController::class, 'branchShow']);
@@ -451,6 +453,31 @@ Route::middleware([
     Route::delete('/lab-tests/{labTest}',     [\App\Http\Controllers\V2\LabTestsController::class, 'destroy'])->name('lab-tests.destroy');
     Route::post('/lab-tests/{labTest}/restore', [\App\Http\Controllers\V2\LabTestsController::class, 'restore'])->name('lab-tests.restore');
 
+    // Lab worklist — the lab assistant's screen: open orders, result entry,
+    // report release, and the doctor's way back in (review + send).
+    Route::get   ('/lab-orders',                        [\App\Http\Controllers\V2\LabOrdersController::class, 'index'])->name('lab-orders.index');
+    Route::get   ('/api/lab-orders/catalog',            [\App\Http\Controllers\V2\LabOrdersController::class, 'catalog'])->name('lab-orders.catalog');
+    Route::get   ('/lab-orders/{labOrder}',             [\App\Http\Controllers\V2\LabOrdersController::class, 'show'])->name('lab-orders.show');
+    Route::post  ('/lab-orders/{labOrder}/tests',       [\App\Http\Controllers\V2\LabOrdersController::class, 'addTests'])->name('lab-orders.add-tests');
+    Route::post  ('/lab-orders/{labOrder}/collect',     [\App\Http\Controllers\V2\LabOrdersController::class, 'collectSample'])->name('lab-orders.collect');
+    Route::post  ('/lab-orders/{labOrder}/start',       [\App\Http\Controllers\V2\LabOrdersController::class, 'start'])->name('lab-orders.start');
+    Route::post  ('/lab-orders/{labOrder}/results',     [\App\Http\Controllers\V2\LabOrdersController::class, 'saveResults'])->name('lab-orders.results');
+    Route::post  ('/lab-orders/{labOrder}/complete',    [\App\Http\Controllers\V2\LabOrdersController::class, 'complete'])->name('lab-orders.complete');
+    Route::post  ('/lab-orders/{labOrder}/cancel',      [\App\Http\Controllers\V2\LabOrdersController::class, 'cancel'])->name('lab-orders.cancel');
+    Route::post  ('/lab-orders/{labOrder}/review',      [\App\Http\Controllers\V2\LabOrdersController::class, 'review'])->name('lab-orders.review');
+    Route::delete('/lab-order-items/{labOrderItem}',    [\App\Http\Controllers\V2\LabOrdersController::class, 'removeItem'])->name('lab-orders.remove-item');
+    Route::post  ('/lab-orders/{labOrder}/attachments', [\App\Http\Controllers\V2\LabOrdersController::class, 'uploadAttachment'])->name('lab-orders.attachments.store');
+    Route::delete('/lab-orders/{labOrder}/attachments/{patientFile}', [\App\Http\Controllers\V2\LabOrdersController::class, 'deleteAttachment'])->name('lab-orders.attachments.destroy');
+    Route::get   ('/lab-orders/{labOrder}/report',      [\App\Http\Controllers\V2\LabOrdersController::class, 'report'])->name('lab-orders.report');
+    Route::get   ('/lab-orders/{labOrder}/requisition', [\App\Http\Controllers\V2\LabOrdersController::class, 'requisition'])->name('lab-orders.requisition');
+    Route::get   ('/lab-orders/{labOrder}/report-file', [\App\Http\Controllers\V2\LabOrdersController::class, 'reportFile'])->name('lab-orders.report-file');
+    Route::post  ('/lab-orders/{labOrder}/send-whatsapp', [\App\Http\Controllers\V2\LabOrdersController::class, 'sendReportWhatsApp'])->name('lab-orders.send-whatsapp');
+    Route::post  ('/lab-orders/{labOrder}/delivered',   [\App\Http\Controllers\V2\LabOrdersController::class, 'markDelivered'])->name('lab-orders.delivered');
+    // Doctor side: raise an order on a visit + read back the visit's / patient's orders.
+    Route::post  ('/api/visits/{visit}/lab-orders',     [\App\Http\Controllers\V2\LabOrdersController::class, 'store'])->name('api.visits.lab-orders.store');
+    Route::get   ('/api/visits/{visit}/lab-orders',     [\App\Http\Controllers\V2\LabOrdersController::class, 'forVisit'])->name('api.visits.lab-orders');
+    Route::get   ('/api/patients/{patient}/lab-orders', [\App\Http\Controllers\V2\LabOrdersController::class, 'forPatient'])->name('api.patients.lab-orders');
+
     // Staff leaves (v2 replacement for StaffLeaveResource).
     Route::get('/staff-leaves',                   [\App\Http\Controllers\V2\StaffLeavesController::class, 'index'])->name('staff-leaves.index');
     Route::post('/staff-leaves',                  [\App\Http\Controllers\V2\StaffLeavesController::class, 'store'])->name('staff-leaves.store');
@@ -512,6 +539,7 @@ Route::middleware([
     // Users (v2 replacement for UserResource). Admin only.
     Route::get('/users',             [\App\Http\Controllers\V2\UsersController::class, 'index'])->name('users.index');
     Route::post('/users',            [\App\Http\Controllers\V2\UsersController::class, 'store'])->name('users.store');
+    Route::post('/users/bulk-branches', [\App\Http\Controllers\V2\UsersController::class, 'bulkBranches'])->name('users.bulk-branches');
     Route::put('/users/{user}',      [\App\Http\Controllers\V2\UsersController::class, 'update'])->name('users.update');
     Route::delete('/users/{user}',   [\App\Http\Controllers\V2\UsersController::class, 'destroy'])->name('users.destroy');
 
@@ -609,6 +637,19 @@ Route::middleware([
     Route::post('/insurance/claims/{claim}/writeoff',     [\App\Http\Controllers\V2\ClaimsController::class, 'writeOff'])->name('insurance.claims.writeoff');
     Route::post('/insurance/claims/{claim}/void',         [\App\Http\Controllers\V2\ClaimsController::class, 'void'])->name('insurance.claims.void');
 
+    // Insurance — Follow-up board (collections: who owes us, how old, chase log).
+    Route::get('/insurance/follow-up',                          [\App\Http\Controllers\V2\InsuranceFollowUpController::class, 'index'])->name('insurance.follow-up.index');
+    Route::get('/api/insurance/follow-up/{claim}/history',      [\App\Http\Controllers\V2\InsuranceFollowUpController::class, 'history'])->name('api.insurance.follow-up.history');
+    Route::post('/insurance/follow-up/{claim}/chase',           [\App\Http\Controllers\V2\InsuranceFollowUpController::class, 'chase'])->name('insurance.follow-up.chase');
+    Route::post('/insurance/follow-up/{claim}/snooze',          [\App\Http\Controllers\V2\InsuranceFollowUpController::class, 'snooze'])->name('insurance.follow-up.snooze');
+    // Bulk follow-up email to insurers + its audit trail.
+    Route::post('/api/insurance/follow-up/email-preview',       [\App\Http\Controllers\V2\InsuranceFollowUpController::class, 'emailPreview'])->name('api.insurance.follow-up.email-preview');
+    Route::get('/api/insurance/follow-up/email-log',            [\App\Http\Controllers\V2\InsuranceFollowUpController::class, 'emailLog'])->name('api.insurance.follow-up.email-log');
+    Route::post('/insurance/follow-up/email',                   [\App\Http\Controllers\V2\InsuranceFollowUpController::class, 'email'])->name('insurance.follow-up.email');
+    Route::post('/insurance/follow-up/email/{email}/reply',     [\App\Http\Controllers\V2\InsuranceFollowUpController::class, 'recordReply'])->name('insurance.follow-up.email.reply');
+    Route::post('/insurance/follow-up/check-replies',           [\App\Http\Controllers\V2\InsuranceFollowUpController::class, 'checkReplies'])->name('insurance.follow-up.check-replies');
+    Route::post('/insurance/follow-up/simulate-reply',          [\App\Http\Controllers\V2\InsuranceFollowUpController::class, 'simulateReply'])->name('insurance.follow-up.simulate-reply');
+
     // Pharmacy — Clinic items (v2 replacement for ClinicItemResource).
     Route::get('/clinic-items',                [\App\Http\Controllers\V2\ClinicItemsController::class, 'index'])->name('clinic-items.index');
     Route::post('/clinic-items',               [\App\Http\Controllers\V2\ClinicItemsController::class, 'store'])->name('clinic-items.store');
@@ -659,6 +700,12 @@ Route::middleware([
     Route::post('/visit-stock-requests/{visitStockRequest}/cancel',  [\App\Http\Controllers\V2\VisitStockRequestsController::class, 'cancel'])->name('visit-stock-requests.cancel');
 
     // Setup — Clinic packages catalog (v2 replacement for ClinicPackageResource).
+    // Results gallery (before/after cases on the public site).
+    Route::get('/gallery',                 [\App\Http\Controllers\V2\GalleryController::class, 'index'])->name('gallery.index');
+    Route::post('/gallery',                [\App\Http\Controllers\V2\GalleryController::class, 'store'])->name('gallery.store');
+    Route::put('/gallery/{galleryCase}',   [\App\Http\Controllers\V2\GalleryController::class, 'update'])->name('gallery.update');
+    Route::delete('/gallery/{galleryCase}',[\App\Http\Controllers\V2\GalleryController::class, 'destroy'])->name('gallery.destroy');
+
     Route::get('/clinic-packages',                 [\App\Http\Controllers\V2\ClinicPackagesController::class, 'index'])->name('clinic-packages.index');
     Route::post('/clinic-packages',                [\App\Http\Controllers\V2\ClinicPackagesController::class, 'store'])->name('clinic-packages.store');
     Route::put('/clinic-packages/{clinicPackage}', [\App\Http\Controllers\V2\ClinicPackagesController::class, 'update'])->name('clinic-packages.update');
@@ -922,6 +969,21 @@ Route::middleware([
     Route::get('/reports/daily-reconciliation', [\App\Http\Controllers\V2\DailyReconciliationController::class, 'index'])->name('reports.daily-reconciliation');
     Route::get('/reports/executive',      [\App\Http\Controllers\V2\ExecutiveDashboardController::class, 'index'])->name('reports.executive');
     Route::get('/inpatient/reports',      [\App\Http\Controllers\V2\InpatientReportsController::class, 'index'])->name('inpatient.reports');
+
+    // Module reports — the operational areas that previously had only list
+    // screens: what stock is worth, what people cost, how insurers behave, and
+    // where the buying money goes.
+    Route::get('/reports/stock',      [\App\Http\Controllers\V2\StockReportsController::class, 'index'])->name('reports.stock');
+    Route::get('/reports/payroll',    [\App\Http\Controllers\V2\PayrollReportsController::class, 'index'])->name('reports.payroll');
+    Route::get('/reports/insurance',  [\App\Http\Controllers\V2\InsuranceReportsController::class, 'index'])->name('reports.insurance');
+    Route::get('/reports/purchasing', [\App\Http\Controllers\V2\PurchasingReportsController::class, 'index'])->name('reports.purchasing');
+    Route::get('/reports/bookings',   [\App\Http\Controllers\V2\BookingReportsController::class, 'index'])->name('reports.bookings');
+    Route::get('/reports/doctors',    [\App\Http\Controllers\V2\DoctorReportsController::class, 'index'])->name('reports.doctors');
+    Route::get('/reports/patients',   [\App\Http\Controllers\V2\PatientReportsController::class, 'index'])->name('reports.patients');
+    Route::get('/reports/lab',        [\App\Http\Controllers\V2\LabReportsController::class, 'index'])->name('reports.lab');
+    Route::get('/reports/packages',   [\App\Http\Controllers\V2\PackageReportsController::class, 'index'])->name('reports.packages');
+    Route::get('/reports/discounts',  [\App\Http\Controllers\V2\DiscountReportsController::class, 'index'])->name('reports.discounts');
+    Route::get('/reports/audit',      [\App\Http\Controllers\V2\AuditReportsController::class, 'index'])->name('reports.audit');
     // Doctor self-service: my own daily earnings, for end-of-day closing.
     Route::get('/my-earnings',            [\App\Http\Controllers\V2\MyEarningsController::class, 'index'])->name('my-earnings');
 
@@ -931,6 +993,7 @@ Route::middleware([
     Route::get('/exports/visits',   [\App\Http\Controllers\V2\VisitsController::class, 'export'])->name('visits.export');
     Route::get('/exports/bookings', [\App\Http\Controllers\V2\BookingsController::class, 'export'])->name('bookings.export');
     Route::get('/exports/claims',   [\App\Http\Controllers\V2\ClaimsController::class, 'export'])->name('insurance.claims.export');
+    Route::get('/exports/insurance-follow-up', [\App\Http\Controllers\V2\InsuranceFollowUpController::class, 'export'])->name('insurance.follow-up.export');
     Route::get('/exports/doctors',           [\App\Http\Controllers\V2\DoctorsController::class, 'export'])->name('doctors.export');
     Route::get('/exports/insurers',          [\App\Http\Controllers\V2\InsurersController::class, 'export'])->name('insurance.insurers.export');
     Route::get('/exports/expenses',          [\App\Http\Controllers\V2\ExpensesController::class, 'export'])->name('accounting.expenses.export');
@@ -963,6 +1026,7 @@ Route::middleware([
     Route::get('/exports/vendors',           [\App\Http\Controllers\V2\VendorsController::class, 'export'])->name('accounting.vendors.export');
     Route::get('/exports/purchase-orders',   [\App\Http\Controllers\V2\PurchaseOrdersController::class, 'export'])->name('purchase-orders.export');
     Route::get('/exports/lab-tests',         [\App\Http\Controllers\V2\LabTestsController::class, 'export'])->name('lab-tests.export');
+    Route::get('/exports/lab-orders',        [\App\Http\Controllers\V2\LabOrdersController::class, 'export'])->name('lab-orders.export');
 
     // Excel imports for master/reference tables. {type} resolves via ImportRegistry.
     Route::get('/imports/{type}/template', [\App\Http\Controllers\V2\ImportController::class, 'template'])->name('imports.template');
@@ -976,3 +1040,67 @@ Route::middleware([
     Route::post('/doctors/bulk-archive', [\App\Http\Controllers\V2\DoctorsController::class, 'bulkDestroy'])->name('doctors.bulk-archive');
     Route::post('/doctors/bulk-restore', [\App\Http\Controllers\V2\DoctorsController::class, 'bulkRestore'])->name('doctors.bulk-restore');
 });
+
+/*
+|--------------------------------------------------------------------------
+| Retired legacy admin URLs
+|--------------------------------------------------------------------------
+| With config('clinic.legacy_admin_enabled') off, the Filament panel no longer
+| registers its resources/pages, so an old bookmark like /admin/patients would
+| 404. Catch those and send the user to the v2 dashboard instead — a 404 is a
+| dead end, and landing on the retired UI was the confusion we set out to fix.
+|
+| Registered last so it can never shadow a real route, and the pattern excludes
+| the v2 SPA and the auth pages, which must keep resolving normally.
+*/
+if (! config('clinic.legacy_admin_enabled')) {
+    Route::middleware(['web'])
+        ->get('/admin/{legacy}', fn () => redirect()->route('v2.dashboard'))
+        ->where('legacy', '^(?!v2(/|$)|login(/|$)|logout(/|$)).*$')
+        ->name('legacy-admin.retired');
+}
+
+/*
+|--------------------------------------------------------------------------
+| Error page preview (local only)
+|--------------------------------------------------------------------------
+|
+| Most status codes are hard to trigger on demand, so this renders any of them
+| straight from resources/views/errors for eyeballing the design. Never
+| registered outside local — it is a preview, not a real error.
+|
+|   /_errors        → index of every code
+|   /_errors/403    → that page
+|   /_errors/403?ar → same page in Arabic
+*/
+if (app()->environment('local')) {
+    Route::middleware(['web'])->group(function () {
+        $codes = [400, 401, 402, 403, 404, 405, 408, 409, 410, 413, 419, 422, 423, 429, 451, 500, 501, 502, 503, 504];
+
+        Route::get('/_errors', function () use ($codes) {
+            $links = collect($codes)->map(fn ($c) => '<a href="/_errors/'.$c.'">'.$c.'</a> <a href="/_errors/'.$c.'?ar" style="opacity:.5">ع</a>')
+                ->implode(' &nbsp;·&nbsp; ');
+
+            return '<body style="font:15px/2.2 system-ui;padding:3rem;max-width:46rem">'
+                .'<h1 style="font-size:1.1rem">Error page preview</h1>'.$links.'</body>';
+        })->name('errors.preview.index');
+
+        Route::get('/_errors/{code}', function (string $code) {
+            // The locale otherwise follows the session, which on this install
+            // is Arabic — so allow forcing either side for a like-for-like look.
+            if (request()->has('ar')) {
+                app()->setLocale('ar');
+            } elseif (request()->has('en')) {
+                app()->setLocale('en');
+            }
+
+            $view = view()->exists("errors.{$code}") ? "errors.{$code}" : 'errors.'.intdiv((int) $code, 100).'xx';
+
+            abort_unless(view()->exists($view), 404);
+
+            return response()->view($view, [
+                'exception' => new \Symfony\Component\HttpKernel\Exception\HttpException((int) $code),
+            ]);
+        })->where('code', '[45][0-9]{2}')->name('errors.preview');
+    });
+}

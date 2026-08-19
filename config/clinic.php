@@ -10,6 +10,24 @@ return [
     // patient portal is reintroduced.
     'customer_portal_enabled' => (bool) env('CLINIC_CUSTOMER_PORTAL_ENABLED', false),
 
+    // Legacy Filament admin (the old /admin/* screens that v2 replaced).
+    //
+    // OFF by default: staff occasionally landed on an old screen — from a stale
+    // bookmark, a search result, or a hand-typed URL — and could not tell it
+    // apart from the current UI. With this off, every legacy page redirects to
+    // its v2 equivalent instead of rendering.
+    //
+    // The Filament PANEL itself always stays registered even when this is off,
+    // because /admin/login is the only login in the system: bootstrap/app.php
+    // sends every unauthenticated request to route('filament.admin.auth.login'),
+    // and the Inertia 409 handler uses the same route. Removing the panel would
+    // lock everyone out. What this flag controls is the panel's *content* —
+    // resources, pages and widgets — plus a redirect guard on the rest.
+    //
+    // Turn it back on temporarily (LEGACY_ADMIN_ENABLED=true) when you need an
+    // old screen that has no v2 replacement yet.
+    'legacy_admin_enabled' => (bool) env('LEGACY_ADMIN_ENABLED', false),
+
     // Operating hours, shown in the v2 topbar clock as an "open / closing soon /
     // closed" indicator so reception/cashiers don't forget the daily closing.
     // 24h HH:MM, clinic-local (config('app.timezone')). Override per deployment.
@@ -47,6 +65,34 @@ return [
     // reception explicitly skipped via insurance_claim_skipped_at). Disable
     // in tests or environments without a fully-seeded insurance module.
     'insurance_auto_claim_on_complete' => (bool) env('CLINIC_INSURANCE_AUTO_CLAIM_ON_COMPLETE', true),
+
+    // Safety valve for the insurer follow-up emails sent from the collections
+    // board: set an address here and every one of them goes there instead of
+    // the insurer's real claims inbox. The log still records who it was
+    // addressed to, so a demo looks exactly like production without any real
+    // insurer receiving a chase. Leave empty in production.
+    'insurance_email_redirect_to' => env('CLINIC_INSURANCE_EMAIL_REDIRECT_TO'),
+
+    // Inbound insurer replies. With no IMAP host configured the importer reads
+    // .eml files from storage/app/insurance-replies/inbox instead — same parser,
+    // same matching, no credentials needed. Fill these in to read a real
+    // mailbox; the folder source then stays available as a fixture path.
+    'insurance_replies' => [
+        'imap' => [
+            'host' => env('CLINIC_INSURANCE_IMAP_HOST'),
+            'port' => (int) env('CLINIC_INSURANCE_IMAP_PORT', 993),
+            'encryption' => env('CLINIC_INSURANCE_IMAP_ENCRYPTION', 'ssl'),
+            'username' => env('CLINIC_INSURANCE_IMAP_USERNAME'),
+            'password' => env('CLINIC_INSURANCE_IMAP_PASSWORD'),
+            'folder' => env('CLINIC_INSURANCE_IMAP_FOLDER', 'INBOX'),
+        ],
+        // The scheduled poll is off until someone turns it on deliberately.
+        'poll_enabled' => (bool) env('CLINIC_INSURANCE_REPLIES_POLL_ENABLED', false),
+        // Shows a "Simulate reply" button on the follow-up board so the inbound
+        // flow can be demonstrated without a mailbox. Must stay false in a live
+        // clinic — it invents insurer correspondence.
+        'demo_enabled' => (bool) env('CLINIC_INSURANCE_REPLIES_DEMO', false),
+    ],
 
     // WhatsApp OTP gate on the public booking endpoint. Disabled by default
     // because the template (clinic_booking_otp_v1) must be approved in Meta
@@ -101,5 +147,31 @@ return [
         'whatsapp_template' => env('CLINIC_VENDOR_PAY_REMINDERS_WA_TEMPLATE', 'vendor_payment_due'),
         'whatsapp_template_lang' => env('CLINIC_VENDOR_PAY_REMINDERS_WA_LANG', 'en'),
         'dry_run' => (bool) env('CLINIC_VENDOR_PAY_REMINDERS_DRY_RUN', false),
+    ],
+
+    // Laboratory module.
+    //   bill_ordered_tests: put each ordered test on the visit bill (as a
+    //       VisitCharge) at the catalog price the moment the doctor orders it.
+    //   send_report_whatsapp: master switch for pushing the finished report to
+    //       the patient's WhatsApp. OFF by default — Meta bills per message and
+    //       a lab report is PHI, so a clinic opts in deliberately.
+    //   report_default_format: 'pdf' | 'image' — what the Send button offers first.
+    'lab' => [
+        'bill_ordered_tests' => (bool) env('CLINIC_LAB_BILL_ORDERED_TESTS', true),
+        'send_report_whatsapp' => (bool) env('CLINIC_LAB_SEND_REPORT_WHATSAPP', false),
+        'report_default_format' => env('CLINIC_LAB_REPORT_FORMAT', 'pdf'),
+    ],
+
+    // Server-side HTML → PDF / PNG rendering, used for lab reports (and any
+    // other document we need as a real file rather than a browser print).
+    // Chromium ships with the repo's Playwright install; point this at any
+    // Chrome/Chromium binary. Empty/missing binary = the feature degrades to
+    // the printable HTML view instead of erroring.
+    'pdf' => [
+        'chromium_binary' => env(
+            'CHROMIUM_BINARY',
+            env('HOME', '/home/barfres').'/.cache/ms-playwright/chromium-1223/chrome-linux64/chrome'
+        ),
+        'timeout_seconds' => (int) env('CHROMIUM_TIMEOUT', 60),
     ],
 ];

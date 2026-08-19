@@ -40,3 +40,14 @@ Schedule::command('accounting:amortize-prepayments')
     ->timezone(config('app.timezone'))
     ->withoutOverlapping()
     ->onOneServer();
+
+// Insurer replies to follow-up statements. Off until
+// CLINIC_INSURANCE_REPLIES_POLL_ENABLED=true, because polling a mailbox nobody
+// has configured just logs failures every 15 minutes. The board's "Check for
+// replies" button runs the same import on demand meanwhile.
+Schedule::command('insurance:import-replies')
+    ->everyFifteenMinutes()
+    ->timezone(config('app.timezone'))
+    ->withoutOverlapping()
+    ->onOneServer()
+    ->when(fn () => (bool) config('clinic.insurance_replies.poll_enabled', false));
