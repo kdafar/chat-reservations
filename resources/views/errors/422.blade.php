@@ -2,8 +2,6 @@
 
 @section('title', 'Unprocessable Request')
 @section('code', '422')
-@section('headline', 'Invalid request data')
-@section('message', 'The request was well-formed but could not be processed. Please check the submitted data and try again.')
 
 @section('icon')
 <svg width="22" height="22" viewBox="0 0 24 24" fill="none">

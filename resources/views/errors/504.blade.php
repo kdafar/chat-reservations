@@ -2,8 +2,6 @@
 
 @section('title', 'Gateway Timeout')
 @section('code', '504')
-@section('headline', 'Request timed out')
-@section('message', 'The server took too long to respond. This may be due to high load or a temporary network issue.')
 
 @section('icon')
 <svg width="22" height="22" viewBox="0 0 24 24" fill="none">

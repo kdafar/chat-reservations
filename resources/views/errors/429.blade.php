@@ -2,8 +2,6 @@
 
 @section('title', 'Too Many Requests')
 @section('code', '429')
-@section('headline', 'Too many requests')
-@section('message', 'You are doing that too often. Please wait a moment and try again.')
 
 @section('icon')
 <svg width="22" height="22" viewBox="0 0 24 24" fill="none">

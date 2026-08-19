@@ -2,8 +2,6 @@
 
 @section('title', 'Unauthorized')
 @section('code', '401')
-@section('headline', 'Authentication required')
-@section('message', 'You must be logged in to access this page.')
 
 @section('icon')
 <svg width="22" height="22" viewBox="0 0 24 24" fill="none">

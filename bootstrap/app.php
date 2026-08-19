@@ -73,6 +73,46 @@ return Application::configure(basePath: dirname(__DIR__))
                 return \Inertia\Inertia::location(route('filament.admin.auth.login'));
             }
         });
+
+        // Inside the v2 SPA, a client error should not eject the user to a
+        // standalone page — it renders as a panel in the content area with the
+        // sidebar and topbar intact, so they can simply navigate somewhere they
+        // do have access to. Deliberately narrow:
+        //   • only under /admin/v2, and only when signed in (the shell needs a
+        //     session to render at all);
+        //   • only 4xx the user can act on — 401/419 mean the session is gone,
+        //     so those must reach the standalone page with its "Sign in" button;
+        //   • never 5xx, where the app itself is the thing that broke and the
+        //     shell's shared props may be exactly what is failing.
+        // Anything outside those bounds falls through to resources/views/errors.
+        $exceptions->render(function (
+            \Symfony\Component\HttpKernel\Exception\HttpExceptionInterface $e,
+            \Illuminate\Http\Request $request
+        ) {
+            $status = $e->getStatusCode();
+
+            if (! $request->is('admin/v2', 'admin/v2/*')
+                || ! auth()->check()
+                || $request->expectsJson()
+                || ! in_array($status, [403, 404, 405, 409, 410, 423], true)
+            ) {
+                return null;
+            }
+
+            try {
+                $copy = \App\Support\ErrorCopy::for($status);
+
+                return \Inertia\Inertia::render('ErrorPage', [
+                    'status' => $status,
+                    'headline' => $copy['headline'],
+                    'message' => $copy['message'],
+                    'labels' => \App\Support\ErrorCopy::labels(),
+                    'action' => \App\Support\ErrorCopy::primaryAction($status),
+                ])->toResponse($request)->setStatusCode($status);
+            } catch (\Throwable $inner) {
+                return null; // fall back to the standalone Blade page
+            }
+        });
     })
     ->withEvents(discover: [
         app_path('Listeners'),

@@ -2,8 +2,6 @@
 
 @section('title', 'Session Expired')
 @section('code', '419')
-@section('headline', 'Session expired')
-@section('message', 'Your session has expired or the security token is invalid. Please refresh the page and try again.')
 
 @section('icon')
 <svg width="22" height="22" viewBox="0 0 24 24" fill="none">

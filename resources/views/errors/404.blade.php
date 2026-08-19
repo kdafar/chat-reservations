@@ -2,8 +2,6 @@
 
 @section('title', 'Page Not Found')
 @section('code', '404')
-@section('headline', 'Page not found')
-@section('message', 'The page you are looking for does not exist, or it may have been moved.')
 
 @section('icon')
 <svg width="22" height="22" viewBox="0 0 24 24" fill="none">

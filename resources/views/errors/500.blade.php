@@ -2,8 +2,6 @@
 
 @section('title', 'Server Error')
 @section('code', '500')
-@section('headline', 'Something went wrong')
-@section('message', 'An unexpected error occurred. Please try again. If the problem persists, contact support.')
 
 @section('icon')
 <svg width="22" height="22" viewBox="0 0 24 24" fill="none">

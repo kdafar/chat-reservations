@@ -2,8 +2,6 @@
 
 @section('title', 'Service Unavailable')
 @section('code', '503')
-@section('headline', 'We’ll be back soon')
-@section('message', 'The service is temporarily unavailable (maintenance or overload). Please try again shortly.')
 
 @section('icon')
 <svg width="22" height="22" viewBox="0 0 24 24" fill="none">

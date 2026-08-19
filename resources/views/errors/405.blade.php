@@ -2,8 +2,6 @@
 
 @section('title', 'Method Not Allowed')
 @section('code', '405')
-@section('headline', 'Method not allowed')
-@section('message', 'The HTTP method used for this request is not supported on this endpoint. Please go back and try a different action.')
 
 @section('icon')
 <svg width="22" height="22" viewBox="0 0 24 24" fill="none">

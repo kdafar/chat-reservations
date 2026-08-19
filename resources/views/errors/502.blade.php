@@ -2,8 +2,6 @@
 
 @section('title', 'Bad Gateway')
 @section('code', '502')
-@section('headline', 'Upstream service error')
-@section('message', 'We received an invalid response from an upstream service. This is usually temporary. Please try again shortly.')
 
 @section('icon')
 <svg width="22" height="22" viewBox="0 0 24 24" fill="none">

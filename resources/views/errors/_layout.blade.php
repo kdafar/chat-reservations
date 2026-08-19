@@ -1,146 +1,218 @@
+@php
+    use App\Support\ErrorContext;
+    use App\Support\ErrorCopy;
+
+    // Prefer the real status off the exception — the 4xx/5xx catch-all views
+    // cover codes that have no dedicated blade file of their own.
+    $code = (string) (($exception ?? null)?->getStatusCode() ?: trim($__env->yieldContent('code', '')));
+
+    $locale = app()->getLocale();
+    $isAr = ErrorCopy::lang($locale) === 'ar';
+
+    ['headline' => $headline, 'message' => $message] = ErrorCopy::for($code, $locale);
+    $t = ErrorCopy::labels($locale);
+    $action = ErrorCopy::primaryAction($code);
+
+    $homeUrl = ErrorContext::homeUrl(request());
+    $loginUrl = \Illuminate\Support\Facades\Route::has('login') ? route('login') : $homeUrl;
+
+    $appName = config('app.name', 'Clinic');
+    $logo = config('app.logo_url');
+
+    // Shown only to developers. Normal users never see a reference code.
+    $reference = config('app.debug') ? strtoupper(substr((string) \Illuminate\Support\Str::uuid(), 0, 8)) : null;
+@endphp
 <!doctype html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" class="h-full">
+<html lang="{{ str_replace('_', '-', $locale) }}" dir="{{ $isAr ? 'rtl' : 'ltr' }}">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>@yield('title', 'System Error') | {{ config('app.name', 'Enterprise System') }}</title>
+    <title>{{ $headline }} · {{ $appName }}</title>
+    <link rel="icon" href="{{ $logo ?: '/favicon.svg' }}">
 
-    <!-- UI/UX: Professional Zinc/Slate Theme with High Contrast -->
+    {{-- Match whatever theme the user last chose in v2. Runs before paint so
+         there is no white flash on the way into a dark-mode session. --}}
+    <script>
+        try {
+            var saved = localStorage.getItem('v2.dark');
+            var prefers = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            if (saved === null ? prefers : saved === '1') document.documentElement.classList.add('dark');
+        } catch (e) {}
+    </script>
+
+    {{-- Same families v2 loads. If the network is down the system fallbacks
+         still read as intended — a serif headline over a sans body. --}}
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Geist:wght@400;500;600&family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
+
+    {{-- Tokens are copied from resources/css/v2.css rather than imported: an
+         error page has to render even when the asset build is the thing that
+         broke. Keep the two in sync if the v2 palette moves. --}}
     <style>
         :root {
-            --bg-main: #fcfcfd;
-            --bg-card: #ffffff;
-            --text-main: #09090b;
-            --text-muted: #71717a;
-            --primary: #18181b;
-            --primary-foreground: #ffffff;
-            --border: #e4e4e7;
-            --ring: rgba(24, 24, 27, 0.1);
-            --code-bg: #f4f4f5;
+            --bg:        oklch(0.99 0.005 90);
+            --bg-elev:   oklch(1 0 0);
+            --fg:        oklch(0.18 0.02 260);
+            --fg-muted:  oklch(0.42 0.015 260);
+            --fg-subtle: oklch(0.58 0.012 260);
+            --line:      oklch(0.92 0.006 85);
+            --primary:       oklch(0.71 0.085 82);
+            --primary-hover: oklch(0.66 0.09 82);
+            --primary-soft:  oklch(0.96 0.025 82);
+            --primary-ring:  oklch(0.86 0.06 82);
+            --on-primary:    oklch(0.18 0.02 260);
+            --gold-ink:      oklch(0.52 0.09 82);
+            --wash:          oklch(0.71 0.085 82 / 0.07);
+            --shadow-card: 0 1px 2px oklch(0.2 0.02 260 / 0.04), 0 12px 32px oklch(0.2 0.02 260 / 0.06);
+            --font-display: "Cormorant Garamond", ui-serif, Georgia, "Times New Roman", serif;
+            --font-sans:    "Geist", ui-sans-serif, system-ui, -apple-system, sans-serif;
+            --font-arabic:  "Tajawal", "IBM Plex Sans Arabic", ui-sans-serif, system-ui, sans-serif;
         }
 
-        @media (prefers-color-scheme: dark) {
-            :root {
-                --bg-main: #09090b;
-                --bg-card: #09090b;
-                --text-main: #fafafa;
-                --text-muted: #a1a1aa;
-                --primary: #ffffff;
-                --primary-foreground: #09090b;
-                --border: #27272a;
-                --ring: rgba(250, 250, 250, 0.1);
-                --code-bg: #18181b;
-            }
+        .dark {
+            --bg:        oklch(0.18 0.012 260);
+            --bg-elev:   oklch(0.22 0.013 260);
+            --fg:        oklch(0.96 0.005 90);
+            --fg-muted:  oklch(0.78 0.012 260);
+            --fg-subtle: oklch(0.62 0.015 260);
+            --line:      oklch(0.30 0.014 260);
+            --primary-soft: oklch(0.30 0.045 82);
+            --primary-ring: oklch(0.40 0.06 82);
+            --on-primary:   oklch(0.16 0.011 260);
+            --gold-ink:     oklch(0.80 0.09 82);
+            --wash:         oklch(0.71 0.085 82 / 0.10);
+            --shadow-card: 0 1px 2px oklch(0 0 0 / 0.3), 0 16px 40px oklch(0 0 0 / 0.35);
         }
 
         * { box-sizing: border-box; }
+        html, body { height: 100%; }
+
         body {
             margin: 0;
-            font-family: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
-            background-color: var(--bg-main);
-            color: var(--text-main);
             display: flex;
-            min-height: 100vh;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            padding: 1.5rem;
-            line-height: 1.5;
+            gap: 1.75rem;
+            padding: 2rem 1.5rem;
+            background: var(--bg);
+            color: var(--fg);
+            font-family: var(--font-sans);
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
         }
 
-        .container {
-            width: 100%;
-            max-width: 1040px;
-            animation: fadeIn 0.5s ease-out;
-        }
+        [dir="rtl"] body { font-family: var(--font-arabic); }
 
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 2rem;
+        /* A single soft gold wash behind the card — the only ornament. */
+        body::before {
+            content: "";
+            position: fixed;
+            inset: 0;
+            background: radial-gradient(60rem 32rem at 50% 12%, var(--wash), transparent 70%);
+            pointer-events: none;
         }
 
         .brand {
+            position: relative;
             display: flex;
             align-items: center;
-            gap: 0.75rem;
+            gap: 0.625rem;
             text-decoration: none;
-            color: var(--text-main);
-            font-weight: 600;
-            font-size: 0.95rem;
+            color: var(--fg-muted);
         }
 
-        .brand-icon {
-            width: 32px;
-            height: 32px;
+        .brand-mark {
+            width: 5px;
+            height: 5px;
+            border-radius: 9999px;
             background: var(--primary);
-            color: var(--primary-foreground);
-            border-radius: 8px;
+        }
+
+        .brand span {
+            font-size: 0.75rem;
+            font-weight: 500;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+        }
+
+        .card {
+            position: relative;
+            width: 100%;
+            max-width: 31rem;
+            background: var(--bg-elev);
+            border: 1px solid var(--line);
+            border-radius: 16px;
+            box-shadow: var(--shadow-card);
+            padding: 3rem 3rem 2.75rem;
+            text-align: center;
+            animation: rise 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+        }
+
+        @media (max-width: 30rem) {
+            .card { padding: 2.25rem 1.5rem 2rem; }
+        }
+
+        @keyframes rise {
+            from { opacity: 0; transform: translateY(10px); }
+            to   { opacity: 1; transform: none; }
+        }
+
+        /* The medallion: soft gold disc, hairline ring, gold-ink glyph. */
+        .medallion {
+            width: 4rem;
+            height: 4rem;
+            margin: 0 auto 1.75rem;
+            border-radius: 9999px;
+            background: var(--primary-soft);
+            border: 1px solid var(--primary-ring);
+            color: var(--gold-ink);
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 0.8rem;
-            font-weight: 800;
         }
 
-        .main-card {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 16px;
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-            overflow: hidden;
-            display: grid;
-            grid-template-columns: 1fr;
+        .medallion svg { width: 27px; height: 27px; }
+
+        h1 {
+            margin: 0;
+            font-family: var(--font-display);
+            font-size: 2.125rem;
+            font-weight: 600;
+            line-height: 1.15;
+            letter-spacing: -0.01em;
+            text-wrap: balance;
         }
 
-        @media (min-width: 768px) {
-            .main-card { grid-template-columns: 1.4fr 1fr; }
-        }
-
-        .content-area {
-            padding: 3rem;
-            border-bottom: 1px solid var(--border);
-        }
-
-        @media (min-width: 768px) {
-            .content-area { border-bottom: 0; border-right: 1px solid var(--border); }
-        }
-
-        .details-area {
-            padding: 3rem;
-            background: var(--code-bg);
-        }
-
-        .error-code {
-            font-size: 4.5rem;
-            font-weight: 800;
-            line-height: 1;
-            margin-bottom: 1rem;
-            letter-spacing: -0.05em;
-            color: var(--text-main);
-        }
-
-        .error-headline {
-            font-size: 1.5rem;
+        [dir="rtl"] h1 {
+            font-family: var(--font-arabic);
+            font-size: 1.625rem;
             font-weight: 700;
-            margin-bottom: 1rem;
+            line-height: 1.4;
         }
 
-        .error-message {
-            color: var(--text-muted);
-            margin-bottom: 2rem;
-            font-size: 1.05rem;
+        /* Champagne hairline — the brand's one flourish, borrowed sparingly. */
+        .rule {
+            width: 2.5rem;
+            height: 1px;
+            margin: 1.25rem auto;
+            border: 0;
+            background: linear-gradient(90deg, transparent, var(--primary-ring), transparent);
+        }
+
+        p.message {
+            margin: 0 auto 2rem;
+            max-width: 25rem;
+            color: var(--fg-muted);
+            font-size: 0.9375rem;
+            text-wrap: pretty;
         }
 
         .actions {
             display: flex;
-            gap: 0.75rem;
+            gap: 0.625rem;
+            justify-content: center;
             flex-wrap: wrap;
         }
 
@@ -148,145 +220,90 @@
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            padding: 0.625rem 1.25rem;
+            min-height: 2.5rem;
+            padding: 0 1.25rem;
             border-radius: 8px;
-            font-weight: 500;
-            font-size: 0.875rem;
-            text-decoration: none;
-            transition: all 0.2s;
-            cursor: pointer;
             border: 1px solid transparent;
+            font-family: inherit;
+            font-size: 0.875rem;
+            font-weight: 500;
+            text-decoration: none;
+            cursor: pointer;
+            transition: background-color 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
         }
 
-        .btn-primary {
-            background: var(--primary);
-            color: var(--primary-foreground);
-        }
+        .btn:active { transform: translateY(1px); }
 
-        .btn-primary:hover { opacity: 0.9; }
+        .btn-primary { background: var(--primary); color: var(--on-primary); }
+        .btn-primary:hover { background: var(--primary-hover); }
 
-        .btn-outline {
-            background: transparent;
-            border-color: var(--border);
-            color: var(--text-main);
-        }
+        .btn-ghost { background: transparent; border-color: var(--line); color: var(--fg-muted); }
+        .btn-ghost:hover { border-color: var(--primary-ring); color: var(--fg); }
 
-        .btn-outline:hover { background: var(--border); }
+        .btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 
-        .meta-list {
-            list-style: none;
-            padding: 0;
+        .foot {
+            position: relative;
             margin: 0;
-            font-size: 0.8125rem;
+            font-size: 0.6875rem;
+            color: var(--fg-subtle);
+            letter-spacing: 0.02em;
         }
 
-        .meta-item {
-            display: flex;
-            justify-content: space-between;
-            padding: 0.75rem 0;
-            border-bottom: 1px solid var(--border);
+        .foot code {
+            font-family: ui-monospace, "SF Mono", Menlo, monospace;
+            letter-spacing: 0.06em;
         }
 
-        .meta-item:last-child { border-bottom: 0; }
-
-        .meta-label { color: var(--text-muted); }
-
-        .meta-value {
-            font-family: ui-monospace, monospace;
-            word-break: break-all;
-            text-align: right;
-            padding-left: 1rem;
-        }
-
-        .footer {
-            margin-top: 2rem;
-            text-align: center;
-            font-size: 0.75rem;
-            color: var(--text-muted);
-        }
-
-        .icon-box {
-            margin-bottom: 1.5rem;
-            color: var(--text-muted);
+        @media (prefers-reduced-motion: reduce) {
+            .card { animation: none; }
+            .btn { transition: none; }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <header class="header">
-            <a href="{{ \App\Support\ErrorContext::homeUrl(request()) }}" class="brand">
-                <div class="brand-icon">{{ strtoupper(substr(config('app.name', 'A'), 0, 1)) }}</div>
-                <span>{{ config('app.name', 'System') }}</span>
-            </a>
-            <div style="font-size: 0.75rem; color: var(--text-muted);">
-                {{ now()->format('M d, H:i') }}
-            </div>
-        </header>
+    {{-- Text-only lockup on purpose: the configured logo is a wide wordmark
+         that turns to mush at this size and disappears against the dark
+         theme. Letterspaced type carries the brand and is legible in both. --}}
+    <a class="brand" href="{{ $homeUrl }}">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span>{{ $appName }}</span>
+    </a>
 
-        <main class="main-card">
-            <!-- Left: Message -->
-            <section class="content-area">
-                <div class="icon-box">
-                    @yield('icon')
-                </div>
-                <h1 class="error-code">@yield('code', 'Error')</h1>
-                <h2 class="error-headline">@yield('headline', 'Something went wrong')</h2>
-                <p class="error-message">
-                    @yield('message', 'We encountered an unexpected issue. Please try again or contact support if the problem persists.')
-                </p>
+    <main class="card" role="alert">
+        <div class="medallion" aria-hidden="true">
+            @hasSection('icon')
+                @yield('icon')
+            @else
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+                    <circle cx="12" cy="12" r="9"/><path d="M12 8v4.5"/><path d="M12 16h.01"/>
+                </svg>
+            @endif
+        </div>
 
-                <div class="actions">
-                    <a href="{{ \App\Support\ErrorContext::homeUrl(request()) }}" class="btn btn-primary">
-                        Return Home
-                    </a>
-                    <a href="javascript:history.back()" class="btn btn-outline">
-                        Go Back
-                    </a>
-                    @hasSection('support_link')
-                        <a href="@yield('support_link')" class="btn btn-outline">Contact Support</a>
-                    @endif
-                </div>
-            </section>
+        <h1>{{ $headline }}</h1>
+        <hr class="rule">
+        <p class="message">{{ $message }}</p>
 
-            <!-- Right: Technical Details (Pro Debug Panel) -->
-            <aside class="details-area">
-                <h3 style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 1.5rem;">
-                    Diagnostic Information
-                </h3>
+        <div class="actions">
+            @if ($action === 'signin')
+                <a href="{{ $loginUrl }}" class="btn btn-primary">{{ $t['signin'] }}</a>
+            @elseif ($action === 'retry')
+                <a href="{{ request()->fullUrl() }}" class="btn btn-primary">{{ $t['retry'] }}</a>
+                <a href="{{ $homeUrl }}" class="btn btn-ghost">{{ $t['home'] }}</a>
+            @else
+                <a href="{{ $homeUrl }}" class="btn btn-primary">{{ $t['home'] }}</a>
+                <button type="button" class="btn btn-ghost" onclick="history.back()">{{ $t['back'] }}</button>
+            @endif
+        </div>
+    </main>
 
-                <div class="meta-list">
-                    <div class="meta-item">
-                        <span class="meta-label">Path</span>
-                        <span class="meta-value">{{ request()->path() ?? '/' }}</span>
-                    </div>
-                    <div class="meta-item">
-                        <span class="meta-label">Method</span>
-                        <span class="meta-value">{{ request()->method() ?? 'GET' }}</span>
-                    </div>
-                    <div class="meta-item">
-                        <span class="meta-label">Trace ID</span>
-                        <span class="meta-value">{{ (string) (\Illuminate\Support\Str::uuid() ?? 'N/A') }}</span>
-                    </div>
-                    <div class="meta-item">
-                        <span class="meta-label">Environment</span>
-                        <span class="meta-value">{{ config('app.env') ?? 'Production' }}</span>
-                    </div>
-                </div>
-
-                <div style="margin-top: 2rem; padding: 1rem; background: var(--bg-card); border-radius: 8px; border: 1px solid var(--border); font-size: 0.75rem;">
-                    <p style="margin: 0 0 0.5rem 0; font-weight: 600;">Recommended Steps:</p>
-                    <ul style="margin: 0; padding-left: 1.25rem; color: var(--text-muted);">
-                        <li>Clear your browser cache and cookies</li>
-                        <li>Verify your session is still active</li>
-                        <li>Check if the URL is typed correctly</li>
-                    </ul>
-                </div>
-            </aside>
-        </main>
-
-        <footer class="footer">
-            &copy; {{ date('Y') }} {{ config('app.name', 'System') }}. All rights reserved.
-        </footer>
-    </div>
+    <p class="foot">
+        @if ($reference)
+            {{ $t['ref'] }} <code>{{ $code }}-{{ $reference }}</code>
+        @else
+            &copy; {{ date('Y') }} {{ $appName }}
+        @endif
+    </p>
 </body>
 </html>

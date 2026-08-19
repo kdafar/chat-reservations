@@ -2,8 +2,6 @@
 
 @section('title', 'Forbidden')
 @section('code', '403')
-@section('headline', 'Access denied')
-@section('message', 'You do not have permission to access this page. If you believe this is a mistake, contact an administrator.')
 
 @section('icon')
 <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
