@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     @php($__ar = app()->getLocale() === 'ar')
-    @php($__brand = ($clinicSettings[$__ar ? 'name_ar' : 'name_en'] ?? '') ?: ($__ar ? 'إيفا الطبية' : 'EVA Medical'))
+    @php($__brand = ($clinicSettings[$__ar ? 'name_ar' : 'name_en'] ?? '') ?: ($__ar ? 'عيادة القبلة' : 'Alqibla Clinic'))
     <title>{{ $__brand }} — {{ $__ar ? 'حجز موعد' : 'Book Appointment' }}</title>
 
     {{-- Type system: Cormorant Garamond (high-contrast display serif) + Jost
@@ -41,6 +41,9 @@
     <script>window.__CLINIC__ = @json($clinicSettings ?? []);</script>
 
     @vite(['resources/css/app.css', 'resources/js/clinic/landing.jsx'])
+
+    {{-- Favicon --}}
+    @include('partials.favicon')
 </head>
 <body class="clinic-site bg-ivory text-plum antialiased">
     <div id="clinic-root"></div>

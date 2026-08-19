@@ -1,5 +1,5 @@
 // -----------------------------------------------------------------------------
-// EVA Medical — public-site brand config + bilingual strings.
+// Alqibla Clinic — public-site brand config + bilingual strings.
 //
 // Single source of truth for the marketing site copy. Edit CLINIC below to
 // update contact details everywhere. Strings are {en, ar}; tr() picks the
@@ -12,11 +12,11 @@ import { getLocale } from './api'
 const S_ = (typeof window !== 'undefined' && window.__CLINIC__) ? window.__CLINIC__ : {}
 const pick = (v, fallback = '') => (typeof v === 'string' && v.trim() !== '') ? v.trim() : fallback
 
-const websiteShown = pick(S_.website, 'evamedical.kw')
-const normalizeUrl = (u) => /^https?:\/\//i.test(u) ? u : ('https://' + u.replace(/^\/+/, ''))
+const websiteShown = pick(S_.website, 'alqiblaclinic.com')
+const normalizeUrl = (u) => !u ? '' : (/^https?:\/\//i.test(u) ? u : ('https://' + u.replace(/^\/+/, '')))
 
 export const CLINIC = {
-  name: { en: pick(S_.name_en, 'EVA Medical'), ar: pick(S_.name_ar, 'إيفا الطبية') },
+  name: { en: pick(S_.name_en, 'Alqibla Clinic'), ar: pick(S_.name_ar, 'عيادة القبلة') },
   // The small label under the logo.
   kicker: { en: pick(S_.tagline_en, 'Aesthetic & Dermatology'), ar: pick(S_.tagline_ar, 'التجميل والجلدية') },
   // Optional logo image URL — when set, replaces the icon in the navbar/footer.
@@ -27,7 +27,7 @@ export const CLINIC = {
   phone: pick(S_.phone),
   whatsapp: pick(S_.whatsapp),
 
-  email: pick(S_.email, 'hello@evamedical.kw'),
+  email: pick(S_.email, 'info@alqiblaclinic.com'),
   website: websiteShown,
   websiteUrl: normalizeUrl(websiteShown),
 
@@ -233,7 +233,7 @@ export const S = {
   },
   clinics: {
     title: { en: 'Our Clinics', ar: 'فروعنا' },
-    subtitle: { en: 'Find an EVA Medical branch near you.', ar: 'اعثري على أقرب فرع لإيفا الطبية.' },
+    subtitle: { en: 'Find an Alqibla Clinic branch near you.', ar: 'اعثري على أقرب فرع لعيادة القبلة.' },
     partner: { en: 'Clinic Group', ar: 'المجموعة' },
     service: { en: 'Treatment', ar: 'الخدمة' },
     searchLabel: { en: 'Search', ar: 'بحث' },

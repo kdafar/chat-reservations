@@ -13,6 +13,9 @@
         .amt { font-size:24px; font-weight:700; color:#111; margin:14px 0; }
         .ref { font-size:12px; color:#999; }
     </style>
+
+    {{-- Favicon --}}
+    @include('partials.favicon')
 </head>
 <body>
     <div class="card">

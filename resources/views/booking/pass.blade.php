@@ -14,6 +14,9 @@
     .qr{display:block;margin:18px auto 6px;width:260px;height:260px}
     .muted{color:#666;font-size:13px;text-align:center}
   </style>
+
+    {{-- Favicon --}}
+    @include('partials.favicon')
 </head>
 <body>
   <div class="card">

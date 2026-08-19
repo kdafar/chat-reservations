@@ -538,6 +538,9 @@
 .logo-icon img { width:100%; height:100%; object-fit:cover; display:block; }
 
     </style>
+
+    {{-- Favicon --}}
+    @include('partials.favicon')
 </head>
 <body>
     <!-- Header -->

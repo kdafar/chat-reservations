@@ -52,6 +52,9 @@
                 #121417;}
         }
     </style>
+
+    {{-- Favicon --}}
+    @include('partials.favicon')
 </head>
 <body>
     <div id="v2-splash" role="status" aria-label="Loading">

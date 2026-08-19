@@ -167,6 +167,44 @@ class AlqiblaSetupSeeder extends Seeder
             }
         }
 
+        $this->seedPublicSiteBranding();
+
         $this->command?->warn('Staff share one password from ALQIBLA_STAFF_PASSWORD -- have each person change it on first login.');
+    }
+
+    /**
+     * Public-site brand copy (v2 Settings -> Public Website), injected into the
+     * React shell as window.__CLINIC__.
+     *
+     * These are not cosmetic extras: resources/js/clinic/brand.js falls back to
+     * EVA Medical's name, email and website whenever a key is blank, so an empty
+     * settings table serves an EVA-branded site. Every key that has an EVA
+     * fallback must be filled.
+     *
+     * Blank phone/whatsapp is intentional -- brand.js hides the "Call" buttons
+     * and shows "Book Now" instead until real numbers are entered in admin.
+     */
+    private function seedPublicSiteBranding(): void
+    {
+        $settings = [
+            'name_en' => 'Alqibla Clinic Center',
+            'name_ar' => 'مركز عيادات القبلة',
+            'tagline_en' => 'Aesthetic, Laser & Dermatology',
+            'tagline_ar' => 'التجميل والليزر والجلدية',
+            'address_en' => 'Sabah Al Salem, Kuwait',
+            'address_ar' => 'صباح السالم، الكويت',
+            // Must be non-blank or brand.js substitutes the EVA defaults.
+            'email' => 'info@'.self::EMAIL_DOMAIN,
+            'website' => self::EMAIL_DOMAIN,
+        ];
+
+        foreach ($settings as $key => $value) {
+            \App\Models\SystemSetting::updateOrCreate(
+                ['key' => 'clinic.public.'.$key],
+                ['value' => $value]
+            );
+        }
+
+        $this->command?->info(count($settings).' public-site branding settings written');
     }
 }

@@ -26,3 +26,8 @@ storage/backup_*.sql.gz
 
 # compiled front-end assets (run `npm run build` on deploy)
 /public/build
+
+# Livewire's JS is normally served by a route, but nginx serves *.js straight
+# from disk and 404s before reaching index.php. Copies of vendor/livewire/dist
+# are staged here by the post-autoload-dump composer script instead.
+/public/livewire

@@ -19,6 +19,9 @@
         .step-indicator.inactive { background: #e5e7eb; color: #9ca3af; }
         .time-slot-btn.active { background: #0d9488; border-color: #0d9488; color: white; }
     </style>
+
+    {{-- Favicon --}}
+    @include('partials.favicon')
 </head>
 <body>
     <nav class="navbar navbar-expand-lg navbar-light bg-white shadow-sm sticky-top">

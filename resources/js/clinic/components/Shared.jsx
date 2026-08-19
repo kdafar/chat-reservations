@@ -801,14 +801,18 @@ export function Footer() {
                   <a href={`tel:${CLINIC.phone}`} className="hover:text-ivory transition-colors tabular-nums" dir="ltr">{CLINIC.phone}</a>
                 </li>
               )}
-              <li className="flex items-center gap-3.5">
-                <Mail size={17} strokeWidth={1.5} className="text-rose shrink-0" />
-                <a href={`mailto:${CLINIC.email}`} className="hover:text-ivory transition-colors" dir="ltr">{CLINIC.email}</a>
-              </li>
-              <li className="flex items-center gap-3.5">
-                <Globe size={17} strokeWidth={1.5} className="text-rose shrink-0" />
-                <a href={CLINIC.websiteUrl} target="_blank" rel="noreferrer" className="hover:text-ivory transition-colors" dir="ltr">{CLINIC.website}</a>
-              </li>
+              {CLINIC.email && (
+                <li className="flex items-center gap-3.5">
+                  <Mail size={17} strokeWidth={1.5} className="text-rose shrink-0" />
+                  <a href={`mailto:${CLINIC.email}`} className="hover:text-ivory transition-colors" dir="ltr">{CLINIC.email}</a>
+                </li>
+              )}
+              {CLINIC.website && (
+                <li className="flex items-center gap-3.5">
+                  <Globe size={17} strokeWidth={1.5} className="text-rose shrink-0" />
+                  <a href={CLINIC.websiteUrl} target="_blank" rel="noreferrer" className="hover:text-ivory transition-colors" dir="ltr">{CLINIC.website}</a>
+                </li>
+              )}
             </ul>
           </div>
 

@@ -28,6 +28,9 @@
             .print-bg-none { background: none !important; }
         }
     </style>
+
+    {{-- Favicon --}}
+    @include('partials.favicon')
 </head>
 <!-- Screen: Centered gray background. Print: White, full width. -->
 <body class="bg-gray-100 min-h-screen flex items-center justify-center p-4 print:bg-white print:block print:p-0">
