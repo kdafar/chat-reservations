@@ -31,8 +31,45 @@ class LabOrderItem extends Model
 
     protected $casts = [
         'price_snapshot' => 'decimal:3',
+        'result_numeric' => 'decimal:4',
+        'ref_low' => 'decimal:4',
+        'ref_high' => 'decimal:4',
+        'started_at' => 'datetime',
         'completed_at' => 'datetime',
     ];
+
+    /** True once the technician has put a value (or a text result) in. */
+    public function hasResult(): bool
+    {
+        return trim((string) $this->result_value) !== '';
+    }
+
+    /**
+     * Auto-flag a numeric result against the parsed reference bounds. Returns
+     * null when we can't decide (non-numeric result, or no numeric range on the
+     * catalog row) — the technician then picks the flag by hand.
+     */
+    public function deriveFlag(): ?string
+    {
+        if ($this->result_numeric === null) {
+            return null;
+        }
+        $value = (float) $this->result_numeric;
+        $low = $this->ref_low !== null ? (float) $this->ref_low : null;
+        $high = $this->ref_high !== null ? (float) $this->ref_high : null;
+
+        if ($low === null && $high === null) {
+            return null;
+        }
+        if ($low !== null && $value < $low) {
+            return self::FLAG_LOW;
+        }
+        if ($high !== null && $value > $high) {
+            return self::FLAG_HIGH;
+        }
+
+        return self::FLAG_NORMAL;
+    }
 
     public function labOrder(): BelongsTo
     {
