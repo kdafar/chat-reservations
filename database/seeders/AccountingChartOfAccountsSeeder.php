@@ -7,11 +7,13 @@ use App\Models\Branch;
 use Illuminate\Database\Seeder;
 
 /**
- * Seeds the real EVA Medical bilingual Chart of Accounts.
+ * Seeds the shared bilingual clinic Chart of Accounts.
  *
- * Source: storage/EVA_ChartOfAccounts_Bilingual_v1_15Jun2026.xlsx
+ * Shipped with the product and identical on every install — it is the shared
+ * layer, not tenant data. Clinics rename accounts in v2 > Chart of Accounts;
+ * those edits survive re-seeding (see Pass 1).
  *
- * Numbering (EVA convention):
+ * Numbering:
  *   1xxx Assets        1100 current · 1200 fixed · 1300 intangible
  *   2xxx Liabilities   2100 current · 2200 non-current
  *   3xxx Equity        partner capital / current accounts / drawings / retained
@@ -31,7 +33,7 @@ class AccountingChartOfAccountsSeeder extends Seeder
 {
     public function run(): void
     {
-        $this->command?->info('Seeding EVA Chart of Accounts...');
+        $this->command?->info('Seeding the shared Chart of Accounts...');
 
         $A = Account::TYPE_ASSET;
         $CA = Account::TYPE_CONTRA_ASSET;
@@ -48,7 +50,7 @@ class AccountingChartOfAccountsSeeder extends Seeder
             ['1000', 'Assets', 'الأصول', $A, null, true],
             ['1100', 'Current Assets', 'الأصول المتداولة', $A, '1000', true],
             ['1110', 'Cash on Hand / Petty Cash', 'النقدية بالصندوق / المصروف النثري', $A, '1100', true],
-            ['1120', 'Bank — CBK Current Account', 'البنك — الحساب الجاري (التجاري)', $A, '1100', true],
+            ['1120', 'Bank — Current Account', 'البنك — الحساب الجاري', $A, '1100', true],
             ['1130', 'KNET / Card Settlement Clearing', 'تحصيلات كي نت / البطاقات تحت التسوية', $A, '1100', true],
             ['1140', 'Accounts Receivable — Patients / Insurance', 'ذمم مدينة — مرضى / تأمين', $A, '1100', true],
             ['1150', 'Inventory — Injectables & Consumables', 'المخزون — الحقن والمستهلكات', $A, '1100', true],
@@ -100,7 +102,7 @@ class AccountingChartOfAccountsSeeder extends Seeder
             // ===================== REVENUE =====================
             ['4000', 'Revenue', 'الإيرادات', $R, null, true],
             ['4100', 'Clinical Services Revenue', 'إيرادات الخدمات الإكلينيكية', $R, '4000', true],
-            ['4110', 'Dermatology & Aesthetics — Dr. Kareem', 'إيرادات الجلدية والتجميل — د. كريم', $R, '4100', true],
+            ['4110', 'Clinical Services — General', 'إيرادات الخدمات الإكلينيكية — عام', $R, '4100', true],
             ['4120', 'Injectables (Botox & Fillers)', 'إيرادات الحقن (بوتوكس وفيلر)', $R, '4100', false],
             ['4130', 'Laser & Device Treatments', 'إيرادات الليزر والأجهزة', $R, '4100', false],
             ['4140', 'Skincare / Facials (Aesthetician)', 'إيرادات العناية بالبشرة / الفيشل', $R, '4100', false],
@@ -118,9 +120,9 @@ class AccountingChartOfAccountsSeeder extends Seeder
             ['5110', 'Injectables & Fillers Consumed', 'تكلفة الحقن والفيلر المستهلكة', $C, '5000', true],
             ['5120', 'Medical Consumables & Disposables', 'تكلفة المستهلكات والمواد الطبية', $C, '5000', true],
             ['5130', 'Doctor Fees & Commissions — Visiting', 'أتعاب وعمولات الأطباء الزائرين', $C, '5000', true],
-            ['5140', 'Dr. Kareem Cost (Direct)', 'تكلفة د. كريم (مباشرة)', $C, '5000', false],
+            ['5140', 'Lead Doctor Cost (Direct)', 'تكلفة الطبيب الرئيسي (مباشرة)', $C, '5000', false],
             ['5150', 'Skincare Products Consumed', 'تكلفة منتجات العناية المستهلكة', $C, '5000', false],
-            ['5160', 'Sales Commission — Dr. Kareem (10%)', 'عمولة مبيعات — د. كريم (10%)', $C, '5000', false],
+            ['5160', 'Sales Commission — Doctors', 'عمولة مبيعات — الأطباء', $C, '5000', false],
             ['5170', 'Lab / External Clinical Services', 'تكلفة المختبر / خدمات إكلينيكية خارجية', $C, '5000', true],
 
             // ===================== OPERATING EXPENSES =====================
@@ -141,7 +143,7 @@ class AccountingChartOfAccountsSeeder extends Seeder
             ['6310', 'Advertising & Social Media', 'الإعلان ووسائل التواصل', $X, '6300', true],
             ['6320', 'Sponsored Ads & Google', 'حملات ممولة وجوجل', $X, '6300', false],
             ['6330', 'Influencers', 'المؤثرون', $X, '6300', false],
-            ['6340', 'Marketing — Dr. Kareem', 'تسويق — د. كريم', $X, '6300', false],
+            ['6340', 'Marketing — Doctor Personal Brand', 'تسويق — العلامة الشخصية للطبيب', $X, '6300', false],
             ['6400', 'Administrative & General', 'عمومية وإدارية', $X, '6000', true],
             ['6410', 'Telephone & Internet', 'هاتف وانترنت', $X, '6400', false],
             ['6420', 'IT & Software Subscriptions (ERP)', 'اشتراكات تقنية وبرمجيات (ERP)', $X, '6400', false],
@@ -166,19 +168,29 @@ class AccountingChartOfAccountsSeeder extends Seeder
             ['7190', 'Other Non-Operating Income / Expense', 'إيرادات / مصاريف أخرى غير تشغيلية', $X, '7000', false],
         ];
 
-        // Pass 1: upsert by code (no parent yet)
+        // Pass 1: upsert by code (no parent yet).
+        //
+        // The CODE is the contract — the posting engine resolves accounts by it
+        // (see ChartOfAccounts + PostingAccountMap::DEFAULTS). The NAME is just
+        // a label, and every clinic renames some of these to match how it
+        // actually reports. So names are seeded on CREATE only; on re-run we
+        // sync the structural columns and leave the clinic's wording alone.
         foreach ($accounts as [$code, $en, $ar, $type, $_parent, $isSystem]) {
-            Account::updateOrCreate(
-                ['code' => $code],
-                [
-                    'name' => $en,
-                    'description' => $ar,
-                    'type' => $type,
-                    'currency' => 'KWD',
-                    'is_active' => true,
-                    'is_system' => $isSystem,
-                ]
-            );
+            $structure = [
+                'type' => $type,
+                'currency' => 'KWD',
+                'is_active' => true,
+                'is_system' => $isSystem,
+            ];
+
+            $account = Account::firstOrNew(['code' => $code]);
+
+            if (! $account->exists) {
+                $account->name = $en;
+                $account->description = $ar;
+            }
+
+            $account->fill($structure)->save();
         }
 
         // Pass 2: wire parents

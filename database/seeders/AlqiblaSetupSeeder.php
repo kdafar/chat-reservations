@@ -12,6 +12,16 @@ use Illuminate\Support\Facades\Hash;
 use Spatie\Permission\Models\Role;
 
 /**
+ * @deprecated SUPERSEDED BY TenantSetupSeeder.
+ *
+ * This is the old hardcoded-per-clinic pattern: a new clinic meant a new copy
+ * of this class on its own git branch. TenantSetupSeeder does the same work
+ * from config/tenant.php (fed by .env), so one repo now serves every install.
+ *
+ * Kept only so the Alqibla install has a record of how it was first seeded.
+ * Do not copy this for a new clinic — set the TENANT_* keys in .env and run
+ * `php artisan db:seed --class=BootstrapSeeder` instead. Safe to delete.
+ *
  * Real setup for the Alqibla Clinic Center install (alqibla.majestic-kw.com).
  *
  * Creates the organisation only -- partner, one branch, the specialty catalogue

@@ -43,9 +43,15 @@ return [
         'phone_id' => env('WHATSAPP_PHONE_NUMBER_ID'),
         'graph_version' => env('META_GRAPH_VERSION', 'v24.0'),
         'waba_id' => env('WHATSAPP_BUSINESS_ACCOUNT_ID'),
+        // Meta-registered template names are PER-INSTALL: they are whatever
+        // this WABA has had approved, and renaming them here without renaming
+        // them at Meta breaks sending. Every name in the set shares one prefix,
+        // so WHATSAPP_TEMPLATE_PREFIX renames the whole set at once; the
+        // per-name keys below override the prefix for any that don't follow it.
         'templates' => [
-            'invite' => env('WHATSAPP_TEMPLATE_INVITE', 'barfres_invite'),
-            'confirmed' => env('WHATSAPP_TEMPLATE_CONFIRMED', 'barfres_confirmed'),
+            'prefix' => env('WHATSAPP_TEMPLATE_PREFIX', 'barfres'),
+            'invite' => env('WHATSAPP_TEMPLATE_INVITE'),
+            'confirmed' => env('WHATSAPP_TEMPLATE_CONFIRMED'),
         ],
         'default_locale' => env('WA_DEFAULT_LOCALE', 'en'),
         'flows' => [

@@ -10,6 +10,30 @@ use Illuminate\Support\Str;
 
 class WhatsAppTemplateService
 {
+
+    /**
+     * Resolve a Meta-registered template name for THIS install.
+     *
+     * Template names live in the WhatsApp Business Account, not in this repo —
+     * they are per-install by nature. The set shares one prefix, so
+     * WHATSAPP_TEMPLATE_PREFIX renames all of them at once; a per-name env key
+     * (WHATSAPP_TEMPLATE_CONFIRMED, …) wins for any that break the pattern.
+     *
+     * Renaming here does NOT rename them at Meta — change both together, or
+     * sending fails with a template-not-found error.
+     */
+    protected function tpl(string $suffix): string
+    {
+        $override = config("services.whatsapp.templates.{$suffix}");
+
+        if (filled($override)) {
+            return $override;
+        }
+
+        $prefix = config('services.whatsapp.templates.prefix', 'barfres');
+
+        return $prefix.'_'.$suffix;
+    }
     public function __construct(protected WhatsAppSender $sender) {}
 
     /** Helper: map app locale → Graph template language code */
@@ -103,7 +127,7 @@ class WhatsAppTemplateService
             $branchName = \App\Models\Branch::find($b->branch_id)?->getTranslation('name', 'ar') ?? '';
 
             return $this->sender->sendTemplate(
-                $session->phone, 'barfres_confirmed', $lang,
+                $session->phone, $this->tpl('confirmed'), $lang,
                 [(string) $b->party_size, $dateText, $timeText, $branchName, (string) $b->booking_code]
             );
         }
@@ -129,7 +153,7 @@ class WhatsAppTemplateService
             // barfres_reminder_24h (ar) expects: size, date, time, branch, code
             return $this->sender->sendTemplate(
                 $session->phone,
-                'barfres_reminder_24h',
+                $this->tpl('reminder_24h'),
                 $lang,
                 [
                     (string) $b->party_size,
@@ -144,7 +168,7 @@ class WhatsAppTemplateService
         // barfres_reminder_24h (en) expects: size, date, time, branch, code
         return $this->sender->sendTemplate(
             $session->phone,
-            'barfres_reminder_24h',
+            $this->tpl('reminder_24h'),
             $lang,
             [
                 (string) $b->party_size,
@@ -160,7 +184,7 @@ class WhatsAppTemplateService
     public function noSlots(string $to, string $locale, string $branchName, string $dateText, string $partySize): bool
     {
         $lang = $this->langCode($locale);
-        $tpl = $locale === 'ar' ? 'barfres_no_slots' : 'barfres_no_slots';
+        $tpl = $locale === 'ar' ? $this->tpl('no_slots') : $this->tpl('no_slots');
 
         // ar expects: branch, date, party ; en expects: branch, date, party
         return $this->sender->sendTemplate(
@@ -176,7 +200,7 @@ class WhatsAppTemplateService
     {
         return $this->sender->sendTemplate(
             $to,
-            'barfres_out_of_hours',
+            $this->tpl('out_of_hours'),
             'en_US',
             [(string) $branchName, (string) $openTime, (string) $closeTime]
         );
@@ -187,7 +211,7 @@ class WhatsAppTemplateService
     {
         return $this->sender->sendTemplate(
             $to,
-            'barfres_hold_lost',
+            $this->tpl('hold_lost'),
             'en_US',
             [(string) $branchName, (string) $dateText]
         );
@@ -209,7 +233,7 @@ class WhatsAppTemplateService
     {
         return $this->sender->sendTemplate(
             $to,
-            'barfres_review_1',
+            $this->tpl('review_1'),
             'en_US',
             [(string) $branch, (string) $party, (string) $dateText, (string) $timeText]
         );
@@ -219,7 +243,7 @@ class WhatsAppTemplateService
     public function sessionExpired(string $to, string $locale): bool
     {
         $lang = $this->langCode($locale);
-        $tpl = $locale === 'ar' ? 'barfres_session_expired' : 'barfres_session_expired';
+        $tpl = $locale === 'ar' ? $this->tpl('session_expired') : $this->tpl('session_expired');
 
         return $this->sender->sendTemplate($to, $tpl, $lang, []);
     }
@@ -228,7 +252,7 @@ class WhatsAppTemplateService
     public function invite(string $to, string $locale): bool
     {
         $lang = $this->langCode($locale);
-        $tpl = 'barfres_invite';
+        $tpl = $this->tpl('invite');
 
         $img = $locale === 'ar'
             ? (config('services.whatsapp.templates.invite_header_ar') ?? null)
