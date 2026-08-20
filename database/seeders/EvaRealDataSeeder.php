@@ -25,6 +25,7 @@ class EvaRealDataSeeder extends Seeder
             EvaCleanSlateSeeder::class,
             AccountingChartOfAccountsSeeder::class,
             PostingAccountMapSeeder::class,
+            PostingEntityLinksSeeder::class,
             EvaTreatmentsSeeder::class,
             EvaInventorySeeder::class,
             // Links the treatments to the consumables they burn, so completed

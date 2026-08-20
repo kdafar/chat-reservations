@@ -551,6 +551,11 @@ class DatabaseSeeder extends Seeder
         // Accounting must run before insurance (insurance is downstream of it).
         $this->call([
             AccountingChartOfAccountsSeeder::class,
+            // Posting roles + the per-entity GL links the posting engine reads.
+            // Without these the auto-posting observers resolve nothing and
+            // silently skip every journal entry.
+            PostingAccountMapSeeder::class,
+            PostingEntityLinksSeeder::class,
             InsurerSeeder::class,
             InsurancePlanSeeder::class,
             InsuranceCoverageRuleSeeder::class,
@@ -568,6 +573,13 @@ class DatabaseSeeder extends Seeder
             // Canonical role structure (nurse role + removing legacy roles).
             // Idempotent; run after the permission catalog is built.
             ClinicRoleStructureSeeder::class,
+            // Must run AFTER ClinicRoleStructureSeeder, whose prune step revokes
+            // permissions from clinic_admin — otherwise those revokes win.
+            ClinicAdminFullAccessSeeder::class,
+            // Every branch needs at least one consultation room: a doctor with no
+            // room is invisible in the New Booking sheet, so an empty rooms
+            // table silently makes the whole booking flow unusable.
+            ClinicRoomsBootstrapSeeder::class,
             // Lab assistant role + the bench permissions nurses need to cover
             // the lab. Runs after the canonical structure so it stays additive.
             ClinicLabRoleSeeder::class,
