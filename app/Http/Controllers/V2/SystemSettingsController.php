@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\SystemSetting;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -112,7 +113,28 @@ class SystemSettingsController extends Controller
         $path = $request->file('logo')->store('branding', 'public');
         SystemSetting::updateOrCreate(['key' => 'clinic.public.logo_url'], ['value' => Storage::disk('public')->url($path)]);
 
-        return back()->with('flash', ['type' => 'success', 'message' => 'Logo updated.']);
+        $message = 'Logo updated.';
+
+        // Rebuild the browser/app icon set from the same image, so the admin
+        // never has to touch TENANT_BRAND_IMAGE or run an artisan command to
+        // change the favicon. Best-effort: a failure here must not lose the
+        // upload the user just made, so it is reported, not thrown.
+        try {
+            Artisan::call('brand:generate', [
+                'source' => Storage::disk('public')->path($path),
+                '--force' => true,
+            ]);
+            $message = 'Logo updated — favicon and app icons regenerated. Hard-refresh to see the new tab icon.';
+        } catch (\Throwable $e) {
+            report($e);
+
+            return back()->with('flash', [
+                'type' => 'warning',
+                'message' => 'Logo saved, but the favicon set could not be rebuilt: '.$e->getMessage(),
+            ]);
+        }
+
+        return back()->with('flash', ['type' => 'success', 'message' => $message]);
     }
 
     /** Remove the public-site logo. */
