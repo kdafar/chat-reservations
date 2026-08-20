@@ -742,6 +742,20 @@ export function Navbar() {
               <Phone size={15} strokeWidth={1.8} /> {CLINIC.phone}
             </a>
           )}
+
+          {/* WhatsApp is how most patients here actually get in touch, so it
+              sits alongside calling rather than being buried in the footer. */}
+          {CLINIC.whatsappUrl && (
+            <a
+              href={CLINIC.whatsappUrl}
+              target="_blank"
+              rel="noreferrer"
+              dir="ltr"
+              className="w-full mt-3 rounded-full border border-line text-plum py-4 text-[12px] font-medium uppercase tracking-[0.16em] flex items-center justify-center gap-2 tabular-nums"
+            >
+              <MessageCircle size={15} strokeWidth={1.8} /> {CLINIC.whatsapp}
+            </a>
+          )}
         </div>
       )}
     </>
@@ -799,6 +813,12 @@ export function Footer() {
                 <li className="flex items-center gap-3.5">
                   <Phone size={17} strokeWidth={1.5} className="text-rose shrink-0" />
                   <a href={`tel:${CLINIC.phone}`} className="hover:text-ivory transition-colors tabular-nums" dir="ltr">{CLINIC.phone}</a>
+                </li>
+              )}
+              {CLINIC.whatsappUrl && (
+                <li className="flex items-center gap-3.5">
+                  <MessageCircle size={17} strokeWidth={1.5} className="text-rose shrink-0" />
+                  <a href={CLINIC.whatsappUrl} target="_blank" rel="noreferrer" className="hover:text-ivory transition-colors tabular-nums" dir="ltr">{CLINIC.whatsapp}</a>
                 </li>
               )}
               {CLINIC.email && (

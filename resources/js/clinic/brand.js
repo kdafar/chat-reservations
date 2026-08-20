@@ -26,16 +26,27 @@ export const CLINIC = {
   // hide all "Call" buttons and show "Book Now" instead.
   phone: pick(S_.phone),
   whatsapp: pick(S_.whatsapp),
+  // wa.me needs a bare international number: no +, spaces or dashes.
+  whatsappUrl: (() => {
+    const digits = pick(S_.whatsapp).replace(/\D/g, '')
+    return digits ? `https://wa.me/${digits}` : ''
+  })(),
 
   email: pick(S_.email, 'info@alqiblaclinic.com'),
   website: websiteShown,
   websiteUrl: normalizeUrl(websiteShown),
 
   address: {
-    en: pick(S_.address_en, 'Al-Qiblah Medical Centre · Floor 8 · Kuwait City'),
-    ar: pick(S_.address_ar, 'مجمع القبلة الطبي · الدور الثامن · مدينة الكويت'),
+    en: pick(S_.address_en),
+    ar: pick(S_.address_ar),
   },
-  city: { en: 'Kuwait City, Kuwait', ar: 'مدينة الكويت، الكويت' },
+  // Short location label under the hero image. Derived from the address
+  // setting rather than hardcoded -- it used to read "Kuwait City" on every
+  // install regardless of where the clinic actually is.
+  city: {
+    en: pick(S_.address_en, 'Kuwait'),
+    ar: pick(S_.address_ar, 'الكويت'),
+  },
 
   // Optional social links — blank ones are hidden in the footer.
   social: {
