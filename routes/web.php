@@ -557,6 +557,28 @@ Route::middleware([
     Route::put('/branches/{branch}',     [\App\Http\Controllers\V2\BranchesController::class, 'update'])->name('branches.update');
     Route::delete('/branches/{branch}',  [\App\Http\Controllers\V2\BranchesController::class, 'destroy'])->name('branches.destroy');
 
+    // Consultation rooms (restaurant_tables — legacy table name). A doctor is
+    // only bookable once assigned a room, so this screen gates the whole
+    // booking flow. Previously only existed in the retired Filament admin.
+    Route::get('/rooms',            [\App\Http\Controllers\V2\RoomsController::class, 'index'])->name('rooms.index');
+    Route::post('/rooms',           [\App\Http\Controllers\V2\RoomsController::class, 'store'])->name('rooms.store');
+    Route::put('/rooms/{room}',     [\App\Http\Controllers\V2\RoomsController::class, 'update'])->name('rooms.update');
+    Route::delete('/rooms/{room}',  [\App\Http\Controllers\V2\RoomsController::class, 'destroy'])->name('rooms.destroy');
+
+    // Payment methods shown in the visit-payment / check-in modals. Layered
+    // global -> clinic -> branch, resolved by ClinicPaymentMethodResolver.
+    Route::get('/payment-methods',                    [\App\Http\Controllers\V2\PaymentMethodsController::class, 'index'])->name('payment-methods.index');
+    Route::post('/payment-methods',                   [\App\Http\Controllers\V2\PaymentMethodsController::class, 'store'])->name('payment-methods.store');
+    Route::put('/payment-methods/{payment_method}',   [\App\Http\Controllers\V2\PaymentMethodsController::class, 'update'])->name('payment-methods.update');
+    Route::delete('/payment-methods/{payment_method}',[\App\Http\Controllers\V2\PaymentMethodsController::class, 'destroy'])->name('payment-methods.destroy');
+
+    // Branch closure days (Eid, National Day, maintenance). Read by
+    // AvailabilityService to drop the day from the bookable calendar.
+    Route::get('/branch-closures',              [\App\Http\Controllers\V2\BranchBlackoutsController::class, 'index'])->name('branch-closures.index');
+    Route::post('/branch-closures',             [\App\Http\Controllers\V2\BranchBlackoutsController::class, 'store'])->name('branch-closures.store');
+    Route::put('/branch-closures/{blackout}',   [\App\Http\Controllers\V2\BranchBlackoutsController::class, 'update'])->name('branch-closures.update');
+    Route::delete('/branch-closures/{blackout}',[\App\Http\Controllers\V2\BranchBlackoutsController::class, 'destroy'])->name('branch-closures.destroy');
+
     // Doctor Schedule (v2 replacement for the DoctorSchedule page).
     Route::get('/doctor-schedule', [\App\Http\Controllers\V2\DoctorScheduleController::class, 'index'])->name('doctor-schedule.index');
 

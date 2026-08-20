@@ -34,7 +34,7 @@ class RolesController extends Controller
     protected function authorizeAccess(Request $request): void
     {
         $u = $request->user();
-        if (! $u || ! $u->can('roles.view-any')) {
+        if (! $u || ! $u->can('view_any_roles')) {
             abort(403, 'Only admins can manage roles.');
         }
     }
