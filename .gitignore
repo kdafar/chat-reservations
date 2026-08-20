@@ -9,9 +9,11 @@
 /storage/logs/*
 !/storage/logs/.gitignore
 /bootstrap/cache/*
-!.env.example
 .env
 .env.*
+# Negation must come AFTER .env.* -- later rules win, so with the old
+# ordering .env.example was ignored and never made it into the repo.
+!.env.example
 .phpunit.result.cache
 Homestead.yaml
 Homestead.json
