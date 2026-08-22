@@ -7,6 +7,10 @@ import { unreadCount } from '../Composables/useNotificationState.js'
 
 const page = usePage()
 const locale = computed(() => page.props.locale ?? 'en')
+// "View all" points at the retired Filament admin. With the legacy panel off,
+// /admin has no registered pages and just bounces back to itself, so the link
+// is hidden rather than sending people into a redirect loop.
+const legacyAdminEnabled = computed(() => !!page.props.app?.legacy_admin_enabled)
 const isRtl = computed(() => locale.value === 'ar')
 
 const items = ref([])
@@ -207,7 +211,7 @@ function rowClick(item) {
             </div>
 
             <!-- Footer -->
-            <div v-if="items.length > 0" style="border-top: 1px solid var(--line); padding: 8px 12px; display: flex; justify-content: center;">
+            <div v-if="items.length > 0 && legacyAdminEnabled" style="border-top: 1px solid var(--line); padding: 8px 12px; display: flex; justify-content: center;">
                 <a href="/admin" class="btn btn-ghost btn-sm" style="text-decoration: none; width: 100%;" @click="hide">
                     {{ t.viewAll }}
                     <Icon name="arrow-right" :size="12" class="flip-rtl" />

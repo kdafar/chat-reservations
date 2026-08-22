@@ -55,7 +55,15 @@ class AdminPanelProvider extends PanelProvider
                     ->icon('heroicon-o-chat-bubble-left-right')
                     ->group('WhatsApp')
                     ->sort(99),
-            ] : [])
+            ] : [
+                // With the legacy panel off, this panel registers no resources
+                // and no pages -- which makes Panel::getUrl() fall back to
+                // url('/admin'), so RedirectToHomeController redirects /admin
+                // to itself and the browser loops. One navigation item gives
+                // the panel a real home: the v2 dashboard.
+                \Filament\Navigation\NavigationItem::make('Admin')
+                    ->url(fn (): string => route('v2.dashboard')),
+            ])
             ->databaseNotifications()
             ->databaseNotificationsPolling('5s')
             ->renderHook(
