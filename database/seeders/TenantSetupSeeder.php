@@ -167,6 +167,11 @@ class TenantSetupSeeder extends Seeder
                         'partner_id' => $partner->id,
                         'branch_id' => $branch->id,
                         'name' => $name,
+                        // NOT NULL with no default. MySQL in non-strict mode
+                        // quietly writes '' here; a strict database rejects the
+                        // insert and the whole bootstrap dies. Seed the first
+                        // configured service so a fresh install works on both.
+                        'specialty' => config('tenant.services.0.1', 'General Medicine'),
                         'default_slot_minutes' => 30,
                         'is_active' => true,
                     ],

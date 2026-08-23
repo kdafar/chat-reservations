@@ -110,7 +110,11 @@ class GatewayAccount extends Model
                     ->orWhere('owner_type', 'system');
             })
             // Priority: branch > partner > system
-            ->orderByRaw("FIELD(owner_type, 'branch', 'partner', 'system')")
+            // Portable priority order: branch-owned first, then partner, then system.
+            // MySQL's FIELD() is not available on other drivers (the test suite
+            // runs on SQLite), and FIELD() returns 0 for a value not in the list —
+            // ELSE 0 reproduces that ordering exactly.
+            ->orderByRaw("CASE owner_type WHEN 'branch' THEN 1 WHEN 'partner' THEN 2 WHEN 'system' THEN 3 ELSE 0 END")
             // Deterministic inside each scope:
             ->orderByDesc('is_default')
             ->orderByDesc('id')
@@ -161,7 +165,11 @@ class GatewayAccount extends Model
                     }))
                     ->orWhere('owner_type', 'system');
             })
-            ->orderByRaw("FIELD(owner_type, 'branch', 'partner', 'system')")
+            // Portable priority order: branch-owned first, then partner, then system.
+            // MySQL's FIELD() is not available on other drivers (the test suite
+            // runs on SQLite), and FIELD() returns 0 for a value not in the list —
+            // ELSE 0 reproduces that ordering exactly.
+            ->orderByRaw("CASE owner_type WHEN 'branch' THEN 1 WHEN 'partner' THEN 2 WHEN 'system' THEN 3 ELSE 0 END")
             ->orderByDesc('is_default')
             ->orderByDesc('id')
             ->get()
@@ -191,7 +199,11 @@ class GatewayAccount extends Model
                     })
                     ->orWhere('owner_type', 'system');
             })
-            ->orderByRaw("FIELD(owner_type, 'branch', 'partner', 'system')")
+            // Portable priority order: branch-owned first, then partner, then system.
+            // MySQL's FIELD() is not available on other drivers (the test suite
+            // runs on SQLite), and FIELD() returns 0 for a value not in the list —
+            // ELSE 0 reproduces that ordering exactly.
+            ->orderByRaw("CASE owner_type WHEN 'branch' THEN 1 WHEN 'partner' THEN 2 WHEN 'system' THEN 3 ELSE 0 END")
             ->get();
 
         // Build options strictly from config, but keep stable keys.
