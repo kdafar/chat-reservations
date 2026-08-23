@@ -228,18 +228,14 @@ class PatientsController extends Controller
         if ($f['has_phone'] === 'yes') $q->whereNotNull('phone')->where('phone', '!=', '');
         if ($f['has_phone'] === 'no') $q->where(fn ($w) => $w->whereNull('phone')->orWhere('phone', ''));
 
-        // Non-admin: limit to patients with a booking the user can access.
-        // (Booking has BelongsToBranchScope; pluck through it.)
-        $user = auth()->user();
-        $isAdmin = $user && method_exists($user, 'hasRole')
-            && ($user->hasRole('admin') || $user->hasRole('super_admin'));
-        if (! $isAdmin) {
-            $accessibleIds = \App\Models\Booking::query()
-                ->whereNotNull('patient_id')
-                ->distinct()
-                ->pluck('patient_id');
-            $q->whereIn('id', $accessibleIds);
-        }
+        // Isolation comes from Patient's BelongsToPartnerScope, which already
+        // limits every non-global-admin to their own clinic's patients.
+        //
+        // This used to ALSO require the patient to have a booking, which meant a
+        // patient reception had just registered vanished from this list until
+        // someone booked them — and because the role check only accepted
+        // 'admin'/'super_admin', it hid them from clinic_admin too, so nobody on
+        // a clinic_* role could see a never-booked patient at all.
 
         return $q;
     }
