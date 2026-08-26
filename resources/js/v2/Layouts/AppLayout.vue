@@ -381,6 +381,7 @@ const navSections = computed(() => ([
             { id: 'doctor-schedule', icon: 'calendar-clock', label: locale.value === 'ar' ? 'جدول الأطباء' : 'Doctor Schedule', href: '/admin/v2/doctor-schedule', v2: true },
             { id: 'my-earnings', icon: 'coins', label: locale.value === 'ar' ? 'أرباحي اليومية' : 'My Earnings', href: '/admin/v2/my-earnings', v2: true },
             { id: 'guide',     icon: 'compass',      label: locale.value === 'ar' ? 'دليل النظام' : 'System Guide', href: '/admin/v2/guide', v2: true },
+            { id: 'training',  icon: 'video',        label: locale.value === 'ar' ? 'فيديوهات التدريب' : 'Training Videos', href: '/admin/v2/training', v2: true },
         ],
     },
     {

@@ -85,7 +85,13 @@ class DashboardController extends Controller
             ->whereDate('service_started_at', $today->toDateString())
             ->whereNotNull('queued_at')
             ->whereNotNull('service_started_at')
-            ->selectRaw('AVG(TIMESTAMPDIFF(MINUTE, queued_at, service_started_at)) as avg_wait')
+            // TIMESTAMPDIFF is MySQL-only; SQLite needs julianday(). Pick the
+            // expression from the live driver so the dashboard renders on both.
+            ->selectRaw(match (\Illuminate\Support\Facades\DB::connection()->getDriverName()) {
+                'sqlite' => 'AVG((julianday(service_started_at) - julianday(queued_at)) * 1440) as avg_wait',
+                'pgsql' => 'AVG(EXTRACT(EPOCH FROM (service_started_at - queued_at)) / 60) as avg_wait',
+                default => 'AVG(TIMESTAMPDIFF(MINUTE, queued_at, service_started_at)) as avg_wait',
+            })
             ->value('avg_wait');
         $avgWait = $avgWaitRaw !== null ? round((float) $avgWaitRaw, 1) : 0.0;
 

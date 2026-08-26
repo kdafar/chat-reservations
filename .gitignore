@@ -50,3 +50,6 @@ storage/backup_*.sql.gz
 # Per-install source documents (supplier quotes, price lists) — business data,
 # not code. Keep them on the server, out of the shared repo.
 /*.xlsx
+
+# Training/demo recordings (generated, never source)
+/recordings/

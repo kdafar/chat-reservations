@@ -48,7 +48,10 @@ class WaitingPatientsController extends Controller
         }
 
         $visitRows = $this->queueQuery($statuses)
-            ->orderByRaw("FIELD(status, 'awaiting_payment', 'awaiting_doctor', 'in_progress', 'awaiting_stock')")
+            // Portable queue order: money first, then waiting, then in-room.
+            // MySQL's FIELD() does not exist on other drivers, and FIELD()
+            // returns 0 for a value not in the list — ELSE 0 matches it exactly.
+            ->orderByRaw("CASE status WHEN 'awaiting_payment' THEN 1 WHEN 'awaiting_doctor' THEN 2 WHEN 'in_progress' THEN 3 WHEN 'awaiting_stock' THEN 4 ELSE 0 END")
             ->orderBy('queued_at')
             ->get();
 

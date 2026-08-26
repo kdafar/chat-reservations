@@ -443,6 +443,13 @@ Route::middleware([
     // overview, personalised to the current user. Visible to everyone.
     Route::get('/guide', [\App\Http\Controllers\V2\GuideController::class, 'index'])->name('guide');
 
+    // Training videos — narrated walkthroughs served from storage/app/training,
+    // so they stay behind the admin login instead of sitting in public/.
+    // Read-only and open to every authenticated staff member, like the Guide.
+    Route::get('/training', [\App\Http\Controllers\V2\TrainingVideosController::class, 'index'])->name('training');
+    Route::get('/training/poster/{file}', [\App\Http\Controllers\V2\TrainingVideosController::class, 'poster'])->name('training.poster');
+    Route::get('/training/{file}', [\App\Http\Controllers\V2\TrainingVideosController::class, 'stream'])->name('training.stream');
+
     // Live topbar status chips (waiting / today's bookings / unpaid).
     Route::get('/api/summary', [\App\Http\Controllers\V2\SummaryController::class, 'summary'])->name('api.summary');
 
