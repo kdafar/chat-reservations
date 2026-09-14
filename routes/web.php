@@ -572,6 +572,20 @@ Route::middleware([
     Route::put('/rooms/{room}',     [\App\Http\Controllers\V2\RoomsController::class, 'update'])->name('rooms.update');
     Route::delete('/rooms/{room}',  [\App\Http\Controllers\V2\RoomsController::class, 'destroy'])->name('rooms.destroy');
 
+    // Design preview for the v3 "visit workspace" — queue beside the open
+    // visit. Synthetic data only, reads nothing from the database, and does
+    // not replace WaitingPatients or the visit console. Safe to delete.
+    Route::get('/workspace-preview', [\App\Http\Controllers\V2\VisitWorkspacePreviewController::class, 'index'])
+        ->name('workspace-preview');
+    // How-to videos for that preview, one chapter per job, Arabic and English.
+    // Separate from /training on purpose: these screens are not live yet.
+    Route::get('/workspace-preview/videos', [\App\Http\Controllers\V2\WorkspacePreviewVideosController::class, 'index'])
+        ->name('workspace-preview.videos');
+    Route::get('/workspace-preview/videos/poster/{file}', [\App\Http\Controllers\V2\WorkspacePreviewVideosController::class, 'poster'])
+        ->name('workspace-preview.videos.poster');
+    Route::get('/workspace-preview/videos/{file}', [\App\Http\Controllers\V2\WorkspacePreviewVideosController::class, 'stream'])
+        ->name('workspace-preview.videos.stream');
+
     // Payment methods shown in the visit-payment / check-in modals. Layered
     // global -> clinic -> branch, resolved by ClinicPaymentMethodResolver.
     Route::get('/payment-methods',                    [\App\Http\Controllers\V2\PaymentMethodsController::class, 'index'])->name('payment-methods.index');
