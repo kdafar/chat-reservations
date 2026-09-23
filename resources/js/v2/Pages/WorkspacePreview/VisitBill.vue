@@ -142,8 +142,9 @@ const catName = (c) => (isRtl.value ? (c.name_ar || c.name_en) : (c.name_en || c
 const catKey = (e) => (e.category_id == null ? 'none' : String(e.category_id))
 const categoryItems = computed(() => {
     const count = {}
-    for (const e of browse.value.entries) count[catKey(e)] = (count[catKey(e)] ?? 0) + 1
-    const list = [{ value: 'all', label: t.value.allCats, sublabel: String(browse.value.entries.length) }]
+    const usable = browse.value.entries.filter((e) => (e.type === 'package' ? canAddPackages.value : canAddItems.value))
+    for (const e of usable) count[catKey(e)] = (count[catKey(e)] ?? 0) + 1
+    const list = [{ value: 'all', label: t.value.allCats, sublabel: String(usable.length) }]
     for (const c of browse.value.categories) if (count[String(c.id)]) list.push({ value: String(c.id), label: catName(c), sublabel: String(count[String(c.id)]) })
     // "Other" only means something once the clinic has categories of its own.
     if (count.none && list.length > 1) list.push({ value: 'none', label: t.value.otherCat, sublabel: String(count.none) })
@@ -153,7 +154,7 @@ const categoryItems = computed(() => {
 const activeCategory = computed(() => (categoryItems.value.some((o) => o.value === String(category.value)) ? String(category.value) : 'all'))
 const cards = computed(() => {
     const q = itemQuery.value.trim()
-    return browse.value.entries.filter((e) =>
+    return browse.value.entries.filter((e) => (e.type === 'package' ? canAddPackages.value : canAddItems.value)).filter((e) =>
         q ? matches(e.label, q) : (activeCategory.value === 'all' || catKey(e) === activeCategory.value))
 })
 /* How many of each card are already on the bill — shown on the card. */
@@ -195,6 +196,11 @@ async function addItem(c, { keepQuery = false } = {}) {
 }
 /* Live: the server says which lines may still change — single items lock at
    checkout, packages stay editable until the visit closes (v2's rule). */
+/* Live: what this user may do on this visit, from the server's own flags —
+   so nothing is offered that the server would refuse. The preview allows all. */
+const can = (flag) => !live.value || (v.permissions ?? {})[flag] !== false
+const canAddItems = computed(() => can('can_manage_items'))
+const canAddPackages = computed(() => can('can_manage_packages'))
 function lineEditable(i) {
     if (i.locked) return false
     if (!live.value) return true
@@ -548,7 +554,7 @@ const t = computed(() => isRtl.value ? {
                     </div>
                 </div>
                 <div v-else class="vb-muted" style="font-size: 12.5px;">{{ t.noItems }}</div>
-                <div v-if="!readonly && !browse.ready && !browse.loading" class="vb-picker">
+                <div v-if="!readonly && (canAddItems || canAddPackages) && !browse.ready && !browse.loading" class="vb-picker">
                     <label class="vb-search">
                         <Icon name="plus" :size="13" style="color: var(--fg-faint); flex: none;" />
                         <input v-model="itemQuery" :placeholder="t.addItem" :disabled="isBusy('add')" @keydown.enter.prevent="itemResults[0] && addItem(itemResults[0])" />
@@ -564,7 +570,7 @@ const t = computed(() => isRtl.value ? {
             <!-- Discount + coupon -->
         </div>
         <div class="vb-col">
-            <section v-if="!readonly" class="vb-sec">
+            <section v-if="!readonly && can('can_discount')" class="vb-sec">
                 <div class="vb-label"><Icon name="tag" :size="11" />{{ t.adjust }}</div>
                 <div class="vb-adjust">
                     <div class="seg seg-sm">
@@ -618,7 +624,7 @@ const t = computed(() => isRtl.value ? {
             </div>
         </div>
         <!-- Add to the bill: category → tap a card. Full width, under both columns. -->
-        <section v-if="!readonly && (browse.ready || browse.loading || browse.error)" class="vb-sec vb-catalog">
+        <section v-if="!readonly && (canAddItems || canAddPackages) && (browse.ready || browse.loading || browse.error)" class="vb-sec vb-catalog">
             <div class="vb-cathead">
                 <div class="vb-label"><Icon name="layout-grid" :size="11" />{{ t.addToBill }}</div>
                 <div class="vb-catsel">
@@ -698,7 +704,7 @@ const t = computed(() => isRtl.value ? {
             </section>
 
             <!-- Take payment -->
-            <section v-if="!readonly && balanceOf(row) > 0" class="vb-sec card vb-pay">
+            <section v-if="!readonly && can('can_record_payment') && balanceOf(row) > 0" class="vb-sec card vb-pay">
                 <div class="vb-label"><Icon name="credit-card" :size="11" />{{ t.take }}</div>
 
                 <template v-if="link">

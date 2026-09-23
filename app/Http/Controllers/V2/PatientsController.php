@@ -364,8 +364,38 @@ class PatientsController extends Controller
                 'files_view' => $canView,
                 'files_upload' => $canUpload,
                 'files_delete' => $canDelete,
+                'patient_delete' => (bool) $request->user()?->can('force_delete_patients'),
             ],
         ]);
+    }
+
+    /**
+     * What "Delete patient" would remove — shown before the admin confirms.
+     * Permanent deletion is for test and duplicate patients: it takes every
+     * visit, booking, payment, journal entry and file with it.
+     */
+    public function purgePreview(Request $request, Patient $patient, \App\Services\Clinic\PatientPurgeService $svc): \Illuminate\Http\JsonResponse
+    {
+        abort_unless((bool) $request->user()?->can('force_delete_patients'), 403, 'Not authorized to delete patients.');
+
+        return response()->json($svc->preview($patient));
+    }
+
+    public function purge(Request $request, Patient $patient, \App\Services\Clinic\PatientPurgeService $svc): \Illuminate\Http\JsonResponse
+    {
+        abort_unless((bool) $request->user()?->can('force_delete_patients'), 403, 'Not authorized to delete patients.');
+        $data = $request->validate(['confirm_name' => ['required', 'string', 'max:255']]);
+        // Typing the name is the safeguard against deleting the wrong file.
+        if (mb_strtolower(trim($data['confirm_name'])) !== mb_strtolower(trim((string) $patient->name))) {
+            return response()->json(['ok' => false, 'error' => 'The name does not match.'], 422);
+        }
+        try {
+            $counts = $svc->purge($patient, (int) $request->user()->id);
+        } catch (\RuntimeException $e) {
+            return response()->json(['ok' => false, 'error' => $e->getMessage()], 422);
+        }
+
+        return response()->json(['ok' => true, 'counts' => $counts]);
     }
 
     protected function transformPatient(Patient $p): array

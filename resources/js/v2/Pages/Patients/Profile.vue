@@ -23,11 +23,65 @@ const props = defineProps({
     visitOptions: { type: Array, default: () => [] },
     permissions: {
         type: Object,
-        default: () => ({ files_view: false, files_upload: false, files_delete: false }),
+        default: () => ({ files_view: false, files_upload: false, files_delete: false, patient_delete: false }),
     },
 })
 
 const patientEditOpen = ref(false)
+
+/* ── Delete patient (admin): permanent, with everything recorded for them ──
+   For test and duplicate files. The admin sees exactly what will go, then
+   types the patient's name to confirm. */
+const purgeOpen = ref(false)
+const purgeInfo = ref(null)
+const purgeLoading = ref(false)
+const purgeBusy = ref(false)
+const purgeName = ref('')
+const purgeError = ref('')
+const PURGE_LABELS = {
+    en: { visits: 'Visits', bookings: 'Bookings', payments: 'Payments', charges: 'Charges', items: 'Bill items', packages: 'Packages', claims: 'Insurance claims', preauths: 'Pre-authorisations', policies: 'Insurance policies', lab_orders: 'Lab orders', files: 'Files', movements: 'Stock movements', stock_requests: 'Stock requests', compensations: 'Doctor shares', follow_ups: 'Follow-ups', admissions: 'Admissions', journal_entries: 'Journal entries', activity: 'History entries' },
+    ar: { visits: 'الزيارات', bookings: 'الحجوزات', payments: 'الدفعات', charges: 'الرسوم', items: 'بنود الفاتورة', packages: 'الباقات', claims: 'مطالبات التأمين', preauths: 'الموافقات المسبقة', policies: 'وثائق التأمين', lab_orders: 'طلبات المختبر', files: 'الملفات', movements: 'حركات المخزون', stock_requests: 'طلبات المخزون', compensations: 'حصص الأطباء', follow_ups: 'المتابعات', admissions: 'حالات التنويم', journal_entries: 'قيود محاسبية', activity: 'سجل العمليات' },
+}
+const purgeRows = computed(() => {
+    const labels = PURGE_LABELS[isRtl.value ? 'ar' : 'en']
+    return Object.entries(purgeInfo.value?.counts ?? {}).filter(([k]) => labels[k]).map(([k, n]) => ({ key: k, label: labels[k], n }))
+})
+const purgeNameOk = computed(() => purgeName.value.trim().toLowerCase() === String(props.patient.name ?? '').trim().toLowerCase())
+async function openPurge() {
+    purgeOpen.value = true
+    purgeInfo.value = null
+    purgeName.value = ''
+    purgeError.value = ''
+    purgeLoading.value = true
+    try {
+        const r = await fetch(`/admin/v2/api/patients/${props.patient.id}/purge-preview`, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).message || `HTTP ${r.status}`)
+        purgeInfo.value = await r.json()
+    } catch (e) {
+        purgeError.value = e.message
+    } finally {
+        purgeLoading.value = false
+    }
+}
+async function doPurge() {
+    if (!purgeNameOk.value || purgeBusy.value || purgeInfo.value?.blockers?.length) return
+    purgeBusy.value = true
+    purgeError.value = ''
+    try {
+        const r = await fetch(`/admin/v2/api/patients/${props.patient.id}`, {
+            method: 'DELETE', credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-TOKEN': csrf() },
+            body: JSON.stringify({ confirm_name: purgeName.value }),
+        })
+        const data = await r.json().catch(() => ({}))
+        if (!r.ok || data.ok === false) throw new Error(data.error || data.message || `HTTP ${r.status}`)
+        pushToast({ kind: 'success', icon: 'trash-2', title: isRtl.value ? 'تم حذف المريض وكل سجلاته' : 'Patient and all records deleted', desc: props.patient.name })
+        router.visit('/admin/v2/patients')
+    } catch (e) {
+        purgeError.value = e.message
+        purgeBusy.value = false
+    }
+}
 
 function csrf() {
     return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ?? ''
@@ -447,6 +501,10 @@ const visitsByMonth = computed(() => {
                         <Icon name="upload" :size="13" />
                         <span class="pp-action-label">{{ isRtl ? 'رفع ملف' : 'Upload file' }}</span>
                     </button>
+                    <button v-if="permissions.patient_delete" type="button" class="btn btn-ghost btn-sm pp-delete" :title="isRtl ? 'حذف المريض' : 'Delete patient'" @click="openPurge">
+                        <Icon name="trash-2" :size="13" />
+                        <span class="pp-action-label">{{ isRtl ? 'حذف' : 'Delete' }}</span>
+                    </button>
                     <button type="button" class="btn btn-outline btn-sm" :title="t.labels.edit" @click="patientEditOpen = true">
                         <Icon name="pencil" :size="13" />
                         <span class="pp-action-label">{{ t.labels.edit }}</span>
@@ -849,6 +907,59 @@ const visitsByMonth = computed(() => {
             </div>
         </div>
 
+        <!-- Delete patient (permanent, admin) -->
+        <Teleport to="body">
+            <Transition name="fade">
+                <div v-if="purgeOpen" class="cd-overlay overlay-enter" @click.self="!purgeBusy && (purgeOpen = false)">
+                    <div class="cd-panel" style="width: min(520px, 92vw);" role="dialog" aria-modal="true">
+                        <div style="padding: 16px 20px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 10px;">
+                            <span style="width: 36px; height: 36px; border-radius: 10px; background: var(--destructive-soft, oklch(0.95 0.03 18)); color: var(--destructive); display: inline-flex; align-items: center; justify-content: center;">
+                                <Icon name="trash-2" :size="18" />
+                            </span>
+                            <div style="flex: 1;">
+                                <div style="font-weight: 500; font-size: 15px;">{{ isRtl ? 'حذف المريض نهائياً' : 'Delete patient permanently' }}</div>
+                                <div style="font-size: 11.5px; color: var(--fg-subtle);">{{ patient.name }}</div>
+                            </div>
+                            <button type="button" class="btn btn-ghost btn-sm btn-icon" :disabled="purgeBusy" @click="purgeOpen = false"><Icon name="x" :size="14" /></button>
+                        </div>
+                        <div style="padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; font-size: 13px;">
+                            <div v-if="purgeLoading" style="color: var(--fg-muted);">{{ isRtl ? 'جارٍ التحقق مما سيُحذف…' : 'Checking what will be deleted…' }}</div>
+                            <template v-else-if="purgeInfo">
+                                <div>{{ isRtl ? 'سيُحذف المريض وكل ما سُجّل له، ولا يمكن التراجع:' : 'The patient and everything recorded for them will be deleted. This cannot be undone:' }}</div>
+                                <div v-if="purgeRows.length" class="pp-purge-list">
+                                    <div v-for="r in purgeRows" :key="r.key" class="pp-purge-row"><span>{{ r.label }}</span><span class="tnum">{{ r.n }}</span></div>
+                                </div>
+                                <div v-else style="color: var(--fg-muted);">{{ isRtl ? 'لا توجد سجلات أخرى — ملف المريض فقط.' : 'No other records — just the patient file.' }}</div>
+                                <div v-if="purgeInfo.money.paid > 0 || purgeInfo.money.journal_debits > 0" class="pp-purge-warn">
+                                    <Icon name="alert-triangle" :size="13" />
+                                    <span>{{ isRtl
+                                        ? `دفعات بقيمة ${fmtMoney(purgeInfo.money.paid)} د.ك وقيودها المحاسبية ستُحذف، ولن تظهر في التقارير بعد الآن.`
+                                        : `${fmtMoney(purgeInfo.money.paid)} KWD of payments and their journal entries will be removed and will no longer appear in reports.` }}</span>
+                                </div>
+                                <div v-if="purgeInfo.money.stock_units_returned > 0" style="color: var(--fg-muted); font-size: 12px;">
+                                    {{ isRtl ? `يُعاد ${purgeInfo.money.stock_units_returned} وحدة إلى المخزون.` : `${purgeInfo.money.stock_units_returned} stock units go back into stock.` }}
+                                </div>
+                                <div v-for="b in purgeInfo.blockers" :key="b" class="pp-purge-block"><Icon name="ban" :size="13" /><span>{{ b }}</span></div>
+                                <label v-if="!purgeInfo.blockers.length" style="display: flex; flex-direction: column; gap: 6px;">
+                                    <span style="font-size: 12px; color: var(--fg-muted);">{{ isRtl ? 'للتأكيد اكتب اسم المريض:' : 'To confirm, type the patient\'s name:' }} <b style="color: var(--fg);">{{ patient.name }}</b></span>
+                                    <input v-model="purgeName" class="input" autocomplete="off" spellcheck="false" :disabled="purgeBusy" @keydown.enter.prevent="doPurge" />
+                                </label>
+                            </template>
+                            <div v-if="purgeError" class="pp-purge-block"><Icon name="alert-circle" :size="13" /><span>{{ purgeError }}</span></div>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--line);">
+                            <span style="flex: 1;"></span>
+                            <button type="button" class="btn btn-outline" :disabled="purgeBusy" @click="purgeOpen = false">{{ isRtl ? 'إلغاء' : 'Cancel' }}</button>
+                            <button type="button" class="btn btn-destructive" :disabled="!purgeInfo || purgeInfo.blockers.length > 0 || !purgeNameOk || purgeBusy" @click="doPurge">
+                                <Icon :name="purgeBusy ? 'loader' : 'trash-2'" :size="13" />
+                                {{ isRtl ? 'حذف المريض وكل سجلاته' : 'Delete patient and all records' }}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </Transition>
+        </Teleport>
+
         <!-- Upload file sheet -->
         <Teleport to="body">
             <Transition name="fade">
@@ -1098,4 +1209,12 @@ const visitsByMonth = computed(() => {
     border-top: 1px solid var(--line);
     vertical-align: middle;
 }
+.pp-delete { color: var(--destructive); }
+.pp-delete:hover { background: color-mix(in oklch, var(--destructive) 10%, transparent); color: var(--destructive); }
+.pp-purge-list { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--radius-input); overflow: hidden; }
+.pp-purge-row { display: flex; justify-content: space-between; gap: 10px; padding: 6px 10px; font-size: 12.5px; }
+.pp-purge-row + .pp-purge-row { border-top: 1px solid var(--line); }
+.pp-purge-warn, .pp-purge-block { display: flex; align-items: flex-start; gap: 7px; padding: 8px 10px; border-radius: var(--radius-input); font-size: 12.5px; }
+.pp-purge-warn { background: color-mix(in oklch, var(--warning) 12%, transparent); color: var(--wsp-warn-text, var(--fg)); }
+.pp-purge-block { background: color-mix(in oklch, var(--destructive) 10%, transparent); color: var(--destructive); }
 </style>

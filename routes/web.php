@@ -384,6 +384,8 @@ Route::middleware([
     Route::post('/patients', [\App\Http\Controllers\V2\PatientsController::class, 'store'])->name('patients.store');
     Route::get('/api/patients/{patient}', [\App\Http\Controllers\V2\PatientsController::class, 'quickView'])->name('api.patients.show');
     Route::put('/patients/{patient}', [\App\Http\Controllers\V2\PatientsController::class, 'update'])->name('patients.update');
+    Route::get('/api/patients/{patient}/purge-preview', [\App\Http\Controllers\V2\PatientsController::class, 'purgePreview'])->name('api.patients.purge-preview');
+    Route::delete('/api/patients/{patient}', [\App\Http\Controllers\V2\PatientsController::class, 'purge'])->name('api.patients.purge');
     Route::get('/patients/{patient}', [\App\Http\Controllers\V2\PatientsController::class, 'show'])
         ->name('patients.show');
 

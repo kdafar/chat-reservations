@@ -446,7 +446,9 @@ class InpatientController extends Controller
 
     protected function ensureCanView(): void
     {
-        if (! ($this->isAdminUser() || $this->isReceptionUser() || $this->isDoctorUser())) {
+        // Ward nurses read the board and admissions; changing them stays with ensureCanManage().
+        $isNurse = (bool) auth()->user()?->hasRole('clinic_nurse');
+        if (! ($this->isAdminUser() || $this->isReceptionUser() || $this->isDoctorUser() || $isNurse)) {
             abort(403);
         }
     }

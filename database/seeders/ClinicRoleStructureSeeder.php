@@ -32,9 +32,24 @@ class ClinicRoleStructureSeeder extends Seeder
         $this->seedClinicalLibrary();
         $this->seedStockTransfers();
         $this->seedPurchaseOrders();
+        $this->seedClinicalFileAccess();
         $this->restrictDoctorCatalogToReadOnly();
         $this->pruneLegacyOverGrants();
         $this->consolidateRoles();
+    }
+
+    /**
+     * Doctors and nurses view and upload patient files (before/after photos,
+     * consent, reports) from the visit. Deleting files stays with admin and
+     * reception. Additive.
+     */
+    protected function seedClinicalFileAccess(): void
+    {
+        $perms = Permission::where('guard_name', 'web')->whereIn('name', ['patient_files_view', 'patient_files_upload'])->get();
+        foreach (['clinic_doctor', 'clinic_nurse'] as $roleName) {
+            $role = Role::where('name', $roleName)->where('guard_name', 'web')->first();
+            $role?->givePermissionTo($perms);
+        }
     }
 
     /**

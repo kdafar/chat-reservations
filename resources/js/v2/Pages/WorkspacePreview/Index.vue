@@ -629,7 +629,14 @@ const writePref = (k, v) => { try { localStorage.setItem(k, v) } catch { /* priv
 const liveRole = props.is_admin ? 'admin' : props.is_reception ? 'reception' : props.is_doctor ? 'doctor' : 'nurse'
 const role = ref(live ? liveRole : (ROLES.includes(readPref('wsp.role', 'admin')) ? readPref('wsp.role', 'admin') : 'admin'))
 const doctorAs = ref(live ? (props.doctor_id ?? 0) : (Number(readPref('wsp.doctorAs', '901')) || 901))
-const visibleTabs = computed(() => (ROLE_TABS[role.value] ?? TAB_KEYS).filter((k) => !live || !LIVE_HIDDEN_TABS.includes(k)))
+/* Live: a tab whose data the server won't give this user is not offered
+   (Files needs patient_files_view — the server checks the permission, not the role). */
+const myPerms = computed(() => page.props.auth?.user?.permissions ?? [])
+const hasPerm = (p) => myPerms.value.includes(p)
+const LIVE_TAB_PERMS = { files: 'patient_files_view' }
+const visibleTabs = computed(() => (ROLE_TABS[role.value] ?? TAB_KEYS)
+    .filter((k) => !live || !LIVE_HIDDEN_TABS.includes(k))
+    .filter((k) => !live || !LIVE_TAB_PERMS[k] || hasPerm(LIVE_TAB_PERMS[k])))
 const me = computed(() => props.doctor_options.find((d) => d.id === doctorAs.value) ?? null)
 /* Which tabs a role may edit, rather than only read. */
 function canEdit(key) {
@@ -1510,7 +1517,7 @@ const t = computed(() => isRtl.value ? {
                     </div>
 
                     <!-- Allergies and alerts: under the name, on every tab -->
-                    <AlertBanner :key="`alerts-${selected.id}`" :row="selected" :readonly="(live && !selected.can_edit_clinical) || selected.status === 'completed' || role === 'reception'" />
+                    <AlertBanner :key="`alerts-${selected.id}`" :row="selected" :readonly="(live && !selected.can_edit_alerts) || selected.status === 'completed' || role === 'reception'" />
 
                     <!-- Tabs only once there is a visit -->
                     <div v-if="!selected.is_booking" class="wsp-tabs" role="tablist">
@@ -1626,7 +1633,7 @@ const t = computed(() => isRtl.value ? {
                         <VisitFiles
                             v-else-if="tab === 'files'"
                             :key="`files-${selected.id}`" :row="selected"
-                            :readonly="!canEdit('files')"
+                            :readonly="!canEdit('files') || (live && !hasPerm('patient_files_upload'))"
                         />
 
                         <!-- Items and Payments. Live adds v2's stock (Items) and insurance

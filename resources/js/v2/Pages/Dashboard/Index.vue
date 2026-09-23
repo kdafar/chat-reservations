@@ -30,6 +30,13 @@ const isRtl = computed(() => locale.value === 'ar')
 // "View all" on the activity feed points at the live queue, which is clinical /
 // front-desk only. Users without queue access (e.g. an accountant viewing the
 // dashboard) are sent to the Visits list — which they can open — instead.
+// Bookings are front-desk work (server: canManageBooking — admin + reception).
+// Others (the accountant) get no New booking button, and booking links go to
+// the bookings report they can open instead of a 403.
+const canBook = computed(() => !!page.props.auth?.user?.is_reception)
+const bookingsHref = (q = null) => (canBook.value
+    ? (q ? `/admin/v2/bookings?q=${encodeURIComponent(q)}` : '/admin/v2/bookings')
+    : '/admin/v2/reports/bookings')
 const activityHref = computed(() => {
     const u = page.props.auth?.user
     const canQueue = !!(u?.is_admin || u?.is_reception || u?.is_doctor || u?.is_nurse)
@@ -248,7 +255,7 @@ function deltaText(pct) {
                         <Icon name="calendar" :size="13" />
                         <span class="tnum">{{ todayLabel }}</span>
                     </div>
-                    <button type="button" class="btn btn-primary" @click="newBookingOpen = true">
+                    <button v-if="canBook" type="button" class="btn btn-primary" @click="newBookingOpen = true">
                         <Icon name="calendar-plus" :size="14" />
                         {{ isRtl ? 'حجز جديد' : 'New booking' }}
                     </button>
@@ -442,7 +449,7 @@ function deltaText(pct) {
                                 {{ fmtInt(todayBookings.length) }} {{ isRtl ? '' : '·' }} {{ todayLabel }}
                             </div>
                         </div>
-                        <a href="/admin/v2/bookings" class="btn btn-ghost btn-sm" style="text-decoration: none;">
+                        <a :href="bookingsHref()" class="btn btn-ghost btn-sm" style="text-decoration: none;">
                             {{ t.viewAll }}
                             <Icon name="chevron-right" :size="13" class="flip-rtl" />
                         </a>
@@ -457,7 +464,7 @@ function deltaText(pct) {
                         <a
                             v-for="b in todayBookings"
                             :key="b.id"
-                            :href="`/admin/v2/bookings?q=${encodeURIComponent(b.booking_code || b.id)}`"
+                            :href="bookingsHref(b.booking_code || b.id)"
                             class="dash-row-link"
                             style="display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 18px; border-bottom: 1px solid var(--line); text-decoration: none; color: inherit;"
                         >
@@ -534,7 +541,7 @@ function deltaText(pct) {
             </div>
         </div>
 
-        <NewBookingSheet v-model:open="newBookingOpen" @created="onBookingCreated" />
+        <NewBookingSheet v-if="canBook" v-model:open="newBookingOpen" @created="onBookingCreated" />
 </template>
 
 <style scoped>

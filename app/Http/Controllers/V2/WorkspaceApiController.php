@@ -79,7 +79,10 @@ class WorkspaceApiController extends Controller
             'last_rx' => $lastRx ? $this->rxLines($lastRx->prescriptions) : [],
             'allergies' => $patient?->allergies,
             'medical_alerts' => $patient?->medical_alerts,
-            'can_edit_clinical' => $this->canTouchClinical($visit),
+            // Same rule the vitals save enforces: an allowed user AND a visit still open to clinical edits.
+            'can_edit_clinical' => $this->canTouchClinical($visit) && $this->visitAcceptsClinicalEdits($visit),
+            // Allergies and alerts belong to the patient, not this visit: editable whatever the visit's status.
+            'can_edit_alerts' => $this->canTouchClinical($visit),
             'events' => Schema::hasTable('visit_events')
                 ? VisitEvent::query()->where('visit_id', $visit->id)->orderBy('at')->limit(200)
                     ->get(['id', 'kind', 'text', 'user_id', 'at'])

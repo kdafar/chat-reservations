@@ -331,6 +331,7 @@ export function createLiveSync({ isRtl, onChanged, features = {} }) {
             row.allergies_recorded = al.recorded
             row.alerts = alertsFromText(c.medical_alerts)
             row.can_edit_clinical = !!c.can_edit_clinical
+            row.can_edit_alerts = !!(c.can_edit_alerts ?? c.can_edit_clinical)
             // Stored events + the times the visit itself carries, in order.
             const base = (row.timeline ?? []).filter((e) => ['booked', 'checkin', 'started', 'result', 'completed', 'discharged', 'payment'].includes(e.kind) && !String(e.id).startsWith('e'))
             const stored = (c.events ?? []).filter((e) => !['payment'].includes(e.kind))

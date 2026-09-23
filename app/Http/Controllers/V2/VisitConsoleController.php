@@ -610,7 +610,10 @@ class VisitConsoleController extends Controller
      */
     public function setDiscount(Request $request, Visit $visit): \Illuminate\Http\JsonResponse
     {
-        if (! $this->canOperateVisit($visit) || $this->visitIsTerminal($visit)) {
+        if (! $this->canOperateVisit($visit)) {
+            return response()->json(['ok' => false, 'error' => 'You are not authorised to change this visit\'s discount.'], 403);
+        }
+        if ($this->visitIsTerminal($visit)) {
             return response()->json(['ok' => false, 'error' => 'This visit can no longer be edited.'], 422);
         }
 
@@ -644,7 +647,10 @@ class VisitConsoleController extends Controller
      */
     public function applyCoupon(Request $request, Visit $visit): \Illuminate\Http\JsonResponse
     {
-        if (! $this->canOperateVisit($visit) || $this->visitIsTerminal($visit)) {
+        if (! $this->canOperateVisit($visit)) {
+            return response()->json(['ok' => false, 'error' => 'You are not authorised to change this visit\'s discount.'], 403);
+        }
+        if ($this->visitIsTerminal($visit)) {
             return response()->json(['ok' => false, 'error' => 'This visit can no longer be edited.'], 422);
         }
 
@@ -699,7 +705,10 @@ class VisitConsoleController extends Controller
     /** Remove an applied coupon from the visit (releases the usage). */
     public function removeCoupon(Request $request, Visit $visit): \Illuminate\Http\JsonResponse
     {
-        if (! $this->canOperateVisit($visit) || $this->visitIsTerminal($visit)) {
+        if (! $this->canOperateVisit($visit)) {
+            return response()->json(['ok' => false, 'error' => 'You are not authorised to change this visit\'s discount.'], 403);
+        }
+        if ($this->visitIsTerminal($visit)) {
             return response()->json(['ok' => false, 'error' => 'This visit can no longer be edited.'], 422);
         }
 
@@ -2570,6 +2579,8 @@ class VisitConsoleController extends Controller
                 'can_edit_clinical' => $canOperate && $acceptsClinical,
                 'can_manage_items' => $canOperate && $acceptsClinical,
                 'can_manage_packages' => ($canOperate || $canCollect) && $acceptsClinical,
+                // Visit discount and coupon (setDiscount / applyCoupon / removeCoupon): allowed until the visit closes.
+                'can_discount' => $canOperate && ! $this->visitIsTerminal($v),
                 'can_record_payment' => $canCollect && $acceptsPayments,
                 'can_start' => $canOperate
                     && in_array($v->status, [Visit::STATUS_AWAITING_DOCTOR, Visit::STATUS_AWAITING_STOCK], true)
