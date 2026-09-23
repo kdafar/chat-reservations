@@ -246,3 +246,20 @@ export function printHtml(html) {
     if (d.readyState === 'complete') setTimeout(go, 250)
     else f.onload = () => setTimeout(go, 250)
 }
+
+/**
+ * Print a live visit's invoice or a payment's receipt with its permanent
+ * number: the first print allocates INV-/RC- numbers on the server, a reprint
+ * gets the same number marked COPY. Used by the bill and by the check-in
+ * window. `post` is live.js's call().
+ */
+export async function printVisitPaper(row, { mode = 'full', payment = null, lang = 'en', clinic, logo, money, post, snapshot = {} }) {
+    const kind = mode === 'receipt' ? 'receipt' : 'invoice'
+    const res = await post('POST', `/admin/v2/api/workspace/visits/${row.id}/documents`, {
+        kind, payment_id: payment?.id ?? null, snapshot: { ...snapshot, amount: payment?.amount ?? null, mode },
+    })
+    if (kind === 'invoice' && res.number) row.invoice_number = res.number
+    printHtml(invoiceHtml(row, { mode, payment, lang, clinic, logo, money, number: res.number, reprint: !!res.copy }))
+    return res
+}
+

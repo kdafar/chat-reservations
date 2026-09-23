@@ -1737,7 +1737,7 @@ const t = computed(() => isRtl.value ? {
         <CheckinModal
             :open="!!checkinBooking" :booking-id="checkinBooking?.id ?? null" :requested-package="checkinBooking?.requested_package ?? null"
             @update:open="(v) => !v && (checkinBooking = null)"
-            @checked-in="checkinBooking = null; reloadQueue()"
+            @checked-in="reloadQueue()"
         />
         <NewBookingSheet v-model:open="newBookingOpen" @created="reloadQueue()" />
     </template>

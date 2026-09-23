@@ -3,6 +3,9 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { usePage } from '@inertiajs/vue3'
 import Icon from './Icon.vue'
 import { pushToast } from '../Composables/useNotificationState.js'
+import { formatMoney } from '../lib/money.js'
+import { applyVisit, call } from '../Pages/WorkspacePreview/live.js'
+import { printVisitPaper } from '../Pages/WorkspacePreview/invoice.js'
 
 /**
  * Centered popup-modal wrapping the 3-step reception check-in wizard:
@@ -52,7 +55,7 @@ const t = computed(() => isRtl.value
         feePaid: 'تم تحصيل الرسوم',
         nextRoom: 'اختر غرفة', skipRoom: 'تخطي', checkIn: 'تسجيل الوصول',
         rooms: 'الغرف المتاحة', occupied: 'مشغولة', available: 'متاحة',
-        success: 'تم تسجيل الوصول بنجاح', viewVisit: 'فتح الزيارة',
+        success: 'تم تسجيل الوصول بنجاح', viewVisit: 'فتح الزيارة', printReceipt: 'طباعة الإيصال', printInvoice: 'طباعة الفاتورة', noPayment: 'لا توجد دفعة لطباعة إيصالها.', printFailed: 'تعذّرت الطباعة',
         roomsEmpty: 'لا توجد غرف في هذا الفرع',
         errorTitle: 'تعذر تسجيل الوصول',
         consultationFee: 'رسوم استشارة', kwd: 'د.ك', loading: 'جار التحميل…',
@@ -94,7 +97,7 @@ const t = computed(() => isRtl.value
         feePaid: 'Fee collected',
         nextRoom: 'Pick a room', skipRoom: 'Skip room', checkIn: 'Check in',
         rooms: 'Available rooms', occupied: 'Occupied', available: 'Available',
-        success: 'Patient checked in', viewVisit: 'Open visit',
+        success: 'Patient checked in', viewVisit: 'Open visit', printReceipt: 'Print receipt', printInvoice: 'Print invoice', noPayment: 'No payment to print a receipt for.', printFailed: 'Could not print',
         roomsEmpty: 'No rooms configured for this branch',
         errorTitle: 'Check-in failed',
         consultationFee: 'Consultation fee', kwd: 'KWD', loading: 'Loading…',
@@ -438,6 +441,30 @@ async function loadRooms() {
         }
     }
 }
+/* Print the fee's receipt or the visit invoice straight from the success
+ * screen — numbered like the bill's prints (same number on a reprint). */
+const printing = ref('')
+async function printPaper(mode) {
+    if (!success.value?.visit_id || printing.value) return
+    printing.value = mode
+    try {
+        const data = await call('GET', `/admin/v2/api/visits/${success.value.visit_id}`)
+        const row = { id: success.value.visit_id, items: [], payments: [] }
+        applyVisit(row, data.visit, isRtl.value)
+        row.doctor = data.visit?.doctor ?? (booking.value?.doctor ? { name: booking.value.doctor.name ?? booking.value.doctor } : null)
+        const payment = mode === 'receipt' ? row.payments.find((p) => !p.voided) : null
+        if (mode === 'receipt' && !payment) { pushToast({ kind: 'warning', icon: 'alert-triangle', title: t.value.noPayment }); return }
+        await printVisitPaper(row, {
+            mode, payment, lang: isRtl.value ? 'ar' : 'en', post: call, money: (n) => formatMoney(n),
+            clinic: page.props.app?.name ?? 'Clinic', logo: page.props.app?.logo_url ?? null,
+        })
+    } catch (e) {
+        pushToast({ kind: 'error', icon: 'alert-circle', title: t.value.printFailed, desc: e.message })
+    } finally {
+        printing.value = ''
+    }
+}
+
 async function doCheckin() {
     checkingIn.value = true
     try {
@@ -604,7 +631,17 @@ function fmtMoney(n) { return (Number(n) || 0).toFixed(3) }
                             <div style="font-size: 13px; color: var(--fg-muted); margin-top: 4px;">
                                 {{ booking?.patient?.name }} · {{ booking?.booking_code }}
                             </div>
-                            <div style="margin-top: 18px; display: inline-flex; gap: 8px; flex-wrap: wrap; justify-content: center;">
+                            <div style="margin-top: 16px; display: inline-flex; gap: 8px; flex-wrap: wrap; justify-content: center;">
+                                <button type="button" class="btn btn-outline" :disabled="!!printing" @click="printPaper('receipt')">
+                                    <Icon :name="printing === 'receipt' ? 'loader' : 'printer'" :size="14" :class="{ 'ci-spin': printing === 'receipt' }" />
+                                    {{ t.printReceipt }}
+                                </button>
+                                <button type="button" class="btn btn-outline" :disabled="!!printing" @click="printPaper('full')">
+                                    <Icon :name="printing === 'full' ? 'loader' : 'file-text'" :size="14" :class="{ 'ci-spin': printing === 'full' }" />
+                                    {{ t.printInvoice }}
+                                </button>
+                            </div>
+                            <div style="margin-top: 10px; display: inline-flex; gap: 8px; flex-wrap: wrap; justify-content: center;">
                                 <button type="button" class="btn btn-outline" @click="startOver">
                                     <Icon name="refresh-cw" :size="14" />
                                     {{ t.startOver }}
@@ -1050,6 +1087,8 @@ function fmtMoney(n) { return (Number(n) || 0).toFixed(3) }
     display: inline-flex; align-items: center; justify-content: center;
     flex-shrink: 0;
 }
+.ci-spin { animation: ci-spin 1s linear infinite; }
+@keyframes ci-spin { to { transform: rotate(360deg); } }
 .ci-stepper {
     padding: 10px 16px;
     border-bottom: 1px solid var(--line);

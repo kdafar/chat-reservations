@@ -30,7 +30,7 @@ import { logEvent } from './clinical.js'
 import { call } from './live.js'
 import Popover from '../../Components/Popover.vue'
 import SearchableSelect from '../../Components/SearchableSelect.vue'
-import { SECTIONS, sectionTotal, paidForSection, suggestedKind, invoiceHtml, printHtml } from './invoice.js'
+import { SECTIONS, sectionTotal, paidForSection, suggestedKind, invoiceHtml, printHtml, printVisitPaper } from './invoice.js'
 import { formatMoney } from '../../lib/money.js'
 import {
     subtotalOf, manualDiscountOf, couponDiscountOf, totalOf,
@@ -324,27 +324,19 @@ function pickKind(k) {
 const lastPaid = ref(null)
 const sectionsOnBill = computed(() => SECTIONS.filter((k) => sectionTotal(v, k) > 0))
 async function doPrint(mode, payment = null) {
-    // Live: get the permanent number first (the same one on every reprint).
-    let number = null, reprint = false
+    const opts = { mode, payment, lang: isRtl.value ? 'ar' : 'en', clinic: page.props.app?.name ?? 'Clinic', logo: page.props.app?.logo_url ?? null, money }
+    // Live: the paper carries its permanent number (the same one on every reprint).
+    let number = null
     if (live.value) {
         try {
-            const kind = mode === 'receipt' ? 'receipt' : 'invoice'
-            const res = await call('POST', `/admin/v2/api/workspace/visits/${v.id}/documents`, {
-                kind, payment_id: payment?.id ?? null,
-                snapshot: { total: totalOf(v), paid: paidOf(v), balance: balanceOf(v), amount: payment?.amount ?? null, mode },
-            })
-            number = res.number
-            reprint = !!res.copy
-            if (kind === 'invoice' && number) v.invoice_number = number
+            number = (await printVisitPaper(v, { ...opts, post: call, snapshot: { total: totalOf(v), paid: paidOf(v), balance: balanceOf(v) } })).number
         } catch (e) {
             pushToast({ kind: 'error', icon: 'alert-circle', title: isRtl.value ? 'تعذّر إصدار الرقم' : 'Could not number this document', desc: e.message })
             return
         }
+    } else {
+        printHtml(invoiceHtml(v, opts))
     }
-    printHtml(invoiceHtml(v, {
-        mode, payment, lang: isRtl.value ? 'ar' : 'en', number, reprint,
-        clinic: page.props.app?.name ?? 'Clinic', logo: page.props.app?.logo_url ?? null, money,
-    }))
     logEvent(v, 'print', (mode === 'receipt' ? (isRtl.value ? 'طباعة إيصال' : 'Receipt printed') : (isRtl.value ? 'طباعة فاتورة' : 'Invoice printed')) + (number ? ` ${number}` : ''))
 }
 
