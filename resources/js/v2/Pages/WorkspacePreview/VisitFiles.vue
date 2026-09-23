@@ -7,14 +7,23 @@
  *   - reports     scans, outside lab PDFs, X-ray reads
  *   - consent     signed on the screen, stored as a file like any other
  *
- * Sealed: a file you add stays in this browser tab as an object URL and is
- * never uploaded anywhere; reloading forgets it. Fixture files are drawn SVG
- * placeholders — nothing here looks like a real patient photo.
+ * Sealed (no `wspSync`): a file you add stays in this browser tab as an
+ * object URL and is never uploaded anywhere; reloading forgets it. Fixture
+ * files are drawn SVG placeholders — nothing here looks like a real patient
+ * photo.
+ *
+ * Live (`wspSync` provided): the list is the patient's real files from
+ * PatientFilesController — upload, signed consent and delete go to its JSON
+ * endpoints and the list is reloaded after each write, so the screen shows
+ * what the server stored. Permissions are the server's (patient_files_view /
+ * _upload / _delete); a refusal is shown as a toast.
  */
-import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { usePage } from '@inertiajs/vue3'
 import Icon from '../../Components/Icon.vue'
 import { logEvent } from './clinical.js'
+import { call } from './live.js'
+import { pushToast } from '../../Composables/useNotificationState.js'
 
 const props = defineProps({
     row: { type: Object, required: true },
@@ -23,7 +32,9 @@ const props = defineProps({
 const page = usePage()
 const isRtl = computed(() => (page.props.locale ?? 'en') === 'ar')
 const v = props.row
-if (!Array.isArray(v.files)) v.files = []
+const sync = inject('wspSync', null)
+const live = !!sync
+if (!Array.isArray(v.files) || live) v.files = []
 
 /* ── placeholders ─────────────────────────────────────────────────────── */
 function placeholder(kind, label, seed = 0) {
@@ -37,6 +48,70 @@ function placeholder(kind, label, seed = 0) {
     return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
 }
 v.files.forEach((f, i) => { if (!f.url) f.url = placeholder(f.kind, f.kind, i) })
+
+/* ── live: the patient's real files ───────────────────────────────────── */
+const API = '/admin/v2/api'
+const patientId = v.patient?.id
+const loading = ref(false)
+const busy = ref(false)
+function csrf() { return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ?? '' }
+function fail(e, title) {
+    const denied = e?.status === 403
+    pushToast({ kind: 'error', icon: 'alert-triangle', title,
+        desc: denied ? (isRtl.value ? 'ليست لديك صلاحية لهذا الإجراء' : 'You do not have permission to do this') : (e?.message ?? '') })
+}
+function localDate(iso) {
+    if (!iso) return ''
+    const d = new Date(iso)
+    if (Number.isNaN(d.getTime())) return String(iso).slice(0, 10)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+/* Server row → the shape this tab works with. `notes` doubles as the title
+ * (the API has no title field); otherwise the file name without extension. */
+function fromServer(f) {
+    const kind = f.category === 'consent_form' ? 'consent' : f.is_image ? 'photo' : 'report'
+    return {
+        id: f.id, kind,
+        name: (f.notes && String(f.notes).trim()) || String(f.original_filename ?? '').replace(/\.[^.]+$/, '') || `#${f.id}`,
+        date: localDate(f.created_at), by: f.uploaded_by ?? '',
+        // Inline view so an <img>/<iframe> can show it; each load is logged as a view.
+        url: f.is_image ? f.view_url : null, viewUrl: f.view_url, downloadUrl: f.download_url,
+        isImage: !!f.is_image, isPdf: !!f.is_pdf, size: f.size_bytes, visitId: f.visit_id, server: true,
+    }
+}
+async function loadFiles() {
+    if (!live || !patientId) return
+    loading.value = true
+    try {
+        const d = await call('GET', `${API}/patients/${patientId}/files`)
+        v.files = (d.files ?? []).map(fromServer)
+    } catch (e) { fail(e, isRtl.value ? 'تعذّر تحميل الملفات' : 'Could not load files') }
+    finally { loading.value = false }
+}
+async function upload(file, category, notes) {
+    const fd = new FormData()
+    fd.append('file', file)
+    fd.append('category', category)
+    if (v.id) fd.append('visit_id', String(v.id))
+    if (notes) fd.append('notes', notes)
+    const res = await fetch(`${API}/patients/${patientId}/files`, {
+        method: 'POST', body: fd, credentials: 'same-origin', cache: 'no-store',
+        headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-TOKEN': csrf() },
+    })
+    let data = null
+    try { data = await res.json() } catch { /* empty body */ }
+    if (!res.ok || data?.ok === false) {
+        const firstError = data?.errors ? Object.values(data.errors).flat()[0] : null
+        const err = new Error(data?.error || firstError || data?.message || `HTTP ${res.status}`)
+        err.status = res.status
+        throw err
+    }
+    return data
+}
+/* Images are filed as imaging, anything else as other — the tab has no
+ * category picker, and the patient profile can recategorise later. */
+const categoryFor = (file) => (file.type.startsWith('image/') ? 'imaging' : 'other')
+onMounted(loadFiles)
 
 /* ── list ─────────────────────────────────────────────────────────────── */
 const filter = ref('all')
@@ -54,7 +129,23 @@ const dragging = ref(false)
 const objectUrls = []
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
 
+async function addFilesLive(files) {
+    if (!files.length || !patientId) return
+    busy.value = true
+    let ok = 0
+    for (const file of files) {
+        try { await upload(file, categoryFor(file)); ok++ }
+        catch (e) { fail(e, isRtl.value ? `تعذّر رفع ${file.name}` : `Could not upload ${file.name}`) }
+    }
+    busy.value = false
+    if (ok) {
+        logEvent(v, 'file', isRtl.value ? `أُضيف ${ok} ملف` : `${ok} file${ok > 1 ? 's' : ''} added`)
+        pushToast({ kind: 'success', icon: 'check', title: isRtl.value ? `رُفع ${ok} ملف` : `${ok} file${ok > 1 ? 's' : ''} uploaded` })
+    }
+    await loadFiles()
+}
 function addFiles(fileList) {
+    if (live) return addFilesLive(Array.from(fileList ?? []))
     const added = []
     for (const file of Array.from(fileList ?? [])) {
         const isImg = file.type.startsWith('image/')
@@ -75,7 +166,14 @@ function onDrop(e) { dragging.value = false; if (!props.readonly) addFiles(e.dat
 onBeforeUnmount(() => objectUrls.forEach((u) => URL.revokeObjectURL(u)))
 
 const confirmDelete = ref(null)
-function remove(f) {
+async function remove(f) {
+    if (live) {
+        busy.value = true
+        try { await call('DELETE', `${API}/patient-files/${f.id}`) }
+        catch (e) { fail(e, isRtl.value ? 'تعذّر حذف الملف' : 'Could not delete the file'); busy.value = false; confirmDelete.value = null; return }
+        busy.value = false
+        await loadFiles()
+    }
     v.files = v.files.filter((x) => x.id !== f.id)
     confirmDelete.value = null
     if (viewing.value?.id === f.id) viewing.value = null
@@ -130,8 +228,8 @@ function penDown(e) { drawing = true; const ctx = canvas.value.getContext('2d');
 function penMove(e) { if (!drawing) return; const ctx = canvas.value.getContext('2d'); ctx.lineTo(...pt(e)); ctx.stroke(); hasInk = true; inked.value = true }
 function penUp() { drawing = false }
 function clearSign() { const c = canvas.value; c.getContext('2d').clearRect(0, 0, c.width, c.height); hasInk = false; inked.value = false }
-function saveConsent() {
-    if (!hasInk) return
+async function saveConsent() {
+    if (!hasInk || busy.value) return
     // The signature over a white page, so the saved file reads as a document.
     const c = canvas.value
     const out = document.createElement('canvas')
@@ -141,8 +239,27 @@ function saveConsent() {
     ctx.fillStyle = '#223'; ctx.font = `${14 * devicePixelRatio}px sans-serif`
     ctx.fillText(`${consentTitle.value} — ${v.patient?.name ?? ''}`, 14 * devicePixelRatio, 26 * devicePixelRatio)
     ctx.fillStyle = '#889'; ctx.font = `${11 * devicePixelRatio}px sans-serif`
-    ctx.fillText(`DEMO · ${new Date().toLocaleString()}`, 14 * devicePixelRatio, 46 * devicePixelRatio)
+    ctx.fillText(`${live ? '' : 'DEMO · '}${new Date().toLocaleString()}`, 14 * devicePixelRatio, 46 * devicePixelRatio)
     ctx.drawImage(c, 0, 70 * devicePixelRatio)
+    if (live) {
+        const title = consentTitle.value || (isRtl.value ? 'موافقة' : 'Consent')
+        busy.value = true
+        try {
+            const blob = await new Promise((resolve, reject) => out.toBlob((b) => (b ? resolve(b) : reject(new Error('PNG'))), 'image/png'))
+            const safe = title.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'consent'
+            await upload(new File([blob], `${safe}.png`, { type: 'image/png' }), 'consent_form', title)
+        } catch (e) {
+            busy.value = false
+            fail(e, isRtl.value ? 'تعذّر حفظ الموافقة' : 'Could not save the consent')
+            return
+        }
+        busy.value = false
+        logEvent(v, 'file', isRtl.value ? `وُقّعت: ${title}` : `Consent signed: ${title}`)
+        signing.value = false
+        filter.value = 'all'
+        await loadFiles()
+        return
+    }
     v.files = [...v.files, {
         id: `c${Date.now()}`, kind: 'consent', name: consentTitle.value || 'Consent', date: today(),
         by: isRtl.value ? 'توقيع المريض' : 'Signed by patient', url: out.toDataURL('image/png'), local: true,
@@ -166,11 +283,13 @@ const t = computed(() => isRtl.value ? {
     browse: 'اختر من الجهاز', local: 'تبقى في هذا المتصفح فقط — معاينة', sign: 'توقيع موافقة', empty: 'لا توجد ملفات لهذا المريض',
     compare: 'مقارنة', compareN: 'قارن المحدد', open: 'فتح', del: 'حذف', delQ: 'حذف الملف؟', yes: 'حذف', no: 'إبقاء',
     signHere: 'يوقّع المريض هنا', clear: 'مسح', save: 'حفظ الموافقة', cancel: 'إلغاء', title: 'عنوان الموافقة', close: 'إغلاق', pickTwo: 'اختر صورتين للمقارنة',
+    loading: 'جارٍ تحميل الملفات…', uploading: 'جارٍ الحفظ…', download: 'تنزيل', newTab: 'فتح في نافذة جديدة',
 } : {
     all: 'All', photo: 'Photos', report: 'Reports', consent: 'Consent', add: 'Add files', drop: 'Drop photos or files here, or',
     browse: 'choose from device', local: 'Stays in this browser only — preview', sign: 'Sign consent', empty: 'No files for this patient yet',
     compare: 'Compare', compareN: 'Compare selected', open: 'Open', del: 'Delete', delQ: 'Delete this file?', yes: 'Delete', no: 'Keep',
     signHere: 'Patient signs here', clear: 'Clear', save: 'Save consent', cancel: 'Cancel', title: 'Consent title', close: 'Close', pickTwo: 'Pick two photos to compare',
+    loading: 'Loading files…', uploading: 'Saving…', download: 'Download', newTab: 'Open in new tab',
 })
 </script>
 
@@ -186,8 +305,8 @@ const t = computed(() => isRtl.value ? {
             <button v-if="compare.length === 2" type="button" class="btn btn-outline btn-sm" @click="comparing = true"><Icon name="columns-2" :size="13" />{{ t.compareN }}</button>
             <template v-if="!readonly">
                 <button type="button" class="btn btn-outline btn-sm" @click="startSign"><Icon name="signature" :size="13" />{{ t.sign }}</button>
-                <button type="button" class="btn btn-primary btn-sm" @click="picker?.click()"><Icon name="upload" :size="13" />{{ t.add }}</button>
-                <input ref="picker" type="file" multiple accept="image/*,application/pdf" hidden @change="(e) => { addFiles(e.target.files); e.target.value = '' }" />
+                <button type="button" class="btn btn-primary btn-sm" :disabled="busy" @click="picker?.click()"><Icon :name="busy ? 'loader' : 'upload'" :size="13" />{{ busy ? t.uploading : t.add }}</button>
+                <input ref="picker" type="file" multiple :accept="live ? 'image/jpeg,image/png,image/webp,image/heic,application/pdf,.heic' : 'image/*,application/pdf'" hidden @change="(e) => { addFiles(e.target.files); e.target.value = '' }" />
             </template>
         </div>
 
@@ -202,14 +321,15 @@ const t = computed(() => isRtl.value ? {
                 <button type="button" class="btn btn-ghost btn-sm" @click="clearSign">{{ t.clear }}</button>
                 <span style="flex: 1;"></span>
                 <button type="button" class="btn btn-ghost btn-sm" @click="signing = false">{{ t.cancel }}</button>
-                <button type="button" class="btn btn-primary btn-sm" :disabled="!inked" @click="saveConsent">{{ t.save }}</button>
+                <button type="button" class="btn btn-primary btn-sm" :disabled="!inked || busy" @click="saveConsent">{{ busy ? t.uploading : t.save }}</button>
             </div>
         </div>
 
         <div v-if="list.length" class="vf-grid" :class="{ 'is-drag': dragging }">
             <div v-for="f in list" :key="f.id" class="vf-card" :class="{ 'is-compare': compare.includes(f.id) }">
                 <button type="button" class="vf-thumb" :aria-label="`${t.open} ${f.name}`" @click="viewing = f">
-                    <img :src="f.url" :alt="f.name" loading="lazy" />
+                    <img v-if="f.url" :src="f.url" :alt="f.name" loading="lazy" />
+                    <span v-else class="vf-tile"><Icon :name="kindIcon[f.kind]" :size="30" /><span>{{ f.isPdf ? 'PDF' : '' }}</span></span>
                     <span class="vf-kind"><Icon :name="kindIcon[f.kind]" :size="11" />{{ t[f.kind] }}</span>
                 </button>
                 <div class="vf-meta">
@@ -233,11 +353,11 @@ const t = computed(() => isRtl.value ? {
             </div>
         </div>
         <div v-else class="vf-empty" :class="{ 'is-drag': dragging }">
-            <Icon name="paperclip" :size="22" />
-            <div>{{ t.empty }}</div>
+            <Icon :name="loading ? 'loader' : 'paperclip'" :size="22" />
+            <div>{{ loading ? t.loading : t.empty }}</div>
             <div v-if="!readonly" class="vf-sub">{{ t.drop }} <button type="button" class="vf-link" @click="picker?.click()">{{ t.browse }}</button></div>
         </div>
-        <div v-if="!readonly" class="vf-note"><Icon name="lock" :size="11" />{{ t.local }}</div>
+        <div v-if="!readonly && !live" class="vf-note"><Icon name="lock" :size="11" />{{ t.local }}</div>
 
         <!-- Viewer -->
         <Teleport to="body">
@@ -246,6 +366,8 @@ const t = computed(() => isRtl.value ? {
                     <span class="vf-vtitle">{{ comparing ? t.compare : viewing?.name }}</span>
                     <span v-if="!comparing && viewing" class="vf-vsub tnum">{{ fmtDate(viewing.date) }} · {{ viewing.by }}</span>
                     <span style="flex: 1;"></span>
+                    <a v-if="!comparing && viewing?.viewUrl" class="vf-vbtn" :href="viewing.viewUrl" target="_blank" rel="noopener" :aria-label="t.newTab" :title="t.newTab"><Icon name="external-link" :size="17" /></a>
+                    <a v-if="!comparing && viewing?.downloadUrl" class="vf-vbtn" :href="viewing.downloadUrl" :aria-label="t.download" :title="t.download"><Icon name="download" :size="17" /></a>
                     <button type="button" class="vf-vbtn" :aria-label="t.close" @click="viewing = null; comparing = false"><Icon name="x" :size="18" /></button>
                 </div>
                 <div v-if="comparing" class="vf-compare">
@@ -253,7 +375,9 @@ const t = computed(() => isRtl.value ? {
                 </div>
                 <div v-else class="vf-stage">
                     <button v-if="list.length > 1" type="button" class="vf-vbtn vf-prev" aria-label="Previous" @click="step(-1)"><Icon name="chevron-left" :size="22" class="flip-rtl" /></button>
-                    <img :src="viewing.url" :alt="viewing.name" />
+                    <img v-if="viewing.url" :src="viewing.url" :alt="viewing.name" />
+                    <iframe v-else-if="viewing.isPdf && viewing.viewUrl" class="vf-frame" :src="viewing.viewUrl" :title="viewing.name" />
+                    <a v-else-if="viewing.downloadUrl" class="vf-nofile" :href="viewing.downloadUrl"><Icon :name="kindIcon[viewing.kind]" :size="40" />{{ t.download }}</a>
                     <button v-if="list.length > 1" type="button" class="vf-vbtn vf-next" aria-label="Next" @click="step(1)"><Icon name="chevron-right" :size="22" class="flip-rtl" /></button>
                 </div>
             </div>
@@ -274,6 +398,7 @@ const t = computed(() => isRtl.value ? {
 .vf-card.is-compare { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
 .vf-thumb { position: relative; display: block; aspect-ratio: 10 / 9; max-width: 100%; padding: 0; border: 0; background: var(--bg-sunken); cursor: zoom-in; }
 .vf-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.vf-tile { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: var(--fg-faint); font-size: 11px; font-weight: 600; letter-spacing: .04em; }
 .vf-kind { position: absolute; top: 6px; inset-inline-start: 6px; display: inline-flex; align-items: center; gap: 3px; font-size: 10.5px; font-weight: 500;
     background: color-mix(in oklch, var(--bg-elev) 88%, transparent); color: var(--fg-muted); padding: 1px 6px; border-radius: 4px; }
 .vf-meta { padding: 7px 10px 2px; min-width: 0; }
@@ -304,6 +429,8 @@ const t = computed(() => isRtl.value ? {
 .vf-vbtn:hover { background: oklch(1 0 0 / 0.16); }
 .vf-stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; gap: 12px; padding: 0 16px 24px; }
 .vf-stage img { max-width: min(100%, 1000px); max-height: 100%; object-fit: contain; border-radius: 6px; }
+.vf-frame { flex: 1; align-self: stretch; max-width: 1000px; border: 0; border-radius: 6px; background: #fff; }
+.vf-nofile { display: flex; flex-direction: column; align-items: center; gap: 10px; color: #eef; font-size: 14px; text-decoration: none; }
 .vf-compare { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 0 16px 24px; }
 .vf-compare figure { margin: 0; display: flex; flex-direction: column; gap: 6px; min-height: 0; }
 .vf-compare img { flex: 1; min-height: 0; width: 100%; object-fit: contain; border-radius: 6px; }

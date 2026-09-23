@@ -15,6 +15,7 @@ export const B = process.env.REC_BASE_URL || 'http://127.0.0.1:8077';
 const EMAIL = process.env.REC_EMAIL;
 const PASSWORD = process.env.REC_PASSWORD;
 export const PREVIEW = B + '/admin/v2/workspace-preview';
+export const LIVE = B + '/admin/v2/workspace';
 export const ACCENT = '#b19860';
 export const VIEWPORT = { width: 1440, height: 1000 };
 export const TABLET = { width: 1024, height: 800 };
@@ -27,12 +28,12 @@ export const tr = (lang) => (en, ar) => (lang === 'ar' ? ar : en);
  * open the preview. Recorded but not narrated: its duration is written out and
  * publish.py trims exactly that much off the front.
  */
-export function login(key, lang) {
+export function login(key, lang, { url = PREVIEW, email = null } = {}) {
     return async (page, s) => {
         if (!EMAIL || !PASSWORD) throw new Error('Set REC_EMAIL and REC_PASSWORD (a demo-instance admin login).');
         const t0 = Date.now();
         await page.goto(B + '/admin/login', { waitUntil: 'networkidle' });
-        await page.fill('input[type=email]', EMAIL);
+        await page.fill('input[type=email]', email || EMAIL);
         await page.fill('input[type=password]', PASSWORD);
         await page.press('input[type=password]', 'Enter');
         await page.waitForURL(/admin\/v2/, { timeout: 20000 }).catch(() => {});
@@ -43,7 +44,7 @@ export function login(key, lang) {
             localStorage.setItem('v2.dark', '0');
             ['wsp.role', 'wsp.doctorAs', 'wsp.largeText'].forEach((k) => localStorage.removeItem(k));
         });
-        await page.goto(PREVIEW, { waitUntil: 'networkidle' }).catch(() => {});
+        await page.goto(url, { waitUntil: 'networkidle' }).catch(() => {});
         await page.waitForTimeout(1200);
         const want = lang === 'ar' ? 'rtl' : 'ltr';
         if ((await page.evaluate(() => document.documentElement.dir)) !== want) {
@@ -54,6 +55,8 @@ export function login(key, lang) {
         await page.waitForTimeout(800);
         await reserveCaption(page);
         await s.ensure();
+        // The live page polls; hide toasts ("New booking received") so they never cover a step.
+        if (url !== PREVIEW) await page.addStyleTag({ content: '.toast-stack { display: none !important; }' });
         fs.writeFileSync(`${CACHE}/login-${key}.${lang}.ms`, String(Date.now() - t0));
     };
 }

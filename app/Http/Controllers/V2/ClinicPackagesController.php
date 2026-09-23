@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\V2;
 
 use App\Http\Controllers\Controller;
+use App\Models\ClinicCatalogCategory;
 use App\Models\ClinicItem;
 use App\Models\ClinicPackage;
 use App\Support\ResolvesAccessibleClinics;
@@ -84,7 +85,7 @@ class ClinicPackagesController extends Controller
             'status' => $request->input('status', 'all'),
         ];
 
-        $query = ClinicPackage::query()->with(['branch:id,name', 'items.clinicItem'])->withCount('items');
+        $query = ClinicPackage::query()->with(['branch:id,name', 'items.clinicItem', 'category:id,name'])->withCount('items');
 
         if ($filters['q'] !== '') {
             $q = $filters['q'];
@@ -109,6 +110,8 @@ class ClinicPackagesController extends Controller
             'page' => $page,
             'branches' => $this->accessibleBranches()->all(),
             'clinicItems' => $this->clinicItemOptions(),
+            'categories' => ClinicCatalogCategory::query()->orderBy('sort_order')->orderBy('id')->get(['id', 'name', 'is_active'])
+                ->map(fn (ClinicCatalogCategory $c) => ['id' => $c->id, 'name' => $c->label($locale), 'is_active' => (bool) $c->is_active])->all(),
             'counts' => [
                 'total' => ClinicPackage::query()->count(),
                 'active' => ClinicPackage::query()->where('is_active', true)->count(),
@@ -178,6 +181,7 @@ class ClinicPackagesController extends Controller
             'is_active' => ['boolean'],
             'is_public' => ['boolean'],
             'sort_order' => ['nullable', 'integer', 'min:0'],
+            'category_id' => ['nullable', 'integer', ClinicItemsController::categoryRule()],
 
             'items' => ['array'],
             'items.*.clinic_item_id' => ['required', 'integer', 'exists:clinic_items,id'],
@@ -206,6 +210,7 @@ class ClinicPackagesController extends Controller
             'is_active' => $data['is_active'] ?? true,
             'is_public' => $data['is_public'] ?? false,
             'sort_order' => $data['sort_order'] ?? 0,
+            'category_id' => $data['category_id'] ?? null,
         ];
     }
 
@@ -269,6 +274,8 @@ class ClinicPackagesController extends Controller
             'image_url' => $p->image_url,
             'branch_id' => $p->branch_id,
             'branch_name' => $p->branch ? $p->branch->localized_name : null,
+            'category_id' => $p->category_id,
+            'category_name' => $p->category?->label($locale),
             'default_price' => (float) $p->default_price,
             'discount_price' => $p->discount_price !== null ? (float) $p->discount_price : null,
             'effective_price' => $p->effective_price,

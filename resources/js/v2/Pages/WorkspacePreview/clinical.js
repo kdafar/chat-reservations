@@ -19,8 +19,15 @@
  * "Vitals recorded", not six — by updating the last event of that kind if it
  * happened within the last few minutes.
  */
+/* Live page: where new events are also sent so they are stored. The preview
+   never sets one, so its timeline stays local. */
+let eventSink = null
+export function setEventSink(fn) { eventSink = fn }
+
 export function logEvent(row, kind, text, { by = null, merge = false, at = null } = {}) {
     if (!row) return
+    // Only events happening now go to the server; `at` means rebuilt history.
+    if (eventSink && !at) { try { eventSink(row, kind, text, merge) } catch { /* never block the UI */ } }
     if (!Array.isArray(row.timeline)) row.timeline = []
     const when = at ?? new Date().toISOString()
     if (merge) {
@@ -38,7 +45,7 @@ export const EVENT_ICON = {
     booked: 'calendar-plus', checkin: 'log-in', called: 'megaphone', vitals: 'activity',
     started: 'play', notes: 'notebook-pen', rx: 'pill', lab: 'flask-conical', result: 'flask-conical',
     set: 'layers', file: 'paperclip', allergy: 'shield-alert', completed: 'check-check',
-    payment: 'wallet', void: 'rotate-ccw', discharged: 'log-out', leave: 'calendar-clock',
+    payment: 'wallet', print: 'printer', void: 'rotate-ccw', discharged: 'log-out', leave: 'calendar-clock',
 }
 
 /* ── allergies and interactions ───────────────────────────────────────── */
@@ -52,13 +59,31 @@ export const EVENT_ICON = {
  * Returns [] when nothing applies. Allergies match on drug class first (a
  * penicillin allergy covers amoxicillin) and fall back to the drug's name.
  */
+/** Drug family from a drug name, for lists that do not carry one. */
+export function drugClassOf(name) {
+    const n = String(name ?? '').toLowerCase()
+    if (/penicillin|amoxi|ampicil|augmentin|co-amoxiclav|flucloxa|piperacillin|بنسلين|أموكسي/.test(n)) return 'penicillin'
+    if (/cef|cephal/.test(n)) return 'cephalosporin'
+    if (/sulfa|sulfameth|co-trimox|septrin|bactrim/.test(n)) return 'sulfonamide'
+    if (/ibuprofen|diclofenac|naproxen|aspirin|mefenamic|ketorolac|celecoxib|meloxicam|brufen|voltaren|أسبرين|بروفين/.test(n)) return 'nsaid'
+    if (/azithro|clarithro|erythro/.test(n)) return 'macrolide'
+    if (/doxycycl|minocycl|tetracycl/.test(n)) return 'tetracycline'
+    if (/tretinoin|isotretinoin|adapalene|roaccutane/.test(n)) return 'retinoid'
+    if (/warfarin|apixaban|rivaroxaban|heparin|enoxaparin/.test(n)) return 'anticoagulant'
+    return null
+}
+
 export function drugWarnings(row, drug, formulary = [], ar = false) {
     if (!row || !drug) return []
     const out = []
     const info = formulary.find((d) => d.name.toLowerCase() === String(drug.name ?? '').toLowerCase()) ?? drug
+    // The live drug list carries no drug family; work it out from the name so
+    // a penicillin allergy still stops amoxicillin.
+    const cls = info.class ?? drugClassOf(info.name)
+    const bleeds = info.bleeds ?? ['nsaid', 'anticoagulant'].includes(cls)
     const name = String(info.name ?? '').toLowerCase()
     for (const a of row.allergies ?? []) {
-        const hitClass = a.class && info.class && a.class === info.class
+        const hitClass = a.class && cls && a.class === cls
         const hitName = String(a.name ?? '').toLowerCase().split(/[^\p{L}\p{N}]+/u).some((w) => w.length > 3 && name.includes(w))
         if (hitClass || hitName) {
             out.push({
@@ -70,11 +95,11 @@ export function drugWarnings(row, drug, formulary = [], ar = false) {
         }
     }
     const onAnticoag = (row.alerts ?? []).some((x) => x.kind === 'anticoagulant')
-    if (onAnticoag && info.bleeds) {
+    if (onAnticoag && bleeds) {
         out.push({ level: 'warn', kind: 'interaction', text: ar ? `المريض يتناول مميّع دم — ${info.name} يزيد خطر النزيف.` : `Patient is on an anticoagulant — ${info.name} raises bleeding risk.` })
     }
     const pregnant = (row.alerts ?? []).some((x) => x.kind === 'pregnancy')
-    if (pregnant && ['retinoid', 'tetracycline', 'nsaid'].includes(info.class)) {
+    if (pregnant && ['retinoid', 'tetracycline', 'nsaid'].includes(cls)) {
         out.push({ level: 'warn', kind: 'pregnancy', text: ar ? `المريضة حامل — راجع ${info.name} قبل وصفه.` : `Patient is pregnant — review ${info.name} before prescribing.` })
     }
     return out

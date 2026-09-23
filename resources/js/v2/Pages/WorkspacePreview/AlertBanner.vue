@@ -11,7 +11,7 @@
  *
  * Adding an allergy or alert is local, like everything on this page.
  */
-import { computed, ref, nextTick } from 'vue'
+import { computed, ref, nextTick, inject } from 'vue'
 import { usePage } from '@inertiajs/vue3'
 import Icon from '../../Components/Icon.vue'
 import { logEvent } from './clinical.js'
@@ -25,6 +25,9 @@ const props = defineProps({
 const page = usePage()
 const isRtl = computed(() => (page.props.locale ?? 'en') === 'ar')
 const v = props.row
+/* Live page: allergies and alerts save to the patient record. */
+const sync = inject('wspSync', null)
+const persist = () => { if (sync) sync.saveAlerts(v).catch(() => {}) }
 
 const SEV_RANK = { severe: 0, moderate: 1, mild: 2 }
 const allergies = computed(() => [...(v.allergies ?? [])].sort((a, b) => (SEV_RANK[a.severity] ?? 3) - (SEV_RANK[b.severity] ?? 3)))
@@ -45,6 +48,7 @@ function saveAllergy() {
     v.allergies_recorded = true
     logEvent(v, 'allergy', isRtl.value ? `سُجّلت حساسية: ${name}` : `Allergy recorded: ${name}`)
     adding.value = null
+    persist()
 }
 function saveAlert() {
     const text = form.value.text.trim()
@@ -52,14 +56,16 @@ function saveAlert() {
     v.alerts = [...(v.alerts ?? []), { kind: /warfarin|apixaban|rivaroxaban|مميع/i.test(text) ? 'anticoagulant' : /pregnan|حامل/i.test(text) ? 'pregnancy' : 'note', text }]
     logEvent(v, 'allergy', isRtl.value ? `تنبيه: ${text}` : `Alert added: ${text}`)
     adding.value = null
+    persist()
 }
 function markNone() {
     v.allergies = []
     v.allergies_recorded = true
     logEvent(v, 'allergy', isRtl.value ? 'لا توجد حساسية معروفة' : 'No known allergies confirmed')
+    persist()
 }
-function removeAllergy(a) { v.allergies = v.allergies.filter((x) => x !== a) }
-function removeAlert(a) { v.alerts = v.alerts.filter((x) => x !== a) }
+function removeAllergy(a) { v.allergies = v.allergies.filter((x) => x !== a); persist() }
+function removeAlert(a) { v.alerts = v.alerts.filter((x) => x !== a); persist() }
 
 /* A typed allergy should still catch the drugs of its class. */
 function guessClass(name) {

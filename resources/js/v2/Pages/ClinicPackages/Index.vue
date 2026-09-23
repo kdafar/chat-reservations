@@ -14,6 +14,7 @@ const props = defineProps({
     page: { type: Object, required: true },
     branches: { type: Array, required: true },
     clinicItems: { type: Array, required: true },
+    categories: { type: Array, default: () => [] },
     counts: { type: Object, required: true },
     can_manage: { type: Boolean, default: false },
 })
@@ -22,17 +23,24 @@ const pageProps = usePage()
 const locale = computed(() => pageProps.props.locale ?? 'en')
 const isRtl = computed(() => locale.value === 'ar')
 
+// Category picker: inactive categories stay selectable (an item may already be
+// filed there) but are flagged so they aren't picked by accident.
+const categoryItems = computed(() => props.categories.map((c) => ({
+    value: c.id, label: c.name, sublabel: c.is_active ? null : t.value.modal.inactiveCat,
+})))
+
 const t = computed(() => isRtl.value ? {
     title: 'باقات العيادة', eyebrow: 'الإعداد',
     desc: 'حزمة من الأصناف بسعر واحد يضيفها الطبيب للزيارة بنقرة. الفرع فارغ = متاحة لكل الفروع.',
     searchPh: 'ابحث باسم الباقة…', new: 'باقة جديدة',
     status: { all: 'الكل', active: 'فعّالة', inactive: 'غير فعّالة' }, allBranches: 'كل الفروع', global: 'كل الفروع',
-    col: { name: 'الاسم', branch: 'الفرع', price: 'السعر الأساسي', offer: 'سعر العرض', items: 'الأصناف', status: 'الحالة' },
+    col: { name: 'الاسم', category: 'الفئة', branch: 'الفرع', price: 'السعر الأساسي', offer: 'سعر العرض', items: 'الأصناف', status: 'الحالة' },
     empty: 'لا توجد باقات', emptyDesc: 'أنشئ أول باقة.', clear: 'مسح', showing: 'عرض', of: 'من',
     stats: { total: 'الكل', active: 'فعّالة', offers: 'عروض منشورة' },
     web: 'على الموقع', expired: 'انتهى العرض', scheduled: 'لم يبدأ بعد',
     modal: {
         createTitle: 'باقة جديدة', editTitle: 'تحرير الباقة',
+        category: 'الفئة', noCategory: '— بدون فئة —', inactiveCat: 'غير فعّالة',
         branch: 'الفرع', branchHelp: 'اتركه فارغًا لإتاحتها في كل الفروع.', global: '— كل الفروع —',
         nameEn: 'الاسم (إنجليزي)', nameAr: 'الاسم (عربي)', price: 'السعر الأساسي', active: 'فعّالة',
         priceHelp: 'السعر المعتاد للباقة قبل الخصم.',
@@ -53,12 +61,13 @@ const t = computed(() => isRtl.value ? {
     desc: 'A bundle of items at one price a doctor can add to a visit in one tap. Empty branch = available everywhere.',
     searchPh: 'Search by package name…', new: 'New package',
     status: { all: 'All', active: 'Active', inactive: 'Inactive' }, allBranches: 'All branches', global: 'All branches',
-    col: { name: 'Name', branch: 'Branch', price: 'Main price', offer: 'Offer price', items: 'Items', status: 'Status' },
+    col: { name: 'Name', category: 'Category', branch: 'Branch', price: 'Main price', offer: 'Offer price', items: 'Items', status: 'Status' },
     empty: 'No packages', emptyDesc: 'Create your first package.', clear: 'Clear', showing: 'Showing', of: 'of',
     stats: { total: 'Total', active: 'Active', offers: 'Live offers' },
     web: 'On website', expired: 'Offer ended', scheduled: 'Not started',
     modal: {
         createTitle: 'New package', editTitle: 'Edit package',
+        category: 'Category', noCategory: '— No category —', inactiveCat: 'inactive',
         branch: 'Branch', branchHelp: 'Leave empty to offer it at every branch.', global: '— All branches —',
         nameEn: 'Name (English)', nameAr: 'Name (Arabic)', price: 'Main price', active: 'Active',
         priceHelp: 'What the package normally costs, before any discount.',
@@ -95,7 +104,7 @@ const blank = () => ({
     description_en: '', description_ar: '', image_url: '',
     default_price: 0, discount_price: null,
     offer_starts_at: '', offer_ends_at: '',
-    is_active: true, is_public: false, sort_order: 0,
+    is_active: true, is_public: false, sort_order: 0, category_id: null,
     items: [],
 })
 const form = reactive(blank())
@@ -128,6 +137,7 @@ function openEdit(row) {
         discount_price: row.discount_price ?? null,
         offer_starts_at: row.offer_starts_at || '', offer_ends_at: row.offer_ends_at || '',
         is_active: !!row.is_active, is_public: !!row.is_public, sort_order: row.sort_order ?? 0,
+        category_id: row.category_id ?? null,
         items: (row.items || []).map(it => ({ clinic_item_id: it.clinic_item_id, qty_base: it.qty_base, is_consumable: it.is_consumable })),
     })
     errors.value = {}; modalOpen.value = true
@@ -210,6 +220,7 @@ function destroy(row) {
                 <thead>
                     <tr>
                         <th>{{ t.col.name }}</th>
+                        <th>{{ t.col.category }}</th>
                         <th>{{ t.col.branch }}</th>
                         <th style="text-align:end;">{{ t.col.price }}</th>
                         <th style="text-align:end;">{{ t.col.offer }}</th>
@@ -220,7 +231,7 @@ function destroy(row) {
                 </thead>
                 <tbody>
                     <tr v-if="page.data.length === 0">
-                        <td colspan="7" style="text-align:center; padding:48px 12px; color:var(--fg-faint);">
+                        <td colspan="8" style="text-align:center; padding:48px 12px; color:var(--fg-faint);">
                             <Icon name="gift" :size="32" style="margin-bottom:8px; opacity:0.4;" />
                             <div style="font-weight:600;">{{ t.empty }}</div>
                             <div style="font-size:12px; margin-top:4px;">{{ t.emptyDesc }}</div>
@@ -231,6 +242,7 @@ function destroy(row) {
                             {{ row.name }}
                             <span v-if="row.is_public" class="badge-web" :title="t.modal.publicHelp">{{ t.web }}</span>
                         </td>
+                        <td><span v-if="row.category_name" class="badge-cat">{{ row.category_name }}</span><span v-else style="color:var(--fg-faint);">—</span></td>
                         <td>{{ row.branch_name || t.global }}</td>
                         <td class="mono" style="text-align:end;" :style="row.has_discount ? 'text-decoration:line-through; color:var(--fg-faint);' : ''">{{ fmt(row.default_price) }}</td>
                         <td class="mono" style="text-align:end;">
@@ -284,6 +296,11 @@ function destroy(row) {
                         <label class="label">{{ t.modal.branch }}</label>
                         <SearchableSelect v-model="form.branch_id" :items="branches" :null-label="t.modal.global" />
                         <div style="font-size:11px; color:var(--fg-faint); margin-top:4px;">{{ t.modal.branchHelp }}</div>
+                    </div>
+                    <div>
+                        <label class="label">{{ t.modal.category }}</label>
+                        <SearchableSelect v-model="form.category_id" :items="categoryItems" :null-label="t.modal.noCategory" :placeholder="t.modal.noCategory" />
+                        <div v-if="errors.category_id" class="err">{{ errors.category_id }}</div>
                     </div>
                     <div>
                         <label class="label">{{ t.modal.sortOrder }}</label>
@@ -390,6 +407,7 @@ function destroy(row) {
 .badge-ok { display:inline-block; padding:2px 8px; font-size:11px; font-weight:600; border:1px solid var(--ok); color:var(--ok); border-radius:999px; }
 .badge-muted { display:inline-block; padding:2px 8px; font-size:11px; font-weight:600; border:1px solid var(--fg-faint); color:var(--fg-faint); border-radius:999px; }
 .badge-save { display:inline-block; margin-inline-start:6px; padding:2px 7px; font-size:10px; font-weight:700; border-radius:999px; background:#059669; color:#fff; letter-spacing:0.02em; }
+.badge-cat { display:inline-block; padding:2px 8px; font-size:11px; font-weight:600; border-radius:999px; background:var(--bg-hover); border:1px solid var(--line); color:var(--fg-subtle); white-space:nowrap; }
 .badge-web { display:inline-block; margin-inline-start:6px; padding:1px 7px; font-size:10px; font-weight:600; border-radius:999px; background:var(--bg-hover); border:1px solid var(--line); color:var(--fg-subtle); }
 .section-head { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:var(--fg-faint); margin:20px 0 10px; padding-top:12px; border-top:1px solid var(--line); }
 .savings-preview { display:flex; align-items:center; gap:8px; margin-top:10px; padding:8px 12px; border-radius:8px; background:rgba(5,150,105,0.08); border:1px solid rgba(5,150,105,0.25); color:#047857; font-size:13px; font-weight:600; }

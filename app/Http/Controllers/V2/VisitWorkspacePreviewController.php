@@ -75,6 +75,7 @@ class VisitWorkspacePreviewController extends Controller
             'formulary' => $this->formulary(),
             'lab_catalogue' => $this->labCatalogue(),
             'catalogue' => $this->catalogue(),
+            'catalogue_categories' => $this->catalogueCategories(),
             'payment_methods' => [
                 ['id' => 'knet', 'label' => 'KNET', 'label_ar' => 'كي نت', 'needs_ref' => true],
                 ['id' => 'cash', 'label' => 'Cash', 'label_ar' => 'نقداً', 'needs_ref' => false],
@@ -221,15 +222,26 @@ class VisitWorkspacePreviewController extends Controller
     /** Services and products that can go on a bill. @return array<int, array<string, mixed>> */
     protected function catalogue(): array
     {
-        $c = fn ($id, $label, $kind, $price) => compact('id', 'label', 'kind', 'price');
+        $c = fn ($id, $label, $kind, $price, $cat) => ['id' => $id, 'label' => $label, 'kind' => $kind, 'price' => $price, 'category_id' => $cat];
 
         return [
-            $c(501, 'Consultation', 'service', 15.0), $c(502, 'Follow-up', 'service', 10.0),
-            $c(503, 'Wound dressing', 'service', 4.0), $c(504, 'Suture removal', 'service', 8.0),
-            $c(505, 'Nebulizer session', 'service', 6.0), $c(506, 'Vitamin B12 injection', 'product', 8.5),
-            $c(507, 'Deep Hydrafacial', 'service', 45.0), $c(508, 'Chemical Peel', 'service', 35.0),
-            $c(509, 'Scaling & polishing', 'service', 25.0), $c(510, 'Composite filling', 'service', 30.0),
-            $c(511, 'Sterile dressing pack', 'product', 2.0), $c(512, 'Sunscreen SPF 50', 'product', 9.0),
+            $c(501, 'Consultation', 'service', 15.0, 1), $c(502, 'Follow-up', 'service', 10.0, 1),
+            $c(503, 'Wound dressing', 'service', 4.0, 2), $c(504, 'Suture removal', 'service', 8.0, 2),
+            $c(505, 'Nebulizer session', 'service', 6.0, 2), $c(506, 'Vitamin B12 injection', 'product', 8.5, 4),
+            $c(507, 'Deep Hydrafacial', 'service', 45.0, 3), $c(508, 'Chemical Peel', 'service', 35.0, 3),
+            $c(509, 'Scaling & polishing', 'service', 25.0, null), $c(510, 'Composite filling', 'service', 30.0, null),
+            $c(511, 'Sterile dressing pack', 'product', 2.0, 4), $c(512, 'Sunscreen SPF 50', 'product', 9.0, 4),
+        ];
+    }
+
+    /** Fixture categories for the preview's browse-by-category cards. */
+    protected function catalogueCategories(): array
+    {
+        $c = fn ($id, $en, $ar) => ['id' => $id, 'name_en' => $en, 'name_ar' => $ar];
+
+        return [
+            $c(1, 'Consultations', 'الكشوفات'), $c(2, 'Procedures', 'الإجراءات'),
+            $c(3, 'Skin care', 'العناية بالبشرة'), $c(4, 'Products', 'المنتجات'),
         ];
     }
 
@@ -445,8 +457,8 @@ class VisitWorkspacePreviewController extends Controller
                 'diagnosis' => 'Tension-type headache',
                 'items' => [
                     ['id' => 1, 'label' => 'Consultation', 'qty' => 1, 'amount' => 15.0],
-                    ['id' => 2, 'label' => 'Vitamin B12 injection', 'qty' => 1, 'amount' => 8.5],
-                    ['id' => 3, 'label' => 'CBC panel', 'qty' => 1, 'amount' => 12.0],
+                    ['id' => 2, 'label' => 'Vitamin B12 injection', 'qty' => 1, 'amount' => 8.5, 'kind' => 'product'],
+                    ['id' => 3, 'label' => 'CBC panel', 'qty' => 1, 'amount' => 12.0, 'kind' => 'service'],
                 ],
                 'payments' => [
                     ['id' => 1, 'label' => 'KNET', 'kind' => 'consultation', 'amount' => 15.0, 'at' => $t(60)],

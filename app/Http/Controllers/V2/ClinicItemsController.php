@@ -4,6 +4,7 @@ namespace App\Http\Controllers\V2;
 
 use App\Http\Controllers\Controller;
 use App\Models\Accounting\Account;
+use App\Models\ClinicCatalogCategory;
 use App\Models\ClinicItem;
 use App\Services\Accounting\ChartOfAccounts;
 use App\Support\ResolvesAccessibleClinics;
@@ -41,15 +42,16 @@ class ClinicItemsController extends Controller
         $q = trim((string) $request->input('q', ''));
         $type = $request->input('type', 'all');
         $active = $request->input('active', 'all');
-        $query = ClinicItem::query()->with('branch:id,name');
+        $query = ClinicItem::query()->with(['branch:id,name', 'category:id,name']);
+        $this->applyCategoryFilter($query, (string) $request->input('category', ''));
         if ($q !== '') { $query->where(fn ($w) => $w->where('name->en', 'like', "%{$q}%")->orWhere('name->ar', 'like', "%{$q}%")); }
         if (in_array($type, ['consumable', 'service', 'product'], true)) { $query->where('type', $type); }
         if ($active === 'active') { $query->where('is_active', true); } elseif ($active === 'inactive') { $query->where('is_active', false); }
         return \Maatwebsite\Excel\Facades\Excel::download(
             new \App\Exports\V2\StyledQueryExport(
                 $query->orderBy('id'),
-                ['ID', 'Name (EN)', 'Name (AR)', 'Type', 'Branch', 'Cost', 'Price', 'Billable', 'Stockable', 'Active'],
-                fn ($it) => [$it->id, $n['en'] ?? null, $n['ar'] ?? null, $it->type, $it->branch?->localized_name, number_format((float) $it->default_cost, 3, '.', ''), number_format((float) $it->default_price, 3, '.', ''), $it->is_billable ? 'Yes' : 'No', $it->is_stockable ? 'Yes' : 'No', $it->is_active ? 'Yes' : 'No'],
+                ['ID', 'Name (EN)', 'Name (AR)', 'Type', 'Category', 'Branch', 'Cost', 'Price', 'Billable', 'Stockable', 'Active'],
+                fn ($it) => [$it->id, $it->name['en'] ?? null, $it->name['ar'] ?? null, $it->type, $it->category?->label(app()->getLocale()), $it->branch?->localized_name, number_format((float) $it->default_cost, 3, '.', ''), number_format((float) $it->default_price, 3, '.', ''), $it->is_billable ? 'Yes' : 'No', $it->is_stockable ? 'Yes' : 'No', $it->is_active ? 'Yes' : 'No'],
                 'Clinic Items',
                 app()->getLocale() === 'ar',
             ),
@@ -66,9 +68,11 @@ class ClinicItemsController extends Controller
             'q' => trim((string) $request->input('q', '')),
             'type' => $request->input('type', 'all'),
             'active' => $request->input('active', 'all'),
+            'category' => (string) $request->input('category', ''),
         ];
 
-        $query = ClinicItem::query()->with(['branch:id,name', 'components']);
+        $query = ClinicItem::query()->with(['branch:id,name', 'components', 'category:id,name']);
+        $this->applyCategoryFilter($query, $filters['category']);
 
         if ($filters['q'] !== '') {
             $q = $filters['q'];
@@ -92,7 +96,7 @@ class ClinicItemsController extends Controller
         // item's editor on load, even when the row isn't on the current page.
         $openRecord = null;
         if ($openId = $request->integer('open')) {
-            $it = ClinicItem::query()->with(['branch:id,name', 'components'])->find($openId);
+            $it = ClinicItem::query()->with(['branch:id,name', 'components', 'category:id,name'])->find($openId);
             if ($it) {
                 $openRecord = $this->presentItem($it, $locale);
             }
@@ -104,6 +108,7 @@ class ClinicItemsController extends Controller
             'open_record' => $openRecord,
             'branches' => $this->branchOptions(),
             'componentItems' => $this->componentItemOptions(),
+            'categories' => $this->categoryOptions(),
             'types' => ['consumable', 'service', 'product'],
             'counts' => [
                 'total' => ClinicItem::query()->count(),
@@ -176,6 +181,7 @@ class ClinicItemsController extends Controller
             'default_price' => ['required', 'numeric', 'min:0'],
             'inventory_account_id' => ['nullable', 'integer', 'exists:chart_of_accounts,id'],
             'cogs_account_id' => ['nullable', 'integer', 'exists:chart_of_accounts,id'],
+            'category_id' => ['nullable', 'integer', self::categoryRule()],
         ]);
 
         $isService = $data['type'] === 'service';
@@ -202,6 +208,7 @@ class ClinicItemsController extends Controller
             'is_billable' => $isService ? true : (bool) $request->input('is_billable', true),
             'default_cost' => $data['default_cost'],
             'default_price' => $data['default_price'],
+            'category_id' => $data['category_id'] ?? null,
         ];
 
         // Only an accountant may set the inventory/COGS account links; others leave them as-is.
@@ -224,6 +231,7 @@ class ClinicItemsController extends Controller
         $name = is_array($it->name) ? $it->name : [];
         $it->setAttribute('display_name', $name[$locale] ?? $name['en'] ?? $name['ar'] ?? ('#'.$it->id));
         $it->setAttribute('branch_name', $it->branch?->localized_name);
+        $it->setAttribute('category_name', $it->relationLoaded('category') ? $it->category?->label($locale) : null);
         $it->setAttribute('bom_lines', $it->relationLoaded('components')
             ? $it->components->map(fn (\App\Models\ClinicItemComponent $c) => [
                 'component_item_id' => (int) $c->component_item_id,
@@ -231,9 +239,50 @@ class ClinicItemsController extends Controller
                 'is_optional' => (bool) $c->is_optional,
             ])->values()->all()
             : []);
-        $it->makeHidden('components'); // expose only the flat bom_lines payload
+        $it->makeHidden(['components', 'category']); // expose only the flat bom_lines / category_name payload
 
         return $it;
+    }
+
+    /**
+     * ?category=<id> narrows to one category; ?category=none to uncategorised
+     * items. Anything else (empty/"all") leaves the query alone.
+     */
+    protected function applyCategoryFilter($query, string $category): void
+    {
+        if ($category === 'none') {
+            $query->whereNull('category_id');
+        } elseif (ctype_digit($category)) {
+            $query->where('category_id', (int) $category);
+        }
+    }
+
+    /** Category picker options ({id, name, is_active}) in display order. */
+    protected function categoryOptions(): array
+    {
+        $locale = app()->getLocale();
+
+        return ClinicCatalogCategory::query()
+            ->orderBy('sort_order')->orderBy('id')
+            ->get(['id', 'name', 'is_active'])
+            ->map(fn (ClinicCatalogCategory $c) => [
+                'id' => $c->id,
+                'name' => $c->label($locale),
+                'is_active' => (bool) $c->is_active,
+            ])->all();
+    }
+
+    /**
+     * category_id must be a category this user can see (the partner scope
+     * applies), not merely any row in the table.
+     */
+    public static function categoryRule(): \Closure
+    {
+        return function (string $attribute, $value, \Closure $fail) {
+            if ($value !== null && ! ClinicCatalogCategory::query()->whereKey((int) $value)->exists()) {
+                $fail(__('validation.exists', ['attribute' => 'category']));
+            }
+        };
     }
 
     /** Items eligible as BOM components: active, stock-bearing (not services). */

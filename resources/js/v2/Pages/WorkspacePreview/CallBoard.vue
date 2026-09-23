@@ -11,7 +11,7 @@
  * In the preview it opens full screen over the page (F11-style "Present"
  * button uses the Fullscreen API). Nothing is sent anywhere.
  */
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, inject, onBeforeUnmount, ref, watch } from 'vue'
 import { usePage } from '@inertiajs/vue3'
 import Icon from '../../Components/Icon.vue'
 
@@ -20,6 +20,7 @@ const props = defineProps({
     calls: { type: Array, default: () => [] },   // newest last: { id, ticket, name, room, at }
 })
 const emit = defineEmits(['close'])
+const live = !!inject('wspSync', null)
 const page = usePage()
 const isRtl = computed(() => (page.props.locale ?? 'en') === 'ar')
 const clinic = computed(() => page.props.app?.name ?? (isRtl.value ? 'العيادة' : 'Clinic'))
@@ -79,7 +80,7 @@ const t = computed(() => isRtl.value
         <div v-if="open" ref="root" class="cb" :dir="isRtl ? 'rtl' : 'ltr'" tabindex="-1" role="dialog">
             <div class="cb-top">
                 <span class="cb-clinic">{{ clinic }}</span>
-                <span class="cb-demo">{{ t.demo }}</span>
+                <span v-if="!live" class="cb-demo">{{ t.demo }}</span>
                 <span style="flex: 1;"></span>
                 <span class="cb-clock tnum">{{ timeOf(clock) }}</span>
                 <button type="button" class="cb-btn" :aria-pressed="sound" @click="sound = !sound"><Icon :name="sound ? 'volume-2' : 'volume-x'" :size="16" />{{ t.sound }}</button>

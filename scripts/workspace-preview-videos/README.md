@@ -6,7 +6,7 @@ Source for the narrated videos on `/admin/v2/workspace-preview/videos`:
 | # | File | Chapter |
 |---|---|---|
 | 01 | `chapters/ch01.mjs` | Tour of the screen (everyone) |
-| 02 | `chapters/ch02.mjs` | Reception: walk-ins, bookings, check-in |
+| 02 | `chapters/ch02.mjs` | Reception: walk-ins, bookings, check-in (**live page**, see below) |
 | 03 | `chapters/ch03.mjs` | Nurse: calling in, allergies, vitals |
 | 04 | `chapters/ch04.mjs` | Doctor: notes, prescription, lab, leave |
 | 05 | `chapters/ch05.mjs` | Doctor: photos, consent, finishing |
@@ -44,6 +44,12 @@ Each chapter file holds the steps **and both languages' captions** side by side
 - `assets/` are drawn demo photos used by chapter 5's upload — no real patient.
 - The preview uses fixture data only, so takes do not change the demo DB; each
   take is a fresh browser, so the fake patients start the same every time.
+- **Chapter 2 is the exception.** The live workspace does front-desk work
+  through the system's New booking sheet and Check-in window, not the preview's
+  intake pane, so chapter 2 is recorded on `/admin/v2/workspace` of the demo and
+  **does** write to the demo DB. Before each take: restore a clean demo DB, run
+  `sqlite3 <demo.sqlite> < ch02-demo-bookings.sql` (two of today's bookings),
+  and set `REC_RECEPTION_EMAIL` to the demo's reception login.
 - Locators are language-neutral (classes, and patient names which are Latin in
   both languages). If a UI class is renamed, update `lib.mjs` / the chapter.
 - The login part of each clip is timed into `.cache/` and trimmed by

@@ -63,6 +63,11 @@ class ClinicItem extends Model
         });
     }
 
+    public function category(): BelongsTo
+    {
+        return $this->belongsTo(ClinicCatalogCategory::class, 'category_id');
+    }
+
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);

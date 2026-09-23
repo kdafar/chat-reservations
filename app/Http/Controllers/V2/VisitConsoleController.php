@@ -129,17 +129,29 @@ class VisitConsoleController extends Controller
             }))
             ->when(mb_strlen($q) >= 2, fn ($w) => $w->where('name', 'like', '%'.$q.'%'))
             ->orderBy('name')
-            ->limit(60)
-            ->get(['id', 'name', 'type', 'default_price', 'default_cost'])
+            // ?all=1: the whole billable catalogue, for the visit screen's
+            // browse-by-category cards (search keeps the short list).
+            ->limit($request->boolean('all') ? 1000 : 60)
+            ->get(array_merge(['id', 'name', 'type', 'default_price', 'default_cost'], $this->catalogHasCategories() ? ['category_id'] : []))
             ->map(fn ($it) => [
                 'id' => $it->id,
                 'name' => $this->resolveName($it->name),
                 'type' => $it->type,
                 'price' => (float) ($it->default_price ?? 0),
                 'cost' => (float) ($it->default_cost ?? 0),
+                'category_id' => $it->category_id ?? null,
             ]);
 
         return response()->json(['items' => $rows]);
+    }
+
+    /** Catalogue categories exist once their migration has run. */
+    protected function catalogHasCategories(): bool
+    {
+        static $has = null;
+
+        return $has ??= \Illuminate\Support\Facades\Schema::hasColumn('clinic_items', 'category_id')
+            && \Illuminate\Support\Facades\Schema::hasColumn('clinic_packages', 'category_id');
     }
 
     /**
@@ -164,9 +176,9 @@ class VisitConsoleController extends Controller
             }))
             ->when(mb_strlen($q) >= 2, fn ($w) => $w->where('name', 'like', '%'.$q.'%'))
             ->orderBy('id', 'desc')
-            ->limit(60)
+            ->limit($request->boolean('all') ? 500 : 60)
             ->with(['items.clinicItem'])
-            ->get(['id', 'branch_id', 'name', 'default_price', 'discount_price', 'offer_starts_at', 'offer_ends_at'])
+            ->get(array_merge(['id', 'branch_id', 'name', 'default_price', 'discount_price', 'offer_starts_at', 'offer_ends_at'], $this->catalogHasCategories() ? ['category_id'] : []))
             // Branch isolation: a package's components are resolved through the
             // (branch-scoped) ClinicItem relation, so a component outside the
             // user's branch/clinic loads as a null clinicItem. Hide any package
@@ -191,6 +203,7 @@ class VisitConsoleController extends Controller
             return [
                 'id' => $pkg->id,
                 'name' => $this->resolveName($pkg->name),
+                'category_id' => $pkg->category_id ?? null,
                 'price' => $price,
                 'offer_price' => $pkg->has_discount ? $pkg->effective_price : null,
                 'saves' => round($perUnit, 3),
@@ -2537,6 +2550,8 @@ class VisitConsoleController extends Controller
             'edit_url' => '/admin/visits/'.$v->id.'/edit',
 
             'pending_stock_request' => $hasPendingStock,
+            // When the pending request was raised (workspace shows "requested 10:42").
+            'pending_stock_requested_at' => $pendingReq?->created_at?->toIso8601String(),
             'balance' => $balance,
             // Items on this visit that need restocking (stockable items
             // where qty_on_hand < qty needed). Used by VisitSheet to show

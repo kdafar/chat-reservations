@@ -11,7 +11,7 @@
  * card opens its tab. A summary that could also be edited would be the same
  * feature twice, which is the problem the tabs were made to remove.
  */
-import { computed } from 'vue'
+import { computed, inject } from 'vue'
 import { usePage } from '@inertiajs/vue3'
 import Icon from '../../Components/Icon.vue'
 import { formatMoney } from '../../lib/money.js'
@@ -23,6 +23,7 @@ const props = defineProps({
     row: { type: Object, required: true },
 })
 const emit = defineEmits(['open'])
+const live = !!inject('wspSync', null)
 
 const page = usePage()
 const isRtl = computed(() => (page.props.locale ?? 'en') === 'ar')
@@ -137,8 +138,8 @@ const t = computed(() => isRtl.value ? {
             <span v-else class="gl-empty"><Icon name="plus" :size="12" />{{ t.noNotes }} · {{ t.write }}</span>
         </button>
 
-        <!-- Vitals -->
-        <button type="button" class="gl-card" @click="emit('open', 'vitals')">
+        <!-- Vitals (preview only until vitals can be saved) -->
+        <button v-if="!live" type="button" class="gl-card" @click="emit('open', 'vitals')">
             <span class="gl-head">
                 <Icon name="activity" :size="13" /><span class="gl-title">{{ t.vitals }}</span>
                 <Icon name="chevron-right" :size="14" class="gl-go flip-rtl" />

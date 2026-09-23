@@ -609,6 +609,15 @@ class WaitingPatientsController extends Controller
             return $q;
         }
 
+        // Nurses may open this screen (see index()) and work the whole
+        // branch — calling patients in, taking vitals — so they see every
+        // checked-in visit. Before this they passed the gate and got an
+        // empty list. The branch scope above still limits it to their branch.
+        $u = $this->authUser();
+        if ($u && method_exists($u, 'hasRole') && $u->hasRole('clinic_nurse') && $this->doctorIdForCurrentUser() === null) {
+            return $q->whereNotNull('checked_in_at');
+        }
+
         $doctorId = $this->doctorIdForCurrentUser();
         if ($doctorId === null) {
             return $q->whereRaw('1=0');

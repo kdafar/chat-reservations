@@ -22,7 +22,7 @@
  * The prop shape matches WaitingPatientsController's payload, so approving the
  * design and pointing this at real data is a controller swap, not a rewrite.
  */
-import { computed, ref, reactive, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { computed, ref, reactive, onMounted, onUnmounted, watch, nextTick, provide } from 'vue'
 import { Head, Link, usePage } from '@inertiajs/vue3'
 import AppLayout from '../../Layouts/AppLayout.vue'
 defineOptions({ layout: AppLayout })
@@ -31,6 +31,12 @@ import Popover from '../../Components/Popover.vue'
 import ConfirmDialog from '../../Components/ConfirmDialog.vue'
 import SearchableSelect from '../../Components/SearchableSelect.vue'
 import IntakePane from './IntakePane.vue'
+import CheckinModal from '../../Components/CheckinModal.vue'
+import PrintMenu from '../../Components/PrintMenu.vue'
+import StockPanel from './StockPanel.vue'
+import InsurancePanel from './InsurancePanel.vue'
+import NewBookingSheet from '../../Components/NewBookingSheet.vue'
+import { createLiveSync, reloadQueue, guardUnsaved } from './live.js'
 import VisitNotes from './VisitNotes.vue'
 import VisitBill from './VisitBill.vue'
 import VisitGlance from './VisitGlance.vue'
@@ -60,6 +66,7 @@ const props = defineProps({
     formulary: { type: Array, default: () => [] },
     lab_catalogue: { type: Array, default: () => [] },
     catalogue: { type: Array, default: () => [] },
+    catalogue_categories: { type: Array, default: () => [] },
     payment_methods: { type: Array, default: () => [] },
     coupons: { type: Array, default: () => [] },
     clinical: { type: Object, default: () => ({}) },
@@ -69,11 +76,33 @@ const props = defineProps({
     is_reception: { type: Boolean, default: false },
     is_doctor: { type: Boolean, default: false },
     is_demo: { type: Boolean, default: true },
+    /* Set by WorkspaceController: real data, every action goes to the v2 APIs. */
+    live: { type: Boolean, default: false },
+    doctor_id: { type: Number, default: null },
+    done_today: { type: Array, default: () => [] },
+    calls_today: { type: Object, default: () => ({}) },
+    features: { type: Object, default: () => ({}) },
 })
 
 const page = usePage()
 const locale = computed(() => page.props.locale ?? 'en')
 const isRtl = computed(() => locale.value === 'ar')
+
+/* ── live mode ────────────────────────────────────────────────────────────
+   On /admin/v2/workspace the page is fed the Waiting Patients payload and a
+   sync object is provided to every panel. On the preview there is no sync,
+   so every panel only changes local state — the preview stays sealed. */
+const live = !!props.live
+const sync = live ? createLiveSync({ isRtl: () => isRtl.value, onChanged: () => reloadQueue(), features: props.features ?? {} }) : null
+if (sync) {
+    provide('wspSync', sync)
+    const unguard = guardUnsaved(sync)
+    onUnmounted(unguard)
+}
+/* Things with no server storage yet stay preview-only for now. */
+const LIVE_HIDDEN_TABS = []
+const checkinBooking = ref(null)     // { id, requested_package } → v2 CheckinModal
+const newBookingOpen = ref(false)    // v2 NewBookingSheet
 
 /* ── local working copy — the entire "database" for this page ─────────── */
 const rows = ref([])
@@ -111,6 +140,9 @@ function normalizeRow(r) {
         r.lab = { ready: ready.length, pending: pending.length, urgent: pending.some((o) => o.urgent), worst_flag: worst, tests: r.lab_orders }
     }
     r.items = Array.isArray(r.items) ? r.items : []
+    // A line with no kind takes its catalogue entry's, so the invoice can file it
+    // under Services & packages or Items.
+    r.items.forEach((i) => { if (!i.kind) i.kind = props.catalogue.find((c) => c.label === i.label)?.kind })
     // The consultation fee is part of the bill. Some rows carry it only as
     // fee.amount, with no item line — once the balance came from item lines,
     // those patients silently stopped owing their consultation. Put it on the
@@ -139,7 +171,7 @@ function normalizeRow(r) {
     r.last_vitals = r.last_vitals ?? c.last_vitals ?? null
     r.last_rx = r.last_rx ?? c.last_rx ?? []
     r.files = r.files ?? JSON.parse(JSON.stringify(c.files ?? []))
-    r.call_count = r.call_count ?? 0
+    r.call_count = r.call_count ?? (live ? Number(props.calls_today?.[r.id] ?? 0) : 0)
 
     // Anyone past the waiting stage has had vitals taken today — close to last
     // time, so the "change since last visit" arrows have something to say.
@@ -171,7 +203,8 @@ function normalizeRow(r) {
     return r
 }
 function seed() {
-    rows.value = JSON.parse(JSON.stringify(props.visits)).map(normalizeRow)
+    // Live: the queue plus today's finished visits, for the Done filter.
+    rows.value = JSON.parse(JSON.stringify(live ? [...props.visits, ...props.done_today] : props.visits)).map(normalizeRow)
     selectedId.value = null
     q.value = ''
     filter.value = 'all'
@@ -185,6 +218,42 @@ const orderSets = reactive(JSON.parse(JSON.stringify(props.order_sets ?? [])))
 const selected = computed(() => rows.value.find((r) => r.id === selectedId.value) ?? null)
 onMounted(seed)
 
+/* Live: the queue props refresh every few seconds and after every action.
+   Rebuild the list from them, but keep the rows already opened (their notes,
+   bill and lab are loaded) and only take the fields the queue owns. */
+function mergeRows(list) {
+    const byId = new Map(rows.value.map((r) => [r.id, r]))
+    rows.value = (list ?? []).map((raw) => {
+        const old = byId.get(raw.id)
+        if (old?.detail_loaded) {
+            for (const k of ['status', 'queued_at', 'checked_in_at', 'service_started_at', 'lab', 'doctor', 'room', 'policy', 'fee', 'notes']) {
+                if (raw[k] !== undefined) old[k] = raw[k]
+            }
+            return old
+        }
+        return normalizeRow(JSON.parse(JSON.stringify(raw)))
+    })
+    if (selectedId.value != null && !rows.value.some((r) => r.id === selectedId.value)) selectedId.value = null
+}
+if (live) {
+    watch(() => [props.visits, props.done_today], () => mergeRows([...props.visits, ...(props.done_today ?? [])]))
+    let poll
+    onMounted(() => {
+        poll = setInterval(() => {
+            // Not while a dialog or form is open — a reload under a half-typed
+            // form is how a check-in gets lost.
+            if (checkinBooking.value || newBookingOpen.value || pendingAction.value || finish.value) return
+            reloadQueue()
+        }, 15000)
+    })
+    onUnmounted(() => clearInterval(poll))
+    // Opening a visit loads its notes, bill, payments and lab from the server.
+    watch(selectedId, (id) => {
+        const row = rows.value.find((r) => r.id === id)
+        if (row && !row.is_booking) sync.loadVisit(row).catch((e) => pushToast({ kind: 'error', icon: 'alert-circle', title: e.message }))
+    })
+}
+
 /* Wait timers tick locally. No server poll — there is no server state here. */
 const now = ref(Date.now())
 let tick
@@ -192,12 +261,15 @@ onMounted(() => { tick = setInterval(() => { now.value = Date.now() }, 2000) })
 onUnmounted(() => clearInterval(tick))
 
 function demoToast(title, desc) {
-    pushToast({ kind: 'success', icon: 'check', title, desc: desc ?? t.value.demoNote })
+    pushToast({ kind: 'success', icon: 'check', title, desc: desc ?? (live ? '' : t.value.demoNote) })
 }
 
 /* ── local mutations — nothing leaves the browser ─────────────────────── */
 let nextId = 7900
 function checkIn(row) {
+    // Live: v2's check-in dialog — fee, method, receipt, room — posts to the
+    // real check-in API. The queue reloads when it is done.
+    if (live) { checkinBooking.value = { id: row.booking_id, requested_package: row.requested_package ?? null }; return }
     row.is_booking = false
     row.id = ++nextId
     row.status = 'awaiting_doctor'
@@ -210,7 +282,7 @@ function checkIn(row) {
     // The offer the patient picked online rides along with the visit — losing
     // it at check-in is how a clinic ends up selling the wrong thing.
     logEvent(row, 'checkin', isRtl.value ? 'تسجيل الوصول' : 'Checked in')
-    tab.value = landingTab(row, 'overview')
+    goTab(row, 'overview')
     demoToast(isRtl.value ? 'تم تسجيل الوصول' : 'Checked in')
 }
 /**
@@ -221,9 +293,14 @@ function checkIn(row) {
  * here — the real queue warns reception rather than silently selling it at the
  * wrong price, and this keeps that rule: a mismatched offer waits for a human.
  */
-function approveOffer(row) {
+async function approveOffer(row) {
     const rp = row.requested_package
     if (!rp || rp.added) return
+    if (live) {
+        try { await sync.addItem(row, { type: 'package', server_id: rp.id }) } catch { return }
+        rp.added = true
+        return
+    }
     row.items = [...(row.items ?? []), {
         id: Date.now(), label: rp.name, qty: 1, amount: rp.price, is_package: true,
     }]
@@ -231,14 +308,18 @@ function approveOffer(row) {
     demoToast(isRtl.value ? 'أُضيف العرض' : 'Offer added', rp.name)
 }
 
-function startTreatment(row) {
-    row.status = 'in_progress'
-    row.service_started_at = new Date().toISOString()
+async function startTreatment(row) {
+    if (live) {
+        try { await sync.start(row) } catch { return }
+    } else {
+        row.status = 'in_progress'
+        row.service_started_at = new Date().toISOString()
+    }
 
     // What the patient already asked for should not need re-entering.
     const rp = row.requested_package
     const needsApproval = !!(rp && !rp.added && rp.branch_mismatch)
-    if (rp && !rp.added && !rp.branch_mismatch) approveOffer(row)
+    if (rp && !rp.added && !rp.branch_mismatch) await approveOffer(row)
 
     logEvent(row, 'started', isRtl.value ? `بدأ العلاج مع د. ${docName(row.doctor?.name)}` : `Seen by Dr. ${docName(row.doctor?.name)}`)
     demoToast(isRtl.value ? 'بدأ العلاج' : 'Treatment started')
@@ -246,7 +327,7 @@ function startTreatment(row) {
     // Land where the next work is: Items, where what is being done gets
     // recorded. If an offer still needs a human, that decision is on Overview,
     // so go there instead of burying it.
-    tab.value = needsApproval ? 'overview' : landingTab(row, role.value === 'doctor' ? 'notes' : 'items')
+    goTab(row, needsApproval ? 'overview' : (role.value === 'doctor' ? 'notes' : 'items'))
     if (needsApproval) {
         pushToast({
             kind: 'warning', icon: 'alert-triangle',
@@ -255,14 +336,16 @@ function startTreatment(row) {
         })
     }
 }
-function completeVisit(row) {
+async function completeVisit(row) {
+    if (live) { try { await sync.complete(row) } catch { return } }
     row.status = 'awaiting_payment'
     logEvent(row, 'completed', isRtl.value ? 'انتهت الزيارة — إلى الاستقبال' : 'Visit completed — to reception')
     demoToast(isRtl.value ? 'انتهت الزيارة' : 'Visit completed')
     // Reception collects next.
-    tab.value = landingTab(row, 'payments')
+    goTab(row, 'payments')
 }
-function discharge(row) {
+async function discharge(row) {
+    if (live) { try { await sync.discharge(row) } catch { return } }
     row.status = 'completed'
     row.completed_at = new Date().toISOString()
     logEvent(row, 'discharged', isRtl.value ? 'خرج المريض' : 'Discharged')
@@ -274,13 +357,25 @@ function discharge(row) {
     )
     selectedId.value = null
 }
-function reassignDoctor(row, doctorId) {
+async function reassignDoctor(row, doctorId) {
     const d = props.doctor_options.find((x) => x.id === Number(doctorId))
     if (!d) return
+    if (live) {
+        try { await sync.reassign(row, d.id) } catch (e) {
+            // Past "waiting", only an admin may move a visit — and must say so.
+            if (e.data?.requires_force && props.is_admin && window.confirm(e.message)) {
+                try { await sync.reassign(row, d.id, true) } catch { return }
+            } else return
+        }
+    }
     row.doctor = { id: d.id, name: d.name }
     demoToast(locale.value === 'ar' ? 'تم تغيير الطبيب' : 'Doctor changed', d.name)
 }
-function dropRow(id, msg) {
+async function dropRow(id, msg, kind = null) {
+    const row = rows.value.find((r) => r.id === id)
+    if (live && row && kind) {
+        try { await (kind === 'noshow' ? sync.noShow(row) : sync.cancelBooking(row)) } catch { noShowId.value = null; cancelId.value = null; return }
+    }
     rows.value = rows.value.filter((r) => r.id !== id)
     if (selectedId.value === id) selectedId.value = null
     noShowId.value = null
@@ -487,6 +582,7 @@ const chips = computed(() => [
     ...(liveCounts.value.awaiting_payment ? [{ id: 'awaiting_payment', label: statusLabel('awaiting_payment') }] : []),
     // Always offered, even at zero — "what have we finished today" is a
     // question worth being able to answer with a nil.
+    // Live: today's finished visits come from WorkspaceController (done_today).
     { id: 'completed', label: t.value.done },
 ])
 const doctors = computed(() => {
@@ -529,9 +625,11 @@ const ROLE_TABS = {
 }
 const readPref = (k, d) => { try { return localStorage.getItem(k) ?? d } catch { return d } }
 const writePref = (k, v) => { try { localStorage.setItem(k, v) } catch { /* private mode */ } }
-const role = ref(ROLES.includes(readPref('wsp.role', 'admin')) ? readPref('wsp.role', 'admin') : 'admin')
-const doctorAs = ref(Number(readPref('wsp.doctorAs', '901')) || 901)
-const visibleTabs = computed(() => ROLE_TABS[role.value] ?? TAB_KEYS)
+/* Live: the role is who is signed in — the server already scoped the rows. */
+const liveRole = props.is_admin ? 'admin' : props.is_reception ? 'reception' : props.is_doctor ? 'doctor' : 'nurse'
+const role = ref(live ? liveRole : (ROLES.includes(readPref('wsp.role', 'admin')) ? readPref('wsp.role', 'admin') : 'admin'))
+const doctorAs = ref(live ? (props.doctor_id ?? 0) : (Number(readPref('wsp.doctorAs', '901')) || 901))
+const visibleTabs = computed(() => (ROLE_TABS[role.value] ?? TAB_KEYS).filter((k) => !live || !LIVE_HIDDEN_TABS.includes(k)))
 const me = computed(() => props.doctor_options.find((d) => d.id === doctorAs.value) ?? null)
 /* Which tabs a role may edit, rather than only read. */
 function canEdit(key) {
@@ -541,6 +639,7 @@ function canEdit(key) {
     return ['files', 'items', 'payments'].includes(key)
 }
 function applyRole() {
+    if (live) return
     writePref('wsp.role', role.value)
     writePref('wsp.doctorAs', String(doctorAs.value))
     q.value = ''
@@ -554,8 +653,28 @@ function applyRole() {
 watch([role, doctorAs], applyRole)
 onMounted(() => { if (role.value !== 'admin') applyRole() })
 
+/* A stock or insurance step changed the visit: reload it and the queue. */
+function onPanelChanged() {
+    if (!live || !selected.value) return
+    sync.loadVisit(selected.value).catch(() => {})
+    reloadQueue()
+}
+
 /* A landing tab the current role cannot see falls back to Overview. */
 function landingTab(v, want) { return visibleTabs.value.includes(want) ? want : 'overview' }
+/*
+ * After an action, open the patient it was done to, on the tab where the next
+ * work is. Actions also run from the queue row while ANOTHER patient is open —
+ * setting `tab` alone then flipped the wrong patient's tab and left the one
+ * just started on Overview. Record the tab for this patient first, then select
+ * them: the selection watcher reads the remembered tab.
+ */
+function goTab(row, want) {
+    const key = landingTab(row, want)
+    tabByVisit[row.id] = key
+    if (selectedId.value === row.id) tab.value = key
+    else selectedId.value = row.id
+}
 
 /* A small count on each tab says where there is something without opening it:
    3 drugs, 2 of 4 notes written, a result waiting, money still owed. */
@@ -776,8 +895,8 @@ const pendingCopy = computed(() => {
    Reception and admin only — a doctor never books or checks anyone in, and a
    button they can see but should not press is worse than no button. */
 const canFrontDesk = computed(() => role.value === 'admin' || role.value === 'reception')
-const canCash = canFrontDesk
-const canCall = computed(() => role.value !== 'reception')
+const canCash = computed(() => (live ? !!props.features?.cash_close : true) && canFrontDesk.value)
+const canCall = computed(() => (live ? !!props.features?.calls : true) && role.value !== 'reception')
 const paneMode = ref(null)          // null | 'intake' | 'cash'
 const intakeDirty = ref(false)
 const discardAsk = ref(null)        // what to do once they agree to lose the form
@@ -790,6 +909,7 @@ function guardDiscard(then) {
     else then()
 }
 function openIntake(mode) {
+    if (live) { newBookingOpen.value = true; return }
     if (paneMode.value === mode) return
     guardDiscard(() => {
         paneMode.value = mode
@@ -887,12 +1007,49 @@ function onBooked({ patient, doctor, date, dayLabel, time, source, isToday }) {
    name) and, in v3, sends the patient a WhatsApp. Calling again counts, so a
    patient who has not come after three calls is visible in the queue. */
 const calls = ref([])
+let liveCallsPull = null
+if (live) {
+    // The screen shows every call made in the branch, from any computer.
+    liveCallsPull = () => sync.loadCalls().then((c) => { calls.value = c }).catch(() => {})
+    onMounted(() => { if (props.features?.calls) liveCallsPull() })
+    // Saved sets: the signed-in user's own and those shared with the clinic.
+    if (props.features?.order_sets) {
+        onMounted(() => sync.loadSets().then((list) => {
+            orderSets.splice(0, orderSets.length, ...list.map((x) => ({
+                id: x.id, name: x.name, name_ar: x.name, owner: x.mine ? 'me' : -1, shared: x.shared,
+                drugs: (x.drugs ?? []).map((d) => d.name), drugObjs: x.drugs ?? [], labs: x.lab_test_ids ?? [],
+                items: x.items ?? [], follow_up_days: x.follow_up_days,
+            })))
+        }).catch(() => {}))
+    }
+}
 const boardOpen = ref(false)
+/* Live: while the screen is open, refresh it every 5 seconds so calls made on
+   other computers appear too. */
+let boardPoll = null
+watch(boardOpen, (open) => {
+    clearInterval(boardPoll)
+    if (open && liveCallsPull) { liveCallsPull(); boardPoll = setInterval(liveCallsPull, 5000) }
+})
+onUnmounted(() => clearInterval(boardPoll))
 function ticketOf(v) { return `${(v.doctor?.name ?? 'X').replace(/^Dr\.?\s*/i, '')[0] ?? 'A'}-${String(v.booking_code ?? v.id).replace(/\D/g, '').slice(-3).padStart(3, '0')}` }
 function publicName(n) { const p = String(n ?? '').split(/\s+/).filter(Boolean); return p.length > 1 ? `${p[0]} ${p[p.length - 1][0]}.` : (p[0] ?? '') }
 function canCallRow(v) { return !!v && !v.is_booking && v.status === 'awaiting_doctor' && canCall.value }
-function callPatient(v) {
+async function callPatient(v) {
     if (!canCallRow(v)) return
+    if (live) {
+        // Server stores the call; every waiting-room screen of the branch shows it.
+        let res
+        try { res = await sync.callPatient(v) } catch { return }
+        v.call_count = res.count_today ?? (v.call_count ?? 0) + 1
+        v.called_at = res.call?.at ?? new Date().toISOString()
+        if (res.call) calls.value = [...calls.value, res.call]
+        const room = res.call?.room ?? ''
+        logEvent(v, 'called', v.call_count > 1 ? (isRtl.value ? `نداء ${v.call_count} إلى ${room}` : `Called again (×${v.call_count}) to ${room}`) : (isRtl.value ? `نداء إلى ${room}` : `Called to ${room}`))
+        pushToast({ kind: 'success', icon: 'megaphone', title: isRtl.value ? `نداء ${v.patient?.name}` : `Calling ${v.patient?.name}`,
+            desc: `${res.call?.ticket ?? ''} → ${res.call?.room ?? ''}` })
+        return
+    }
     v.call_count = (v.call_count ?? 0) + 1
     v.called_at = new Date().toISOString()
     const room = v.room?.name ?? me.value?.room?.name ?? (isRtl.value ? 'الغرفة' : 'the room')
@@ -916,6 +1073,16 @@ function callNext() {
    the open visit shows "Saving…" and then "Saved 12:31". What it is testing
    is whether a visible save state makes doctors trust the notes. */
 const saveState = reactive({})   // id → { state: 'saving' | 'saved', at }
+/* Live: the real save state of the last write, from the sync layer. */
+if (live) {
+    watch(() => [sync.state.saving, sync.state.lastSavedAt, sync.state.error], () => {
+        const id = selectedId.value
+        if (id == null) return
+        saveState[id] = sync.state.error ? { state: 'error', at: null }
+            : sync.state.saving > 0 ? { state: 'saving', at: null }
+            : sync.state.lastSavedAt ? { state: 'saved', at: sync.state.lastSavedAt } : undefined
+    })
+}
 let saveTimer = null
 const editSig = computed(() => {
     const v = selected.value
@@ -924,7 +1091,7 @@ const editSig = computed(() => {
         v.sick_leave_days, v.follow_up_date, v.vitals, v.allergies, v.alerts, v.files?.length, v.items, v.payments, v.discount, v.coupon, v.insurance_applied])
 })
 watch(editSig, (sig, old) => {
-    if (!sig || !old) return
+    if (live || !sig || !old) return
     const id = JSON.parse(sig)[0]
     if (JSON.parse(old)[0] !== id) return   // switched patient, not an edit
     saveState[id] = { state: 'saving', at: null }
@@ -1046,7 +1213,7 @@ const t = computed(() => isRtl.value ? {
          Marked as demo because the chips already in that bar are REAL clinic
          figures from the live summary poller — unlabelled fakes next to them
          would be indistinguishable. -->
-    <Teleport v-if="subbarReady" to=".subbar-status">
+    <Teleport v-if="subbarReady && !live" to=".subbar-status">
         <div class="demo-stats">
             <span class="demo-stats-tag"><Icon name="flask-conical" :size="11" />{{ t.demo }}</span>
             <span class="demo-stat"><span class="demo-stat-k">{{ t.avgWait }}</span><span class="demo-stat-v tnum">{{ avgWait }}</span></span>
@@ -1071,20 +1238,21 @@ const t = computed(() => isRtl.value ? {
                             <template #trigger="{ toggle, open }">
                                 <button type="button" class="qrole" :aria-expanded="open" @click.stop="toggle">
                                     <Icon :name="role === 'doctor' ? 'stethoscope' : role === 'nurse' ? 'activity' : role === 'reception' ? 'concierge-bell' : 'user-round-cog'" :size="13" />
-                                    <span class="qrole-t">{{ role === 'doctor' && me ? `${t.doctor} ${docName(me.name)}` : t.roles[role] }}</span>
+                                    <span class="qrole-t">{{ role === 'doctor' && me && !live ? `${t.doctor} ${docName(me.name)}` : t.roles[role] }}</span>
                                     <Icon name="chevron-down" :size="12" />
                                 </button>
                             </template>
                             <template #default="{ hide }">
                                 <div class="qmenu">
-                                    <div class="qmenu-k">{{ t.viewAs }}</div>
-                                    <button v-for="r in ROLES" :key="r" type="button" class="qmenu-row" :class="{ 'is-active': role === r }" :aria-pressed="role === r" @click="role = r; r !== 'doctor' && hide()">
+                                    <!-- Live: the role is the signed-in user's; nothing to switch. -->
+                                    <div v-if="!live" class="qmenu-k">{{ t.viewAs }}</div>
+                                    <button v-for="r in (live ? [] : ROLES)" :key="r" type="button" class="qmenu-row" :class="{ 'is-active': role === r }" :aria-pressed="role === r" @click="role = r; r !== 'doctor' && hide()">
                                         <span class="qmenu-main">{{ t.roles[r] }}</span><span class="qmenu-sub">{{ t.roleDesc[r] }}</span>
                                     </button>
                                     <!-- An inline list, not a dropdown: a dropdown inside this menu
                                          opens outside it, and the click that picks a doctor
                                          would close the menu first. -->
-                                    <div v-if="role === 'doctor'" class="qmenu-docs" role="listbox">
+                                    <div v-if="!live && role === 'doctor'" class="qmenu-docs" role="listbox">
                                         <button
                                             v-for="d in doctor_options" :key="d.id" type="button" role="option"
                                             class="qmenu-doc" :class="{ 'is-active': doctorAs === d.id }" :aria-selected="doctorAs === d.id"
@@ -1102,8 +1270,8 @@ const t = computed(() => isRtl.value ? {
                                         </span>
                                     </div>
                                     <button type="button" class="qmenu-row qmenu-flat" @click="hide(); helpOpen = true"><Icon name="keyboard" :size="13" />{{ t.shortcuts }}<kbd class="qkey" style="margin-inline-start: auto;">?</kbd></button>
-                                    <button type="button" class="qmenu-row qmenu-flat" @click="hide(); seed()"><Icon name="rotate-ccw" :size="13" />{{ t.reset }}</button>
-                                    <div class="qmenu-demo"><Icon name="flask-conical" :size="11" />{{ t.demoBody }}</div>
+                                    <button v-if="!live" type="button" class="qmenu-row qmenu-flat" @click="hide(); seed()"><Icon name="rotate-ccw" :size="13" />{{ t.reset }}</button>
+                                    <div v-if="!live" class="qmenu-demo"><Icon name="flask-conical" :size="11" />{{ t.demoBody }}</div>
                                 </div>
                             </template>
                         </Popover>
@@ -1120,7 +1288,7 @@ const t = computed(() => isRtl.value ? {
                             </template>
                             <template #default="{ hide }">
                                 <div class="qmenu">
-                                    <button type="button" class="qmenu-row qmenu-flat" @click="hide(); boardOpen = true"><Icon name="monitor" :size="13" />{{ t.screen }}</button>
+                                    <button v-if="!live || features?.calls" type="button" class="qmenu-row qmenu-flat" @click="hide(); boardOpen = true"><Icon name="monitor" :size="13" />{{ t.screen }}</button>
                                     <button v-if="canCash" type="button" class="qmenu-row qmenu-flat" @click="hide(); openCash()"><Icon name="landmark" :size="13" />{{ t.cashClose }}</button>
                                     <Link href="/admin/v2/workspace-preview/videos" class="qmenu-row qmenu-flat" @click="hide()"><Icon name="circle-play" :size="13" />{{ t.howTo }}</Link>
                                 </div>
@@ -1258,7 +1426,7 @@ const t = computed(() => isRtl.value ? {
             <section class="card wsp-pane">
                 <CashClose
                     v-if="paneMode === 'cash'"
-                    :rows="rows" :float="cash_float" :payment-methods="payment_methods"
+                    :rows="rows" :float="cash_float" :payment-methods="payment_methods" :live="live"
                     @close="closeIntake" @open-patient="openFromCash"
                 />
                 <IntakePane
@@ -1328,12 +1496,21 @@ const t = computed(() => isRtl.value ? {
                                 <template v-if="saveState[selected.id]?.state === 'saving'"><Icon name="loader" :size="12" class="wsp-spin" />{{ t.saving }}</template>
                                 <template v-else-if="saveState[selected.id]?.state === 'saved'"><Icon name="cloud-check" :size="13" />{{ t.saved }} <span class="tnum">{{ timeOf(saveState[selected.id].at) }}</span></template>
                             </span>
+                            <!-- Live: v2's print menu — prescription, lab request, sick-leave
+                                 certificate, receipt — the same server-rendered papers. -->
+                            <PrintMenu
+                                v-if="live && !selected.is_booking && selected.detail_loaded"
+                                :visit-id="selected.id" :booking-id="selected.booking_id ?? null"
+                                :has-prescription="(selected.prescriptions ?? []).length > 0"
+                                :has-labs="(selected.lab_orders ?? []).length > 0 || !!selected.lab_requests"
+                                :sick-leave-days="selected.sick_leave_days"
+                            />
                             <button class="btn btn-ghost btn-sm btn-icon wsp-close" @click="selectedId = null"><Icon name="x" :size="16" /></button>
                         </div>
                     </div>
 
                     <!-- Allergies and alerts: under the name, on every tab -->
-                    <AlertBanner :key="`alerts-${selected.id}`" :row="selected" :readonly="selected.status === 'completed' || role === 'reception'" />
+                    <AlertBanner :key="`alerts-${selected.id}`" :row="selected" :readonly="(live && !selected.can_edit_clinical) || selected.status === 'completed' || role === 'reception'" />
 
                     <!-- Tabs only once there is a visit -->
                     <div v-if="!selected.is_booking" class="wsp-tabs" role="tablist">
@@ -1374,7 +1551,7 @@ const t = computed(() => isRtl.value ? {
                             <VisitBill
                                 v-if="selected.requested_package"
                                 :key="`offer-${selected.id}`" section="offer"
-                                :row="selected" :catalogue="catalogue" :payment-methods="payment_methods" :coupons="coupons"
+                                :row="selected" :catalogue="catalogue" :catalogue-categories="catalogue_categories" :payment-methods="payment_methods" :coupons="coupons"
                                 :readonly="selected.status === 'completed'"
                                 @approve-offer="approveOffer(selected)"
                             />
@@ -1437,14 +1614,14 @@ const t = computed(() => isRtl.value ? {
                             :lab-catalogue="lab_catalogue"
                             :catalogue="catalogue"
                             :order-sets="orderSets"
-                            :doctor-id="role === 'doctor' ? doctorAs : selected.doctor?.id"
+                            :doctor-id="live ? 'me' : (role === 'doctor' ? doctorAs : selected.doctor?.id)"
                             :readonly="selected.status === 'completed' || !canEdit(tab)"
                         />
 
                         <VisitVitals
                             v-else-if="tab === 'vitals'"
                             :key="`vitals-${selected.id}`" :row="selected"
-                            :readonly="selected.status === 'completed' || !canEdit('vitals')"
+                            :readonly="selected.status === 'completed' || !canEdit('vitals') || (live && !selected.can_edit_clinical)"
                         />
                         <VisitFiles
                             v-else-if="tab === 'files'"
@@ -1452,18 +1629,23 @@ const t = computed(() => isRtl.value ? {
                             :readonly="!canEdit('files')"
                         />
 
-                        <!-- Items and Payments -->
+                        <!-- Items and Payments. Live adds v2's stock (Items) and insurance
+                             (Payments) steps above the bill. -->
+                        <template v-else-if="tab === 'items' || tab === 'payments'">
+                        <StockPanel v-if="live && tab === 'items'" :key="`stock-${selected.id}`" :row="selected" @changed="onPanelChanged" />
+                        <InsurancePanel v-if="live && tab === 'payments'" :key="`ins-${selected.id}`" :row="selected" @changed="onPanelChanged" />
                         <VisitBill
-                            v-else-if="tab === 'items' || tab === 'payments'"
                             :key="`${tab}-${selected.id}`"
                             :section="tab"
                             :row="selected"
                             :catalogue="catalogue"
+                            :catalogue-categories="catalogue_categories"
                             :payment-methods="payment_methods"
                             :coupons="coupons"
                             :readonly="selected.status === 'completed' || !canEdit(tab)"
                             @go-payments="tab = landingTab(selected, 'payments')"
                         />
+                        </template>
 
                         <!-- History: today's timeline, then what happened last time -->
                         <template v-else>
@@ -1545,11 +1727,20 @@ const t = computed(() => isRtl.value ? {
 
     <!-- Pure-UI dialogs; they post nowhere. -->
     <FinishChecklist
-        :open="finish !== null" :row="finish?.row ?? null" :mode="finish?.mode ?? 'complete'"
+        :open="finish !== null" :row="finish?.row ?? null" :mode="finish?.mode ?? 'complete'" :live="live"
         @confirm="finishConfirm" @cancel="finishCancel" @go="finishGo"
     />
     <ShortcutsHelp :open="helpOpen" :tabs="visibleTabs.map((k) => ({ key: k, label: t.tabs[k] }))" @close="helpOpen = false" />
     <CallBoard :open="boardOpen" :calls="calls" @close="boardOpen = false" />
+    <!-- Live only: v2's own check-in and booking dialogs, which post to the real APIs. -->
+    <template v-if="live">
+        <CheckinModal
+            :open="!!checkinBooking" :booking-id="checkinBooking?.id ?? null" :requested-package="checkinBooking?.requested_package ?? null"
+            @update:open="(v) => !v && (checkinBooking = null)"
+            @checked-in="checkinBooking = null; reloadQueue()"
+        />
+        <NewBookingSheet v-model:open="newBookingOpen" @created="reloadQueue()" />
+    </template>
     <ConfirmDialog
         :open="discardAsk !== null"
         :title="t.discardIntake"
@@ -1576,19 +1767,19 @@ const t = computed(() => isRtl.value ? {
     <ConfirmDialog
         :open="noShowId !== null"
         :title="isRtl ? 'تسجيل عدم الحضور؟' : 'Mark as no-show?'"
-        :body="t.demoNote" :confirm-label="isRtl ? 'تأكيد' : 'Mark no-show'" :cancel-label="isRtl ? 'إلغاء' : 'Cancel'"
+        :body="live ? '' : t.demoNote" :confirm-label="isRtl ? 'تأكيد' : 'Mark no-show'" :cancel-label="isRtl ? 'إلغاء' : 'Cancel'"
         tone="destructive" icon="user-x"
         @update:open="(v) => !v && (noShowId = null)"
-        @confirm="dropRow(noShowId, isRtl ? 'تم التسجيل' : 'Marked as no-show')"
+        @confirm="dropRow(noShowId, isRtl ? 'تم التسجيل' : 'Marked as no-show', 'noshow')"
         @cancel="noShowId = null"
     />
     <ConfirmDialog
         :open="cancelId !== null"
         :title="isRtl ? 'إلغاء الحجز؟' : 'Cancel this booking?'"
-        :body="t.demoNote" :confirm-label="isRtl ? 'إلغاء الحجز' : 'Cancel booking'" :cancel-label="isRtl ? 'تراجع' : 'Back'"
+        :body="live ? '' : t.demoNote" :confirm-label="isRtl ? 'إلغاء الحجز' : 'Cancel booking'" :cancel-label="isRtl ? 'تراجع' : 'Back'"
         tone="destructive" icon="x-circle"
         @update:open="(v) => !v && (cancelId = null)"
-        @confirm="dropRow(cancelId, isRtl ? 'تم الإلغاء' : 'Booking cancelled')"
+        @confirm="dropRow(cancelId, isRtl ? 'تم الإلغاء' : 'Booking cancelled', 'cancel')"
         @cancel="cancelId = null"
     />
 </template>
@@ -1720,7 +1911,7 @@ const t = computed(() => isRtl.value ? {
 .qsearch input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; font: inherit; font-size: 12.5px; color: var(--fg); }
 .qsearch input::placeholder { color: var(--fg-faint); }
 .qdoc { flex: 0 0 140px; min-width: 0; }
-.wsp-chips { display: flex; gap: 4px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-inline: -2px; padding-inline: 2px; }
+.wsp-chips { display: flex; gap: 4px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: -2px; padding: 2px; /* room for the active pill's outline ring, which overflow would clip */ }
 .wsp-chips::-webkit-scrollbar { display: none; }
 .wsp-chips .tab-pill { flex: none; font-size: 11.5px; padding: 3px 8px; white-space: nowrap; }
 .qclear { color: var(--fg-subtle); }

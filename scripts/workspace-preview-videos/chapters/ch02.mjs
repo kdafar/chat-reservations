@@ -1,91 +1,113 @@
-import { ACCENT, VIEWPORT, tr, login, setRole, openRow, foot, PROJECT } from '../lib.mjs';
+import { ACCENT, VIEWPORT, LIVE, tr, login, openRow, foot, PROJECT } from '../lib.mjs';
 
 const KEY = '02-reception-front-desk';
 
+/*
+ * Recorded on the LIVE workspace (/admin/v2/workspace) of the demo copy, as the
+ * reception user — the front desk there uses the system's New booking sheet
+ * and Check-in window, not the preview's intake pane.
+ * REC_RECEPTION_EMAIL: a reception login on the demo (falls back to REC_EMAIL).
+ * Needs the demo DB with two of today's bookings (Maryam 10:30, Noura Al-Sabah
+ * 11:00 with the Glow Package offer) — see ch02-demo-bookings.sql. Restore
+ * the demo DB and re-run that file before every take.
+ */
 export default function build(lang) {
     const T = tr(lang);
+    const dialog = (page) => page.locator('[role=dialog]').last();
     return {
         name: `${KEY}.${lang}`, accent: ACCENT, viewport: VIEWPORT, rtl: lang === 'ar', projectDir: PROJECT,
-        login: login(KEY, lang),
+        login: login(KEY, lang, { url: LIVE, email: process.env.REC_RECEPTION_EMAIL }),
         storyboard: async (page, s) => {
+            const sheet = page.locator('.nb-panel');
+            const pick = async (i, query, re) => {
+                // i = 'doctor' → the last field (the patient picker is absent for a new patient)
+                await s.click(i === 'doctor' ? sheet.locator('.ss-trigger').last() : sheet.locator('.ss-trigger').nth(i), { after: 600 });
+                if (query) await s.type(page.locator('.ss-panel .ss-search input'), query, { delay: 90, after: 900 });
+                await s.click(page.locator('.ss-panel .opt').filter({ hasText: re }).first(), { after: 900 });
+            };
+            const pickDay = async (offset) => {
+                await s.click(sheet.locator('.dtp-trigger'), { after: 700 });
+                const days = page.locator('.dtp-panel button.dtp-day');
+                const today = await days.evaluateAll((els) => els.findIndex((e) => e.classList.contains('is-today')));
+                await s.click(days.nth(today + offset), { after: 1600 });
+            };
+            const source = (i) => sheet.locator('.seg').last().locator('button').nth(i);   // web, whatsapp, call, walk-in, reception
+
             await s.card(T('Reception: the front desk', 'الاستقبال: مكتب الاستقبال'),
-                T('A walk-in, a booking for later, and checking in patients who booked — all from the same screen.',
-                  'مريض بدون موعد، حجز لوقت لاحق، وتسجيل وصول من حجز مسبقاً — كلها من نفس الشاشة.'), 4200);
+                T('A walk-in, a booking for another day, and checking in patients who booked.',
+                  'مريض حاضر الآن، حجز ليوم آخر، وتسجيل وصول من حجز مسبقاً.'), 4200);
             await s.cardOut();
 
-            await s.caption(T('Before you start', 'قبل البدء'), T('Set your view to Reception', 'اختر عرض «الاستقبال»'),
-                T('Reception sees every patient, the bill and files — and the buttons to add, check in and discharge.',
-                  'الاستقبال يرى كل المرضى والفواتير والملفات — وأزرار الإضافة وتسجيل الوصول والخروج.'), 5000);
-            await setRole(page, s, 'reception');
+            await s.caption(T('The queue', 'الطابور'), T('Today\'s bookings wait at the top of the list', 'حجوزات اليوم في القائمة مع وقتها'),
+                T('"Pending check-in" means booked but not arrived yet. A gift icon means the patient chose an offer when booking.',
+                  '«بانتظار التسجيل» تعني محجوز ولم يصل بعد. أيقونة الهدية تعني أن المريض اختار عرضاً عند الحجز.'), 6000);
+            await s.highlight(page.locator('.qrow').filter({ hasText: 'Noura Al-Sabah' }).first(), 1600);
 
-            // ── 1. Walk-in ───────────────────────────────────────────────
-            await s.caption(T('1 · A walk-in', '١ · مريض بدون موعد'), T('One button: Add patient', 'زر واحد: إضافة مريض'),
-                T('Whether the patient is here now or wants a time later is decided inside the form — not by guessing between two buttons.',
-                  'سواء كان المريض حاضراً الآن أو يريد موعداً لاحقاً، يُحدَّد ذلك داخل النموذج — وليس بالاختيار بين زرّين متشابهين.'), 6000);
+            // ── 1. Walk-in, new patient ────────────────────────────────
+            await s.caption(T('1 · A walk-in', '١ · مريض حاضر الآن'), T('Add patient', 'إضافة مريض'),
+                T('Every visit starts as a booking — for a walk-in, the booking is simply for today, now.',
+                  'كل زيارة تبدأ بحجز — ولمن حضر الآن يكون الحجز لليوم، الآن.'), 5500);
             await s.click(page.locator('.qh-row .btn-primary'), { after: 1500 });
 
-            await s.caption(T('1 · A walk-in', '١ · مريض بدون موعد'), T('"Here now" is already selected', '«موجود الآن» محدد مسبقاً'),
-                T('Step 1 is the patient. Type two letters of the name, a phone number or a file number.',
-                  'الخطوة ١ هي المريض. اكتب حرفين من الاسم أو رقم الهاتف أو رقم الملف.'), 5500);
-            await s.type(page.locator('.ip-search input').first(), 'Bader', { delay: 90, after: 1200 });
-            await s.caption(T('1 · A walk-in', '١ · مريض بدون موعد'), T('Last visit shows beside each name', 'آخر زيارة تظهر بجانب كل اسم'),
-                T('"18 days ago · Eczema flare" — so you know you have the right person before you check them in.',
-                  '«قبل ١٨ يوماً · نوبة إكزيما» — لتتأكد أنه الشخص الصحيح قبل تسجيل وصوله.'), 5500);
-            await s.click(page.locator('.ip-res').first(), { after: 1400 });
+            await s.caption(T('1 · A walk-in', '١ · مريض حاضر الآن'), T('Not in the system? New patient', 'غير مسجّل؟ مريض جديد'),
+                T('Search first — most patients already have a file. If not, "New patient" opens the file right here: name and phone are enough.',
+                  'ابحث أولاً — معظم المرضى لديهم ملف. إن لم يوجد، «مريض جديد» يفتح الملف هنا: الاسم والهاتف يكفيان.'), 7000);
+            await s.click(sheet.locator('.nb-section .btn-ghost').first(), { after: 900 });
+            await s.type(sheet.locator('input.input').nth(0), T('Bader Al-Kandari', 'بدر الكندري'), { delay: 70, after: 500 });
+            await s.type(sheet.locator('input.input').nth(1), '96551234567', { delay: 60, after: 900 });
 
-            await s.caption(T('1 · A walk-in', '١ · مريض بدون موعد'), T('Step 2 · Pick the doctor', 'الخطوة ٢ · اختر الطبيب'),
-                T('Each doctor shows how many are waiting for them. Doctors who are off today or have not started their shift are greyed out with the reason.',
-                  'يظهر عند كل طبيب عدد المنتظرين عنده. الطبيب الذي في إجازة أو لم تبدأ مناوبته يظهر باهتاً مع السبب.'), 7000);
-            await s.click(page.locator('.ip-docrow').filter({ hasText: 'Mona Haddad' }).first(), { after: 1400 });
-            await s.type(page.locator('.ip-col').first().locator('input.input').last(), T('Itchy rash on both arms', 'حكة وطفح على الذراعين'), { after: 900 });
+            await s.caption(T('1 · A walk-in', '١ · مريض حاضر الآن'), T('Doctor, today, the next free time', 'الطبيب، اليوم، أقرب وقت متاح'),
+                T('The room follows the doctor. Only free times are shown. Mark the source as Walk-in — it matters for the reports.',
+                  'الغرفة تتبع الطبيب. تظهر الأوقات المتاحة فقط. اختر المصدر «حضور» — مهم للتقارير.'), 7000);
+            await pick('doctor', null, /Sara/);
+            await pickDay(0);
+            await s.click(sheet.locator('.nb-slot').first(), { after: 800 });
+            await s.click(source(3), { after: 900 });
+            await s.click(page.locator('.nb-foot .btn-primary'), { after: 2800 });
 
-            await s.caption(T('1 · A walk-in', '١ · مريض بدون موعد'), T('Check in', 'تسجيل الوصول'),
-                T('The patient joins the queue straight away and their visit opens, ready for the doctor.',
-                  'ينضم المريض إلى الطابور فوراً وتُفتح زيارته جاهزة للطبيب.'), 4500);
-            await s.click(page.locator('.ip-foot .btn-primary'), { after: 2600 });
+            await s.caption(T('1 · A walk-in', '١ · مريض حاضر الآن'), T('Now check them in', 'الآن سجّل وصوله'),
+                T('The new booking is in the queue. Open it — the button at the bottom says Check in.',
+                  'الحجز الجديد في الطابور. افتحه — الزر في الأسفل هو «تسجيل الوصول».'), 5500);
+            await openRow(page, s, T('Bader', 'بدر'), 1500);
+            await s.click(foot(page), { after: 2000 });
 
-            // ── 2. Booking for later ────────────────────────────────────
-            await s.caption(T('2 · A booking for later', '٢ · حجز لوقت لاحق'), T('Same button, then "Book a time"', 'نفس الزر، ثم «حجز موعد»'),
-                T('For a patient on the phone who wants to come another day.',
-                  'لمريض على الهاتف يريد الحضور في يوم آخر.'), 5000);
-            await s.click(page.locator('.qh-row .btn-primary'), { after: 1300 });
-            await s.click(page.locator('.ip-kind button').nth(1), { after: 1200 });
-            await s.type(page.locator('.ip-search input').first(), 'Reem', { delay: 90, after: 1000 });
-            await s.click(page.locator('.ip-res').first(), { after: 1000 });
-            await s.click(page.locator('.ip-docrow').filter({ hasText: 'Mona Haddad' }).first(), { after: 1300 });
+            await s.caption(T('1 · A walk-in', '١ · مريض حاضر الآن'), T('Collect the consultation fee', 'حصّل رسوم الكشف'),
+                T('Three steps across the top: booking, fee, room. Pick how they paid, then Collect payment.',
+                  'ثلاث خطوات في الأعلى: الحجز، الرسوم، الغرفة. اختر طريقة الدفع ثم «تحصيل الدفعة».'), 6500);
+            await s.click(dialog(page).locator('.btn-primary').filter({ hasText: /Collect payment|تحصيل الدفعة/ }).first(), { after: 2400 });
+            await s.caption(T('1 · A walk-in', '١ · مريض حاضر الآن'), T('The room is the doctor\'s own', 'الغرفة هي غرفة الطبيب'),
+                T('Check in — the patient joins the doctor\'s waiting list straight away.',
+                  'سجّل الوصول — ينضم المريض لقائمة انتظار الطبيب فوراً.'), 5000);
+            await s.click(dialog(page).locator('.btn-primary').filter({ hasText: /Check in|تسجيل الوصول/ }).first(), { after: 2600 });
+            await s.highlight(page.locator('.qrow').filter({ hasText: T('Bader', 'بدر') }).first(), 1600);
 
-            await s.caption(T('2 · A booking for later', '٢ · حجز لوقت لاحق'), T('Pick the day, then a free time', 'اختر اليوم ثم وقتاً متاحاً'),
-                T('Only free times are shown, grouped into morning, afternoon and evening. "Next available" finds the soonest slot for you.',
-                  'تظهر الأوقات المتاحة فقط، مقسّمة إلى صباح وظهر ومساء. زر «أقرب موعد متاح» يجد أقرب وقت لك.'), 7000);
-            await s.click(page.locator('.ip-day').nth(1), { after: 1300 });
-            await s.click(page.locator('.ip-slot:not([disabled])').nth(2), { after: 1200 });
-            await s.caption(T('2 · A booking for later', '٢ · حجز لوقت لاحق'), T('Where the booking came from', 'مصدر الحجز'),
-                T('Call, WhatsApp or reception — it matters for the reports, and it is one tap. Then Book.',
-                  'هاتف أو واتساب أو الاستقبال — مهم للتقارير وبضغطة واحدة. ثم احجز.'), 5500);
-            await s.click(page.locator('.ip-srcrow .seg button').first(), { after: 900 });
-            await s.click(page.locator('.ip-foot .btn-primary'), { after: 2400 });
-            await s.caption(T('2 · A booking for later', '٢ · حجز لوقت لاحق'), T('A receipt to read back to the patient', 'ملخص تقرؤه على المريض'),
-                T('Name, day, time and doctor — confirm it on the phone before you hang up.',
-                  'الاسم واليوم والوقت والطبيب — أكّدها معه على الهاتف قبل إنهاء المكالمة.'), 5500);
-            await s.click(page.locator('.ip-foot .btn-primary'), { after: 1200 });
+            // ── 2. Booking for another day ──────────────────────────────
+            await s.caption(T('2 · A booking for another day', '٢ · حجز ليوم آخر'), T('Same button, another day', 'نفس الزر، ويوم آخر'),
+                T('For a patient on the phone. Type two letters of the name or the phone number to find their file.',
+                  'لمريض على الهاتف. اكتب حرفين من الاسم أو رقم الهاتف لإيجاد ملفه.'), 6000);
+            await s.click(page.locator('.qh-row .btn-primary'), { after: 1400 });
+            await pick(0, 'Hessa', /Hessa/);
+            await pick('doctor', null, /Sara/);
+            await pickDay(1);
+            await s.caption(T('2 · A booking for another day', '٢ · حجز ليوم آخر'), T('Pick a free time, source: Call', 'اختر وقتاً متاحاً، المصدر: هاتف'),
+                T('Booked times are simply not offered, so there is no double booking. Read the day and time back before you hang up.',
+                  'الأوقات المحجوزة لا تظهر أصلاً، فلا يوجد حجز مكرر. أعد قراءة اليوم والوقت قبل إنهاء المكالمة.'), 7000);
+            await s.click(sheet.locator('.nb-slot').nth(2), { after: 800 });
+            await s.click(source(2), { after: 900 });
+            await s.click(page.locator('.nb-foot .btn-primary'), { after: 2600 });
 
-            // ── 3. Check in a booking ───────────────────────────────────
-            await s.caption(T('3 · Checking in a booking', '٣ · تسجيل وصول صاحب حجز'), T('Bookings for today wait at the top with their time', 'حجوزات اليوم تنتظر مع وقتها'),
-                T('Yousef booked online and chose an offer. Open him, and the gold button at the bottom says Check in.',
-                  'يوسف حجز عبر الموقع واختار عرضاً. افتحه، والزر الذهبي في الأسفل هو «تسجيل الوصول».'), 6500);
-            await openRow(page, s, 'Yousef', 1500);
-            await s.highlight(page.locator('.wsp-pbody'), 1500);
-            await s.click(foot(page), { after: 2400 });
-            await s.caption(T('3 · Checking in a booking', '٣ · تسجيل وصول صاحب حجز'), T('The offer he picked comes with him', 'العرض الذي اختاره ينتقل معه'),
-                T('It waits on Overview and is added to the bill automatically when the doctor starts treatment.',
-                  'يبقى في النظرة العامة ويُضاف إلى الفاتورة تلقائياً عند بدء الطبيب العلاج.'), 6000);
-
-            await openRow(page, s, 'Latifa', 1500);
-            await s.click(foot(page), { after: 2200 });
-            await s.caption(T('3 · Checking in a booking', '٣ · تسجيل وصول صاحب حجز'), T('An offer from another branch needs you', 'عرض من فرع آخر يحتاج موافقتك'),
-                T('The price may differ here, so it is never added silently. Check it with the patient, then Approve & add.',
-                  'قد يختلف السعر هنا، لذلك لا يُضاف تلقائياً أبداً. تأكد منه مع المريض ثم اضغط «اعتماد وإضافة».'), 7000);
-            await s.click(page.locator('.vb-offer .btn-primary').first(), { after: 2000 });
+            // ── 3. Check in a booking with an offer ────────────────────
+            await s.caption(T('3 · Checking in a booking', '٣ · تسجيل وصول صاحب حجز'), T('She booked online, with an offer', 'حجزت عبر الموقع مع عرض'),
+                T('Noura arrives for her 11:00. Open her and press Check in.',
+                  'وصلت نورة لموعد ١١:٠٠. افتحها واضغط «تسجيل الوصول».'), 5500);
+            await openRow(page, s, 'Noura Al-Sabah', 1500);
+            await s.click(foot(page), { after: 2000 });
+            await s.click(dialog(page).locator('.btn-primary').filter({ hasText: /Collect payment|تحصيل الدفعة/ }).first(), { after: 2400 });
+            await s.highlight(dialog(page).locator('.ci-request'), 1800);
+            await s.caption(T('3 · Checking in a booking', '٣ · تسجيل وصول صاحب حجز'), T('The offer she chose is ticked', 'العرض الذي اختارته محدد'),
+                T('Leave it ticked and it goes on her bill for the doctor to see. From another branch, the price may differ — so it is left unticked for you to check.',
+                  'اتركه محدداً فيُضاف إلى فاتورتها ويراه الطبيب. إن كان من فرع آخر قد يختلف السعر — فيبقى غير محدد لتتأكد منه.'), 8000);
+            await s.click(dialog(page).locator('.btn-primary').filter({ hasText: /Check in|تسجيل الوصول/ }).first(), { after: 2600 });
 
             await s.card(T('Front desk done', 'انتهى عمل الاستقبال'),
                 T('Next: the nurse — calling patients in, allergies and vitals.', 'التالي: التمريض — نداء المرضى والحساسية والعلامات الحيوية.'), 3800);

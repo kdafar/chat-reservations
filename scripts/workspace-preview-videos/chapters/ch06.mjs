@@ -26,6 +26,16 @@ export default function build(lang) {
                   'يتبع المبلغ المتبقي. اختر طريقة الدفع. كي نت والبطاقة تحتاجان رقم الإيصال لتتطابق حسابات اليوم.'), 6500);
             await s.click(page.locator('.vb-choice').first().locator('button').filter({ hasText: /Cash|نقد/ }).first(), { after: 900 });
             await s.click(page.locator('.vb-payfoot .btn-primary'), { after: 2200 });
+            await s.highlight(page.locator('.vb-justpaid'), 1600);
+            await s.caption(T('1 · Taking payment', '١ · استلام الدفعة'), T('Print the receipt', 'اطبع الإيصال'),
+                T('Every payment gets its own receipt — one click, straight to the printer. The printer icon on a payment line prints it again later.',
+                  'لكل دفعة إيصال خاص — ضغطة واحدة وتذهب للطابعة. أيقونة الطابعة بجانب الدفعة تعيد طباعته لاحقاً.'), 6500);
+            await s.click(page.locator('.vb-printbar .btn').filter({ hasText: /Print invoice|طباعة الفاتورة/ }).first(), { after: 1200 });
+            await s.caption(T('1 · Taking payment', '١ · استلام الدفعة'), T('One invoice per visit, by section', 'فاتورة واحدة للزيارة بأقسامها'),
+                T('Print the full invoice — consultation, services & packages, items — or just one section for an insurer or employer. Same invoice number either way.',
+                  'اطبع الفاتورة كاملة — الكشف والخدمات والباقات والأصناف — أو قسماً واحداً فقط لجهة تأمين أو عمل. بنفس رقم الفاتورة.'), 7000);
+            // Close the menu with its own button: Escape would also close the patient.
+            await page.locator('.vb-printbar .btn').filter({ hasText: /Print invoice|طباعة الفاتورة/ }).first().click(); await page.waitForTimeout(600);
             await s.caption(T('1 · Taking payment', '١ · استلام الدفعة'), T('Fully paid', 'مدفوعة بالكامل'),
                 T('The payment is listed with its time. A mistake? Void it — it stays listed, crossed out, so nothing disappears.',
                   'تظهر الدفعة مع وقتها. خطأ؟ ألغِها — تبقى ظاهرة ومشطوبة، فلا يختفي شيء.'), 6000);

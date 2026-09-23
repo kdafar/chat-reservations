@@ -107,6 +107,8 @@ const navGates = {
     // Live patient queue — clinical / front-desk only. Finance roles (accountant)
     // are excluded here AND server-side in WaitingPatientsController.
     waiting:                { flags: ['is_admin', 'is_reception', 'is_doctor', 'is_nurse'] },
+    // The new visit workspace: exactly who may open Waiting Patients.
+    workspace:              { flags: ['is_admin', 'is_reception', 'is_doctor', 'is_nurse'] },
     'doctor-schedule':      { perm: 'view_doctor_schedule', flags: ['is_doctor'] },
     'my-earnings':          { flags: ['is_doctor'] },
     visits:                 { perm: 'view_any_visits' },
@@ -375,6 +377,7 @@ const navSections = computed(() => ([
         items: [
             { id: 'dashboard', icon: 'gauge',         label: locale.value === 'ar' ? 'لوحة التحكم' : 'Dashboard', href: '/admin/v2/dashboard',         v2: true },
             { id: 'waiting',   icon: 'users-round',   label: locale.value === 'ar' ? 'قائمة الانتظار' : 'Waiting',  href: '/admin/v2/waiting-patients', v2: true },
+            { id: 'workspace', icon: 'layout-panel-left', label: locale.value === 'ar' ? 'مساحة العمل (جديد)' : 'Workspace (new)', href: '/admin/v2/workspace', v2: true },
             { id: 'checkin',   icon: 'log-in',        label: locale.value === 'ar' ? 'تسجيل الدخول' : 'Check-in', href: '/admin/v2/checkin',          v2: true },
             { id: 'bookings',  icon: 'calendar-days', label: locale.value === 'ar' ? 'الحجوزات' : 'Bookings', href: '/admin/v2/bookings',         v2: true },
             { id: 'visits',    icon: 'clipboard-list',label: locale.value === 'ar' ? 'الزيارات' : 'Visits',   href: '/admin/v2/visits-list', v2: true },

@@ -12,7 +12,7 @@
  * Usually the nurse fills this before the doctor starts. It edits the row in
  * place and logs one "Vitals recorded" event to the timeline.
  */
-import { computed } from 'vue'
+import { computed, inject } from 'vue'
 import { usePage } from '@inertiajs/vue3'
 import Icon from '../../Components/Icon.vue'
 import { VITALS, vitalTone, bmiOf, bmiBand, logEvent } from './clinical.js'
@@ -24,6 +24,8 @@ const props = defineProps({
 const page = usePage()
 const isRtl = computed(() => (page.props.locale ?? 'en') === 'ar')
 const v = props.row
+/* Live page: vitals save to the visit (debounced); preview: local only. */
+const sync = inject('wspSync', null)
 if (!v.vitals) v.vitals = {}
 const last = computed(() => v.last_vitals ?? null)
 
@@ -62,6 +64,7 @@ function onInput(key, e) {
     v.vitals = { ...v.vitals, [key]: raw === '' ? '' : Number(raw) }
     if (!v.vitals.taken_at) v.vitals.taken_at = new Date().toISOString()
     logEvent(v, 'vitals', summary.value || (isRtl.value ? 'تسجيل العلامات الحيوية' : 'Vitals recorded'), { merge: true })
+    sync?.saveVitals(v)
 }
 
 const bmi = computed(() => bmiOf(v.vitals))

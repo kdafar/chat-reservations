@@ -577,6 +577,31 @@ Route::middleware([
     // not replace WaitingPatients or the visit console. Safe to delete.
     Route::get('/workspace-preview', [\App\Http\Controllers\V2\VisitWorkspacePreviewController::class, 'index'])
         ->name('workspace-preview');
+    // The same workspace on REAL data (v3). Reuses the Waiting Patients payload
+    // and the existing visit/check-in APIs; v2 screens stay as they are.
+    // Admin-only while it is being trialled (see WorkspaceController).
+    Route::get('/workspace', [\App\Http\Controllers\V2\WorkspaceController::class, 'index'])
+        ->name('workspace');
+    // Workspace-only data v2 had nowhere to put: vitals, allergy/alert edits,
+    // saved order sets, waiting-room calls, the daily cash close.
+    Route::prefix('api/workspace')->name('api.workspace.')->group(function () {
+        $c = \App\Http\Controllers\V2\WorkspaceApiController::class;
+        Route::get('/visits/{visit}/context', [$c, 'context'])->name('context');
+        Route::post('/visits/{visit}/vitals', [$c, 'saveVitals'])->name('vitals');
+        Route::post('/visits/{visit}/call', [$c, 'call'])->name('call');
+        Route::post('/visits/{visit}/events', [$c, 'logEvent'])->name('events');
+        Route::post('/visits/{visit}/documents', [$c, 'document'])->name('documents');
+        Route::get('/visits/{visit}/categories', [$c, 'categories'])->name('categories');
+        Route::get('/calls', [$c, 'calls'])->name('calls');
+        Route::post('/patients/{patient}/alerts', [$c, 'saveAlerts'])->name('alerts');
+        Route::get('/order-sets', [$c, 'orderSets'])->name('order-sets.index');
+        Route::post('/order-sets', [$c, 'storeOrderSet'])->name('order-sets.store');
+        Route::post('/order-sets/{orderSet}/use', [$c, 'useOrderSet'])->name('order-sets.use');
+        Route::delete('/order-sets/{orderSet}', [$c, 'destroyOrderSet'])->name('order-sets.destroy');
+        Route::get('/cash-close', [\App\Http\Controllers\V2\CashCloseController::class, 'summary'])->name('cash-close.summary');
+        Route::post('/cash-close', [\App\Http\Controllers\V2\CashCloseController::class, 'store'])->name('cash-close.store');
+    });
+
     // How-to videos for that preview, one chapter per job, Arabic and English.
     // Separate from /training on purpose: these screens are not live yet.
     Route::get('/workspace-preview/videos', [\App\Http\Controllers\V2\WorkspacePreviewVideosController::class, 'index'])
@@ -698,6 +723,13 @@ Route::middleware([
     Route::post('/clinic-items',               [\App\Http\Controllers\V2\ClinicItemsController::class, 'store'])->name('clinic-items.store');
     Route::put('/clinic-items/{clinicItem}',   [\App\Http\Controllers\V2\ClinicItemsController::class, 'update'])->name('clinic-items.update');
     Route::delete('/clinic-items/{clinicItem}',[\App\Http\Controllers\V2\ClinicItemsController::class, 'destroy'])->name('clinic-items.destroy');
+
+    // Catalogue categories (JSON, driven by the Clinic Items "Categories" dialog).
+    Route::get('/clinic-catalog-categories',                 [\App\Http\Controllers\V2\ClinicCatalogCategoriesController::class, 'index'])->name('clinic-catalog-categories.index');
+    Route::post('/clinic-catalog-categories',                [\App\Http\Controllers\V2\ClinicCatalogCategoriesController::class, 'store'])->name('clinic-catalog-categories.store');
+    Route::post('/clinic-catalog-categories/reorder',        [\App\Http\Controllers\V2\ClinicCatalogCategoriesController::class, 'reorder'])->name('clinic-catalog-categories.reorder');
+    Route::put('/clinic-catalog-categories/{category}',      [\App\Http\Controllers\V2\ClinicCatalogCategoriesController::class, 'update'])->name('clinic-catalog-categories.update');
+    Route::delete('/clinic-catalog-categories/{category}',   [\App\Http\Controllers\V2\ClinicCatalogCategoriesController::class, 'destroy'])->name('clinic-catalog-categories.destroy');
 
     // Pharmacy — Clinic stock (v2 replacement for ClinicItemStockResource).
     Route::get('/clinic-stock',                [\App\Http\Controllers\V2\ClinicStockController::class, 'index'])->name('clinic-stock.index');

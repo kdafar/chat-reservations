@@ -78,7 +78,18 @@ return [
             // Visit payment-link template (UTILITY). One name, two language
             // versions (en/ar). Submitted via `php artisan wa:create-payment-template`.
             'payment_link' => env('WA_TPL_PAYMENT_LINK', 'clinic_payment_link'),
+
+            // "Please go to <room>" message sent when a patient is called in
+            // (App\Services\Workspace\CallNotifier). Resolved like every other
+            // Meta name: this override if set, else "<WHATSAPP_TEMPLATE_PREFIX>_queue_call".
+            'queue_call' => env('WHATSAPP_TEMPLATE_QUEUE_CALL'),
         ],
+
+        // Queue-call WhatsApp notice is OFF unless explicitly enabled — the
+        // template (en + ar) must be approved on Meta first.
+        //   WHATSAPP_QUEUE_CALL_ENABLED=true
+        //   WHATSAPP_TEMPLATE_QUEUE_CALL=   (optional name override)
+        'queue_call_enabled' => (bool) env('WHATSAPP_QUEUE_CALL_ENABLED', false),
 
         // Fallback branch if session has no branch context
         'default_branch_id' => env('BOOKING_DEFAULT_BRANCH_ID', 5),

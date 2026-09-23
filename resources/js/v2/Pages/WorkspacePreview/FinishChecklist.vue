@@ -22,6 +22,8 @@ const props = defineProps({
     row: { type: Object, default: null },
     /* 'complete' (end treatment) | 'discharge' (leave the clinic) */
     mode: { type: String, default: 'complete' },
+    /* Live: vitals have no write path yet, so do not nag about them. */
+    live: { type: Boolean, default: false },
 })
 const emit = defineEmits(['confirm', 'cancel', 'go'])
 const page = usePage()
@@ -63,9 +65,12 @@ const checks = computed(() => {
         if (due > 0) out.push({ level: 'danger', text: ar ? `${formatMoney(due)} د.ك غير مدفوع` : `${formatMoney(due)} KWD unpaid`, tab: 'payments' })
         else if (credit > 0) out.push({ level: 'warn', text: ar ? `مبلغ مسترد ${formatMoney(credit)} د.ك للمريض` : `${formatMoney(credit)} KWD refund owed to the patient`, tab: 'payments' })
         else out.push({ level: 'ok', text: ar ? 'الفاتورة مدفوعة' : 'Bill fully paid' })
-        if (v.policy && !v.insurance_applied) out.push({ level: 'warn', text: ar ? `التأمين (${v.policy.insurer}) لم يُطبّق على الفاتورة` : `Insurance (${v.policy.insurer}) not applied to the bill`, tab: 'items' })
+        // Live: insurance is settled by the server's claim flow; discharge itself refuses while a decision is pending.
+        if (!props.live && v.policy && !v.insurance_applied) out.push({ level: 'warn', text: ar ? `التأمين (${v.policy.insurer}) لم يُطبّق على الفاتورة` : `Insurance (${v.policy.insurer}) not applied to the bill`, tab: 'items' })
+        // Live: the server refuses discharge until insurance is decided.
+        if (props.live && v.insurance_requires_decision) out.push({ level: 'danger', text: ar ? 'قرار التأمين مطلوب: طبّق الحصة وأنشئ المطالبة، أو تخطَّ التأمين' : 'Insurance decision needed: apply the share and create the claim, or skip', tab: 'payments' })
         const rp = v.requested_package
-        if (rp && !rp.added) out.push({ level: 'warn', text: ar ? `العرض «${rp.name}» لم يُعتمد` : `Requested offer "${rp.name}" not approved`, tab: 'overview' })
+        if (!props.live && rp && !rp.added) out.push({ level: 'warn', text: ar ? `العرض «${rp.name}» لم يُعتمد` : `Requested offer "${rp.name}" not approved`, tab: 'overview' })
         if (Number(v.sick_leave_days) > 0) out.push({ level: 'info', text: ar ? 'سلّم شهادة الإجازة المرضية للمريض' : 'Hand over the sick leave certificate' })
         if (pendingLabs) out.push({ level: 'info', text: ar ? `${pendingLabs} نتيجة معلقة — سيُبلَّغ المريض` : `${pendingLabs} result${pendingLabs > 1 ? 's' : ''} pending — patient will be notified`, tab: 'lab' })
         if (v.follow_up_date) out.push({ level: 'ok', text: ar ? `متابعة ${fmtDay(v.follow_up_date)} — ذكّر المريض` : `Follow-up ${fmtDay(v.follow_up_date)} — remind the patient` })

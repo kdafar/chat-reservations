@@ -20,8 +20,12 @@
  * Sealed like the rest of the preview: it edits the row object it is given
  * and calls nothing. `phrases` is owned by the page so a phrase saved here is
  * still there on the next patient.
+ *
+ * On the live page the same component also writes through `wspSync` (see
+ * live.js). Every server call is behind `live`, so with nothing injected —
+ * the design preview — it behaves exactly as before.
  */
-import { computed, ref } from 'vue'
+import { computed, inject, ref, watch } from 'vue'
 import { usePage } from '@inertiajs/vue3'
 import Icon from '../../Components/Icon.vue'
 import CalendarPopover from './CalendarPopover.vue'
@@ -50,6 +54,16 @@ const page = usePage()
 const isRtl = computed(() => (page.props.locale ?? 'en') === 'ar')
 const v = props.row   // edited in place; the page owns the object
 
+/* The live page provides this; the preview does not, and then every save
+   below is a no-op. */
+const sync = inject('wspSync', null)
+const live = computed(() => !!sync)
+/* Saves only on a user edit (typing, a phrase, "use last") — never from a
+   watcher — so the page reloading the row from the server does not echo a
+   save straight back. */
+function saveNote(field) { if (live.value) sync.saveField(v, field, v[field]) }
+function saveRx() { if (live.value) sync.savePrescriptions(v) }
+
 const words = (str) => String(str ?? '').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean)
 const matches = (hay, q) => { const t = words(q); const h = words(hay); return t.every((x) => h.some((w) => w.startsWith(x))) }
 
@@ -59,10 +73,23 @@ const trayQuery = ref('')
 const saving = ref(false)
 const saveLabel = ref('')
 
+const phrasesLoaded = new Set()
 function onFocusIn(field) {
     if (props.readonly) return
     if (activeField.value !== field) { trayQuery.value = ''; saving.value = false }
     activeField.value = field
+    if (live.value) loadPhrases(field)
+}
+/* Live: the doctor's phrases come from the server the first time a field is
+   focused. The page owns `phrases`, so what loads here stays for the next
+   patient and is not fetched again. */
+async function loadPhrases(field) {
+    if (phrasesLoaded.has(field) || props.phrases[field]?.length) return
+    phrasesLoaded.add(field)
+    try {
+        const list = await sync.loadPhrases(v, field)
+        if (!props.phrases[field]?.length) props.phrases[field] = list
+    } catch { phrasesLoaded.delete(field) }
 }
 /* The tray lives inside the field's wrapper, so moving focus from the textarea
    to a chip or the save box is still "inside" and keeps it open. Leaving the
@@ -81,14 +108,26 @@ function insertPhrase(field, p) {
     const cur = String(v[field] ?? '').trim()
     const add = phraseText(p)
     v[field] = cur ? `${cur}${/[.،,;:]$/.test(cur) ? ' ' : ', '}${add}` : add
+    saveNote(field)
 }
 function startSave(field) {
     saving.value = true
     saveLabel.value = String(v[field] ?? '').trim().slice(0, 60)
 }
-function commitSave(field) {
+async function commitSave(field) {
     const label = saveLabel.value.trim()
     if (!label) return
+    if (live.value) {
+        // The server stores the label and the field's text as the body; the
+        // chip inserts the body, as the loaded phrases do.
+        const body = String(v[field] ?? '').trim()
+        try { await sync.savePhrase(v, field, label, body) } catch { return }   // run() already toasted
+        if (!props.phrases[field]) props.phrases[field] = []
+        props.phrases[field].unshift({ en: body || label, ar: body || label, label })
+        saving.value = false
+        pushToast({ kind: 'success', icon: 'check', title: t.value.phraseSaved, desc: label })
+        return
+    }
     if (!props.phrases[field]) props.phrases[field] = []
     props.phrases[field].unshift({ en: label, ar: label })
     saving.value = false
@@ -98,9 +137,28 @@ function commitSave(field) {
 /* ── prescriptions ────────────────────────────────────────────────────── */
 if (!Array.isArray(v.prescriptions)) v.prescriptions = []
 const rxQuery = ref('')
+/* Live: the formulary is searched on the server, 250ms after the last key.
+   `rxSeq` drops an answer that arrives after a newer query was typed. */
+const liveDrugs = ref([])
+let rxTimer = null
+let rxSeq = 0
+watch(rxQuery, (val) => {
+    if (!live.value) return
+    clearTimeout(rxTimer)
+    const q = val.trim()
+    const seq = ++rxSeq
+    if (q.length < 2) { liveDrugs.value = []; return }
+    rxTimer = setTimeout(async () => {
+        try {
+            const list = await sync.searchDrugs(v, q)
+            if (seq === rxSeq) liveDrugs.value = list.slice(0, 6)
+        } catch { if (seq === rxSeq) liveDrugs.value = [] }
+    }, 250)
+})
 const rxResults = computed(() => {
     const q = rxQuery.value.trim()
     if (q.length < 2) return []
+    if (live.value) return liveDrugs.value
     return props.formulary.filter((d) => matches(`${d.name} ${d.strength} ${d.form}`, q)).slice(0, 6)
 })
 /*
@@ -128,6 +186,7 @@ function commitDrug(d, warnings, quiet = false) {
         dose: d.dose ?? f.dose ?? '', freq: d.freq ?? f.freq ?? '', dur: d.dur ?? f.dur ?? '',
         override: warnings ? warnings.map((w) => w.text).join(' ') : null,
     }]
+    saveRx()
     if (!quiet) logEvent(v, 'rx', isRtl.value ? `وصفة: ${v.prescriptions.map((x) => x.name).join('، ')}` : `Prescribed: ${v.prescriptions.map((x) => x.name).join(', ')}`, { merge: true })
 }
 function resolvePending(p, add) {
@@ -149,18 +208,50 @@ function repeatLast() {
         desc: `${added} ${isRtl.value ? 'أضيف' : 'added'}${r.includes('flagged') ? (isRtl.value ? ' · بعضها يحتاج مراجعة' : ' · some need review') : ''}${r.includes('dup') ? (isRtl.value ? ' · بعضها موجود' : ' · some already listed') : ''}` })
 }
 
+/* The server's set → the shape this panel lists (shared by Index on load). */
+function liveSetShape(x) {
+    return { id: x.id, name: x.name, name_ar: x.name, owner: x.mine ? props.doctorId : -1, shared: x.shared,
+        drugs: (x.drugs ?? []).map((d) => d.name), drugObjs: x.drugs ?? [], labs: x.lab_test_ids ?? [], items: x.items ?? [], follow_up_days: x.follow_up_days }
+}
 const mySets = computed(() => props.orderSets.filter((s) => s.owner === props.doctorId))
 const sharedSets = computed(() => props.orderSets.filter((s) => s.owner !== props.doctorId && s.shared))
 function setName(s) { return isRtl.value ? (s.name_ar || s.name) : s.name }
 function setSummary(s) {
     const parts = []
     if (s.drugs?.length) parts.push(s.drugs.join(', '))
-    if (s.labs?.length) parts.push(`${isRtl.value ? 'تحاليل' : 'Tests'}: ${s.labs.join(', ')}`)
+    if (s.labs?.length) parts.push(live.value ? `${s.labs.length} ${isRtl.value ? 'تحليل' : (s.labs.length > 1 ? 'tests' : 'test')}` : `${isRtl.value ? 'تحاليل' : 'Tests'}: ${s.labs.join(', ')}`)
     if (s.items?.length) parts.push(`${s.items.length} ${isRtl.value ? 'خدمة' : 'item'}${s.items.length > 1 && !isRtl.value ? 's' : ''}`)
     if (s.follow_up_days) parts.push(`${isRtl.value ? 'متابعة' : 'Follow-up'} ${s.follow_up_days}${isRtl.value ? ' يوم' : 'd'}`)
     return parts.join(' · ')
 }
+/*
+ * Live: a set is stored on the server as drug objects, lab test ids and bill
+ * item ids. Drugs still go through addDrug (the allergy check); the tests go
+ * in one lab order; items go on the bill through the normal item API.
+ */
+async function applySetLive(s) {
+    const r = (s.drugObjs ?? []).map((d) => addDrug(d, { quiet: true }))
+    if (r.includes('added')) saveRx()
+    const have = new Set(v.lab_orders.map((o) => o.test_id))
+    const ids = (s.labs ?? []).filter((id) => !have.has(id))
+    try {
+        if (ids.length) await sync.orderTests(v, ids)
+        for (const it of s.items ?? []) {
+            const onBill = (v.items ?? []).some((i) => i.type === it.type && String(i.catalogue_id).replace('pkg', '') === String(it.id))
+            if (!onBill) await sync.addItem(v, { type: it.type, server_id: it.id })
+        }
+    } catch { /* the sync layer already showed the error */ }
+    if (s.follow_up_days && !v.follow_up_date) { v.follow_up_date = ymd(addDays(s.follow_up_days)); sync.saveField(v, 'follow_up_date', v.follow_up_date, 0) }
+    sync.useSet(s.id)
+    const added = r.filter((x) => x === 'added').length
+    pushToast({
+        kind: r.includes('flagged') ? 'warning' : 'success', icon: 'layers', title: setName(s),
+        desc: [`${added} ${isRtl.value ? 'دواء' : 'drugs'}`, `${ids.length} ${isRtl.value ? 'تحليل' : 'tests'}`, `${(s.items ?? []).length} ${isRtl.value ? 'خدمة' : 'items'}`,
+            r.includes('flagged') ? (isRtl.value ? 'بعض الأدوية تحتاج مراجعة' : 'some drugs need review') : null].filter(Boolean).join(' · '),
+    })
+}
 function applySet(s) {
+    if (live.value) return applySetLive(s)
     const drugs = (s.drugs ?? []).map((name) => props.formulary.find((d) => d.name === name) ?? { name })
     const r = drugs.map((d) => addDrug(d, { quiet: true }))
     let tests = 0
@@ -193,6 +284,21 @@ function saveSet() {
     const name = newSetName.value.trim()
     if (!name) return
     const followDays = v.follow_up_date ? Math.round((new Date(`${v.follow_up_date}T00:00`) - addDays(0)) / 86400000) : null
+    if (live.value) {
+        sync.saveSet({
+            name, shared: false,
+            drugs: v.prescriptions.map((d) => ({ name: d.name, strength: d.strength || null, dose: d.dose || null, freq: d.freq || null, dur: d.dur || null })),
+            lab_test_ids: [...new Set(v.lab_orders.map((o) => o.test_id).filter(Boolean))],
+            items: (v.items ?? []).filter((i) => i.server_id && !i.is_fee).map((i) => ({ type: i.type, id: Number(String(i.catalogue_id).replace('pkg', '')) })),
+            follow_up_days: followDays > 0 ? followDays : null,
+        }).then((res) => {
+            props.orderSets.unshift(liveSetShape(res.set))
+            pushToast({ kind: 'success', icon: 'bookmark-plus', title: isRtl.value ? 'حُفظت المجموعة' : 'Set saved', desc: name })
+        }).catch(() => {})
+        savingSet.value = false
+        newSetName.value = ''
+        return
+    }
     props.orderSets.unshift({
         id: `s${Date.now()}`, name, name_ar: name, owner: props.doctorId, shared: false,
         drugs: v.prescriptions.map((d) => d.name), labs: v.lab_orders.map((o) => o.code),
@@ -208,16 +314,29 @@ function addCustomDrug() {
     if (!name) return
     addDrug({ name, strength: '', dose: '', freq: '', dur: '' })
 }
-function removeDrug(id) { v.prescriptions = v.prescriptions.filter((x) => x.id !== id) }
+function removeDrug(id) { v.prescriptions = v.prescriptions.filter((x) => x.id !== id); saveRx() }
 
 /* ── lab: one list of orders, with their status and result ───────────── */
 if (!Array.isArray(v.lab_orders)) v.lab_orders = []
 const labQuery = ref('')
 const orderedCodes = computed(() => new Set(v.lab_orders.map((o) => o.code)))
+/* Live: the catalogue comes with the visit's lab orders (row.lab_catalogue).
+   Named labCat because `catalogue` is the bill catalogue prop. */
+const labCat = computed(() => live.value ? (v.lab_catalogue ?? []) : props.labCatalogue)
+/* A server order line may carry no code, so live also matches by test id. */
+function isOrdered(x) {
+    if (!live.value) return orderedCodes.value.has(x.code)
+    return v.lab_orders.some((o) => (o.test_id != null && o.test_id === x.id) || o.code === x.code)
+}
+const canOrderLab = computed(() => !live.value || v.can_order_lab !== false)
+/* Urgency can only be set when the order is placed on the server, so live
+   asks for it up front instead of on each line. */
+const urgentNext = ref(false)
+const ordering = ref(false)
 const labResults = computed(() => {
     const q = labQuery.value.trim()
     if (q.length < 1) return []
-    return props.labCatalogue.filter((x) => matches(`${x.name} ${x.code}`, q)).slice(0, 6)
+    return labCat.value.filter((x) => matches(`${x.name} ${x.code}`, q)).slice(0, 6)
 })
 const FLAG_RANK = { critical: 3, high: 2, low: 1, normal: 0 }
 /* Keeps the queue's lab signal ("3 urgent", "2 results") in step with what
@@ -230,7 +349,19 @@ function syncLabSummary() {
         ? { ready: ready.length, pending: pending.length, urgent: pending.some((o) => o.urgent), worst_flag: worst, tests: v.lab_orders }
         : null
 }
-function orderTest(x, { quiet = false } = {}) {
+async function orderTest(x, { quiet = false } = {}) {
+    if (live.value) {
+        // The sync reloads the row, so the new line comes from the server.
+        if (isOrdered(x) || ordering.value) return
+        ordering.value = true
+        try {
+            await sync.orderTest(v, x, urgentNext.value)
+            labQuery.value = ''
+            urgentNext.value = false
+            syncLabSummary()
+        } catch { /* run() already toasted */ } finally { ordering.value = false }
+        return
+    }
     if (orderedCodes.value.has(x.code)) return
     v.lab_orders = [...v.lab_orders, { id: Date.now() + Math.random(), code: x.code, name: x.name, unit: x.unit, range: x.range, status: 'ordered', urgent: false, result: null, flag: null }]
     labQuery.value = ''
@@ -260,6 +391,7 @@ const leaveDays = computed(() => Number(v.sick_leave_days) || 0)
 const leaveCustom = computed(() => leaveDays.value > 0 && !LEAVE.includes(leaveDays.value))
 function setLeave(n) {
     v.sick_leave_days = n > 0 ? n : null
+    sync?.saveField(v, 'sick_leave_days', v.sick_leave_days, 0)
     if (n > 0) logEvent(v, 'leave', isRtl.value ? `إجازة مرضية ${n} يوم` : `Sick leave: ${n} day${n > 1 ? 's' : ''}`, { merge: true })
 }
 
@@ -269,13 +401,19 @@ function followKey() {
     const hit = FOLLOW.find((f) => ymd(addDays(f.d)) === v.follow_up_date)
     return hit ? hit.k : 'custom'
 }
-function setFollow(days) { v.follow_up_date = days == null ? null : ymd(addDays(days)) }
+function setFollow(days) {
+    v.follow_up_date = days == null ? null : ymd(addDays(days))
+    sync?.saveField(v, 'follow_up_date', v.follow_up_date, 0)
+}
 const todayKey = ymd(addDays(0))
 /* The calendar's v-model. Only a date that is not one of the presets counts
    as "custom" — picking 2 weeks from the calendar lights the 2 wk pill. */
 const followDate = computed({
     get: () => v.follow_up_date ?? '',
-    set: (val) => { v.follow_up_date = val || null },
+    set: (val) => {
+        v.follow_up_date = val || null
+        sync?.saveField(v, 'follow_up_date', v.follow_up_date, 0)
+    },
 })
 const followLabel = computed(() => {
     if (!v.follow_up_date) return ''
@@ -293,6 +431,7 @@ const t = computed(() => isRtl.value ? {
     ready: 'النتيجة جاهزة', urgent: 'عاجل', already: 'مطلوب مسبقاً', none: 'بدون', days: 'أيام', day: 'يوم',
     until: 'حتى', custom: 'أخرى', w1: 'أسبوع', w2: 'أسبوعان', m1: 'شهر', m3: '٣ أشهر', pick: 'تاريخ',
     reminder: 'سيُجدول تذكير للمريض', lastVisit: 'الزيارة السابقة', use: 'استخدم', lastDrugs: 'أدوية الزيارة السابقة', repeat: 'تكرار الوصفة السابقة', sets: 'المجموعات المحفوظة', mySets: 'مجموعاتي', shared: 'مشتركة للعيادة', noSets: 'لا توجد مجموعات', saveSet: 'حفظ كمجموعة', setName: 'اسم المجموعة', warnTitle: 'راجع قبل الإضافة', dontAdd: 'لا تضف', addAnyway: 'أضف رغم التنبيه', overridden: 'أضيف رغم تنبيه', drug: 'الدواء', test: 'التحليل', status: 'الحالة', result: 'النتيجة', range: 'المعدل الطبيعي', empty: '—', remove: 'إزالة', cancelOrder: 'إلغاء الطلب',
+    cantOrderLab: 'لا يمكنك طلب تحاليل لهذه الزيارة', urgentNext: 'اطلب كعاجل', printResult: 'طباعة النتيجة',
 } : {
     cc: 'Chief complaint', exam: 'Examination', dx: 'Diagnosis', rx: 'Prescription', lab: 'Lab tests', instr: 'Patient instructions',
     leave: 'Sick leave', follow: 'Follow-up',
@@ -303,6 +442,7 @@ const t = computed(() => isRtl.value ? {
     ready: 'Result ready', urgent: 'Urgent', already: 'Already ordered', none: 'None', days: 'days', day: 'day',
     until: 'until', custom: 'Other', w1: '1 wk', w2: '2 wk', m1: '1 mo', m3: '3 mo', pick: 'Date',
     reminder: 'A reminder will be scheduled', lastVisit: 'Last visit', use: 'Use', lastDrugs: 'Last visit drugs', repeat: 'Repeat last prescription', sets: 'Saved sets', mySets: 'My sets', shared: 'Shared with clinic', noSets: 'No saved sets', saveSet: 'Save as set', setName: 'Set name', warnTitle: 'Check before adding', dontAdd: "Don't add", addAnyway: 'Add anyway', overridden: 'Added despite warning', drug: 'Drug', test: 'Test', status: 'Status', result: 'Result', range: 'Normal range', empty: '—', remove: 'Remove', cancelOrder: 'Cancel order',
+    cantOrderLab: "You can't order tests on this visit", urgentNext: 'Order as urgent', printResult: 'Print result',
 })
 
 /* What last visit said for each field, faint under the label — the doctor's
@@ -325,6 +465,7 @@ function useLast(key) {
     if (!text) return
     const cur = String(v[key] ?? '').trim()
     v[key] = cur ? `${cur}${/[.،,;:]$/.test(cur) ? ' ' : ', '}${text}` : text
+    saveNote(key)
 }
 const fmtShort = (d) => {
     if (!d) return ''
@@ -361,7 +502,7 @@ const TEXT_FIELDS = computed(() => [
                     <button v-if="!readonly" type="button" class="vn-link" @mousedown.prevent @click="useLast(f.key)">{{ t.use }}</button>
                 </div>
                 <div v-if="readonly" class="vn-read">{{ row[f.key] || t.empty }}</div>
-                <textarea v-else :id="`vn-${f.key}`" v-model="row[f.key]" class="input vn-text" rows="5" :placeholder="f.ph" />
+                <textarea v-else :id="`vn-${f.key}`" v-model="row[f.key]" class="input vn-text" rows="5" :placeholder="f.ph" @input="saveNote(f.key)" />
 
                 <div v-if="activeField === f.key" class="vn-tray">
                     <div class="vn-tray-head">
@@ -393,7 +534,8 @@ const TEXT_FIELDS = computed(() => [
                     <button v-if="lastRx.length" type="button" class="btn btn-outline btn-sm" v-tip="lastRx.map((d) => d.name).join(', ')" @click="repeatLast">
                         <Icon name="repeat" :size="13" />{{ t.repeat }} <span class="tnum vn-count">{{ lastRx.length }}</span>
                     </button>
-                    <Popover :width="320" align="end">
+                    <!-- Saved sets have no server storage yet, so live does not offer them. -->
+                    <Popover v-if="!live || sync.features?.order_sets" :width="320" align="end">
                         <template #trigger="{ toggle, open }">
                             <button type="button" class="btn btn-outline btn-sm" :aria-expanded="open" @click.stop="toggle"><Icon name="layers" :size="13" />{{ t.sets }}<Icon name="chevron-down" :size="12" /></button>
                         </template>
@@ -450,7 +592,15 @@ const TEXT_FIELDS = computed(() => [
                 <div class="vn-rxhead" aria-hidden="true">
                     <span>{{ t.drug }}</span><span>{{ t.dose }}</span><span>{{ t.freq }}</span><span>{{ t.dur }}</span><span></span>
                 </div>
-                <div v-for="d in row.prescriptions" :key="d.id" class="vn-rxrow">
+                <!-- A line saved as plain text (older visits, or typed elsewhere)
+                     cannot be split into dose/frequency/duration, so it is one line. -->
+                <div v-for="d in row.prescriptions" :key="d.id" class="vn-rxrow" :class="{ 'is-raw': d.raw }">
+                    <template v-if="d.raw">
+                        <div class="vn-drug-name vn-rxraw">{{ d.name }}</div>
+                        <button v-if="!readonly" type="button" class="btn btn-ghost btn-sm btn-icon" :aria-label="t.remove" @click="removeDrug(d.id)"><Icon name="x" :size="13" /></button>
+                        <span v-else></span>
+                    </template>
+                    <template v-else>
                     <div class="vn-drug-name">{{ d.name }} <span class="tnum" style="color: var(--fg-subtle); font-weight: 500;">{{ d.strength }}</span>
                         <span v-if="d.override" class="badge badge-destructive" style="margin-inline-start: 4px;" v-tip="d.override"><Icon name="shield-alert" :size="10" />{{ t.overridden }}</span>
                     </div>
@@ -458,10 +608,11 @@ const TEXT_FIELDS = computed(() => [
                         <span class="vn-cell">{{ d.dose || t.empty }}</span><span class="vn-cell">{{ d.freq || t.empty }}</span><span class="vn-cell">{{ d.dur || t.empty }}</span><span></span>
                     </template>
                     <template v-else>
-                        <input v-model="d.dose" class="input" :aria-label="t.dose" />
-                        <input v-model="d.freq" class="input" :aria-label="t.freq" />
-                        <input v-model="d.dur" class="input" :aria-label="t.dur" />
+                        <input v-model="d.dose" class="input" :aria-label="t.dose" @input="saveRx" />
+                        <input v-model="d.freq" class="input" :aria-label="t.freq" @input="saveRx" />
+                        <input v-model="d.dur" class="input" :aria-label="t.dur" @input="saveRx" />
                         <button type="button" class="btn btn-ghost btn-sm btn-icon" :aria-label="t.remove" @click="removeDrug(d.id)"><Icon name="x" :size="13" /></button>
+                    </template>
                     </template>
                 </div>
             </div>
@@ -472,15 +623,17 @@ const TEXT_FIELDS = computed(() => [
         <section v-else-if="section === 'lab'" class="vn-sec vn-wide">
             <div class="vn-label"><Icon name="flask-conical" :size="12" />{{ t.lab }}<span v-if="row.lab_orders.length" class="vn-count tnum">{{ row.lab_orders.length }}</span></div>
 
-            <div v-if="!readonly" class="vn-picker">
+            <div v-if="!readonly && !canOrderLab" class="vn-hint"><Icon name="lock" :size="12" />{{ t.cantOrderLab }}</div>
+            <div v-else-if="!readonly" class="vn-picker" :class="{ 'vn-picker-row': live }">
                 <label class="vn-search">
                     <Icon name="search" :size="13" style="color: var(--fg-faint); flex: none;" />
                     <input v-model="labQuery" :placeholder="t.labSearch" @keydown.enter.prevent="labResults[0] && orderTest(labResults[0])" />
                 </label>
+                <button v-if="live" type="button" class="btn btn-sm" :class="urgentNext ? 'btn-destructive' : 'btn-outline'" :aria-pressed="urgentNext" v-tip="t.urgentNext" @click="urgentNext = !urgentNext">{{ t.urgent }}</button>
                 <div v-if="labQuery.trim()" class="vn-drop">
-                    <button v-for="x in labResults" :key="x.code" type="button" class="vn-opt" :disabled="orderedCodes.has(x.code)" @click="orderTest(x)">
+                    <button v-for="x in labResults" :key="x.code" type="button" class="vn-opt" :disabled="isOrdered(x) || ordering" @click="orderTest(x)">
                         <span><strong>{{ x.name }}</strong> <span class="vn-opt-meta tnum">{{ x.code }}</span></span>
-                        <span v-if="orderedCodes.has(x.code)" class="vn-opt-meta">{{ t.already }}</span>
+                        <span v-if="isOrdered(x)" class="vn-opt-meta">{{ t.already }}</span>
                     </button>
                     <div v-if="!labResults.length" class="vn-hint" style="padding: 8px 10px;">—</div>
                 </div>
@@ -507,7 +660,9 @@ const TEXT_FIELDS = computed(() => [
                     </div>
                     <div class="tnum vn-lab-range">{{ o.range || t.empty }}</div>
                     <div class="vn-lab-actions">
-                        <template v-if="!readonly && o.status === 'ordered'">
+                        <a v-if="o.print_url && o.status === 'ready'" :href="o.print_url" target="_blank" rel="noopener" class="btn btn-ghost btn-sm btn-icon" :aria-label="t.printResult" v-tip="t.printResult"><Icon name="printer" :size="13" /></a>
+                        <!-- Live: no endpoint changes urgency or cancels a line after ordering. -->
+                        <template v-if="!readonly && !live && o.status === 'ordered'">
                             <button type="button" class="btn btn-sm" :class="o.urgent ? 'btn-destructive' : 'btn-outline'" :aria-pressed="o.urgent" @click="toggleUrgent(o)">{{ t.urgent }}</button>
                             <button type="button" class="btn btn-ghost btn-sm btn-icon" :aria-label="t.cancelOrder" v-tip="t.cancelOrder" @click="cancelOrder(o)"><Icon name="x" :size="13" /></button>
                         </template>
@@ -662,6 +817,10 @@ const TEXT_FIELDS = computed(() => [
 .vn-lab-range { font-size: 11px; color: var(--fg-faint); }
 
 .vn-picker { position: relative; }
+.vn-picker-row { display: flex; align-items: center; gap: 6px; }
+.vn-picker-row .vn-search { flex: 1; min-width: 0; }
+.vn-rxrow.is-raw { grid-template-columns: minmax(0, 1fr) 32px; }
+.vn-rxraw { font-weight: 500; white-space: pre-wrap; }
 .vn-search { display: flex; align-items: center; gap: 7px; height: 32px; padding: 0 9px; border: 1px dashed var(--line-strong);
     border-radius: var(--radius-input); background: var(--bg-elev); cursor: text; }
 .vn-search:focus-within { border-style: solid; border-color: var(--primary); box-shadow: 0 0 0 3px var(--ring); }
