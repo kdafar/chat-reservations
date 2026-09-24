@@ -39,6 +39,8 @@ const t = computed(() => isRtl.value
             noBranches: 'لا توجد فروع متاحة.',
             save: 'حفظ', cancel: 'إلغاء',
             deleteConfirm: 'سيتم تعطيل هذا الحساب. متابعة؟',
+            impersonate: 'الدخول بحساب هذا المستخدم',
+            impersonateConfirm: (n) => `ستدخل بحساب ${n} وترى النظام كما يراه تمامًا. كل ما تفعله يُسجَّل باسمك في سجل التدقيق. يمكنك العودة لحسابك من الشريط العلوي.`,
         },
         stats: { total: 'الكل', active: 'فعّال', inactive: 'غير فعّال', unassigned: 'بدون فرع' },
         bulk: {
@@ -72,6 +74,8 @@ const t = computed(() => isRtl.value
             noBranches: 'No branches available.',
             save: 'Save', cancel: 'Cancel',
             deleteConfirm: 'Deactivate this account?',
+            impersonate: 'Log in as this user',
+            impersonateConfirm: (n) => `You'll be logged in as ${n} and see exactly what they see. Everything you do is recorded in the audit log under your name. Use the banner at the top to return to your account.`,
         },
         stats: { total: 'Total', active: 'Active', inactive: 'Inactive', unassigned: 'No branch' },
         bulk: {
@@ -155,6 +159,12 @@ function submit() {
 function deactivate(row) {
     confirm({ body: t.value.modal.deleteConfirm, tone: 'destructive', onConfirm: () => {
         router.delete(route('v2.users.destroy', { user: row.id }), { preserveScroll: true })
+    } })
+}
+
+function impersonate(row) {
+    confirm({ body: t.value.modal.impersonateConfirm(row.name), onConfirm: () => {
+        router.post(route('v2.users.impersonate', { user: row.id }))
     } })
 }
 
@@ -315,7 +325,10 @@ function submitBulk() {
                                     {{ row.status || '—' }}
                                 </span>
                             </td>
-                            <td @click.stop>
+                            <td @click.stop style="white-space:nowrap;">
+                                <button v-if="row.can_impersonate" class="btn btn-ghost btn-sm btn-icon" :title="t.modal.impersonate" :aria-label="t.modal.impersonate" @click="impersonate(row)">
+                                    <Icon name="log-in" :size="14" />
+                                </button>
                                 <button v-if="row.status === 'active'" class="btn btn-ghost btn-sm btn-icon" :title="t.modal.deleteConfirm" @click="deactivate(row)">
                                     <Icon name="user-x" :size="14" />
                                 </button>

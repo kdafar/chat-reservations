@@ -328,6 +328,13 @@ Route::middleware(['web', 'auth'])->group(function () {
 | screen is proven in production, comment out the matching Filament page
 | registration in AdminPanelProvider.
 */
+// Return from impersonation. Outside EnsureCanAccessAdminPanel on purpose:
+// the impersonated account may have lost its role or been deactivated
+// mid-session, and the way back to the admin's own account must still open.
+Route::middleware(['web', 'auth'])->prefix('admin/v2')->name('v2.')->group(function () {
+    Route::post('/impersonation/stop', [\App\Http\Controllers\V2\ImpersonationController::class, 'stop'])->name('impersonation.stop');
+});
+
 Route::middleware([
     'web',
     'auth',
@@ -551,6 +558,8 @@ Route::middleware([
     Route::post('/users/bulk-branches', [\App\Http\Controllers\V2\UsersController::class, 'bulkBranches'])->name('users.bulk-branches');
     Route::put('/users/{user}',      [\App\Http\Controllers\V2\UsersController::class, 'update'])->name('users.update');
     Route::delete('/users/{user}',   [\App\Http\Controllers\V2\UsersController::class, 'destroy'])->name('users.destroy');
+    // Log in as this user (global admins only — rules in ImpersonationService).
+    Route::post('/users/{user}/impersonate', [\App\Http\Controllers\V2\ImpersonationController::class, 'start'])->name('users.impersonate');
 
     // Roles & Permissions (v2 replacement for RoleResource). Admin only.
     Route::get('/roles',             [\App\Http\Controllers\V2\RolesController::class, 'index'])->name('roles.index');

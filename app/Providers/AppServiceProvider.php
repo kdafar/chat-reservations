@@ -136,6 +136,19 @@ class AppServiceProvider extends ServiceProvider
             return (method_exists($user, 'hasRole') && $user->hasRole('super_admin')) ? true : null;
         });
 
+        // While an admin is impersonating a user, every activity row is caused
+        // by the impersonated account — stamp the real actor on it too, so the
+        // audit trail can never pin an admin's change on a clinic employee.
+        \Spatie\Activitylog\Models\Activity::creating(function ($activity) {
+            if (! app()->bound('session') || ! request()->hasSession()) {
+                return;
+            }
+            $adminId = (int) request()->session()->get(\App\Services\Auth\ImpersonationService::SESSION_KEY, 0);
+            if ($adminId > 0) {
+                $activity->properties = ($activity->properties ?? collect())->put('impersonated_by', $adminId);
+            }
+        });
+
         Visit::observe(VisitObserver::class);
         Booking::observe(BookingObserver::class);
         Doctor::observe(DoctorObserver::class);

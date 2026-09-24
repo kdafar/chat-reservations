@@ -95,12 +95,14 @@ class UsersController extends Controller
         }
 
         $locale = app()->getLocale();
+        $impersonation = app(\App\Services\Auth\ImpersonationService::class);
 
         // Branch names are translatable, so resolve them here rather than
         // leaking the raw JSON column into the page props.
         $page = $query->orderBy('name')->paginate(25)->withQueryString()
             ->through(fn (User $u) => [
                 'id' => $u->id,
+                'can_impersonate' => $impersonation->canImpersonate($request->user(), $u),
                 'name' => $u->name,
                 'email' => $u->email,
                 'phone' => $u->phone,

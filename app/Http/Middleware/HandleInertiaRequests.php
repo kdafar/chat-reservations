@@ -122,6 +122,11 @@ class HandleInertiaRequests extends Middleware
                     // Every branch this user can work in: [{ id, name }, ...].
                     'branches' => $branches,
                 ] : null,
+                // Set while a global admin is logged in as this user — drives
+                // the "Return to my account" banner.
+                'impersonator' => $user && ($admin = app(\App\Services\Auth\ImpersonationService::class)->impersonator())
+                    ? ['id' => $admin->id, 'name' => $admin->name]
+                    : null,
             ],
 
             // App branding — driven by env vars so the header isn't hardcoded.

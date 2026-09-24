@@ -52,6 +52,15 @@ onUnmounted(() => {
 
 const user = computed(() => page.props.auth?.user ?? null)
 const locale = computed(() => page.props.locale ?? 'en')
+
+// Set while a global admin is logged in as this user (see ImpersonationService).
+const impersonator = computed(() => page.props.auth?.impersonator ?? null)
+const leavingImpersonation = ref(false)
+function stopImpersonating() {
+    if (leavingImpersonation.value) return
+    leavingImpersonation.value = true
+    router.post('/admin/v2/impersonation/stop', {}, { onFinish: () => { leavingImpersonation.value = false } })
+}
 const appName = computed(() => page.props.app?.name ?? 'Clinic')
 const appLogo = computed(() => page.props.app?.logo_url ?? '/favicon.svg')
 
@@ -870,6 +879,17 @@ onMounted(() => {
     <div class="app-shell" style="display: flex; flex-direction: column; min-height: 100vh; background: var(--bg);">
         <!-- Topbar -->
         <div class="glass-strip" style="position: sticky; top: 0; z-index: 40; border-bottom: 1px solid var(--line);">
+            <!-- Impersonation banner: impossible to miss, one click back. -->
+            <div v-if="impersonator" role="status"
+                 style="display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; padding: 6px 16px; background: var(--warning-soft); color: var(--fg); border-bottom: 1px solid var(--warning); font-size: 13px;">
+                <Icon name="user-cog" :size="14" style="color: var(--warning);" />
+                <span v-if="locale === 'ar'">أنت تتصفّح بحساب <b>{{ user?.name }}</b> — تُسجَّل أفعالك باسم {{ impersonator.name }}.</span>
+                <span v-else>You are logged in as <b>{{ user?.name }}</b> — your actions are recorded as {{ impersonator.name }}.</span>
+                <button type="button" class="btn btn-sm btn-outline" :disabled="leavingImpersonation" @click="stopImpersonating">
+                    <Icon name="log-out" :size="13" />
+                    <span>{{ locale === 'ar' ? 'العودة إلى حسابي' : 'Return to my account' }}</span>
+                </button>
+            </div>
             <div style="height: 56px; padding: 0 20px; display: flex; align-items: center; gap: 16px; max-width: 100%;">
                 <Link href="/admin/v2/dashboard" class="app-brand" :aria-label="appName">
                     <img :src="appLogo" :alt="appName" class="app-brand-logo" />
