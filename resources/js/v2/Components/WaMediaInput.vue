@@ -92,7 +92,7 @@ async function openLib() {
                 <div style="font-size:11px; color:var(--fg-faint); text-transform:capitalize;">{{ kind }}</div>
             </div>
             <button type="button" class="btn btn-ghost btn-sm" @click="pick">{{ L.replace }}</button>
-            <button type="button" class="btn btn-ghost btn-sm btn-icon" @click="clear"><Icon name="x" :size="14" :style="{ color:'var(--destructive)' }" /></button>
+            <button type="button" class="btn btn-row is-danger" @click="clear"><Icon name="x" :size="13" /><span>{{ L.remove }}</span></button>
         </div>
 
         <!-- empty: dropzone + library -->

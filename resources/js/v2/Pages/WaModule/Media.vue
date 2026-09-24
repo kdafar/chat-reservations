@@ -75,9 +75,9 @@ function fmtSize(b) { if (b == null) return ''; const u = ['B', 'KB', 'MB']; let
                     <div style="font-size:12px; font-weight:600; color:var(--fg); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" :title="m.name">{{ m.name }}</div>
                     <div style="display:flex; justify-content:space-between; align-items:center;">
                         <span style="font-size:10.5px; color:var(--fg-faint); text-transform:capitalize;">{{ m.kind }} · {{ fmtSize(m.size) }}</span>
-                        <div style="display:flex; gap:2px;">
-                            <button class="btn btn-ghost btn-sm btn-icon" :title="copiedId===m.id ? t.copied : t.copy" @click="copy(m)"><Icon :name="copiedId===m.id ? 'check' : 'link'" :size="12" :style="copiedId===m.id ? { color:'#16a34a' } : {}" /></button>
-                            <button v-if="can_edit" class="btn btn-ghost btn-sm btn-icon" :title="t.del" @click="del(m)"><Icon name="trash-2" :size="12" :style="{ color:'var(--destructive)' }" /></button>
+                        <div class="row-actions">
+                            <button type="button" class="btn btn-row" @click="copy(m)"><Icon :name="copiedId===m.id ? 'check' : 'link'" :size="13" :style="copiedId===m.id ? { color:'#16a34a' } : {}" /><span>{{ copiedId===m.id ? t.copied : t.copy }}</span></button>
+                            <button v-if="can_edit" type="button" class="btn btn-row is-danger" @click="del(m)"><Icon name="trash-2" :size="13" /><span>{{ t.del }}</span></button>
                         </div>
                     </div>
                 </div>

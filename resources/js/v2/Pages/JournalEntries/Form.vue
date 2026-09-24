@@ -27,6 +27,7 @@ const t = computed(() => isRtl.value ? {
     save: 'حفظ المسودة', cancel: 'إلغاء',
     fields: { entry_date: 'التاريخ', branch: 'الفرع', currency: 'العملة', narration: 'البيان', lines: 'البنود', account: 'الحساب', debit: 'مدين', credit: 'دائن', description: 'وصف', addLine: 'إضافة بند', none: '— بدون —', linesHelp: 'اختر حساب الأستاذ الذي يُسجَّل عليه كل بند مديناً أو دائناً.' },
     balanced: 'متوازن', unbalanced: 'غير متوازن', line: 'البند',
+    actions: { remove: 'إزالة' },
 } : {
     eyebrow: 'Accounting', back: 'Journal Entries',
     createTitle: 'New journal entry', editTitle: 'Edit draft',
@@ -34,6 +35,7 @@ const t = computed(() => isRtl.value ? {
     save: 'Save draft', cancel: 'Cancel',
     fields: { entry_date: 'Date', branch: 'Branch', currency: 'Currency', narration: 'Narration', lines: 'Lines', account: 'Account', debit: 'Debit', credit: 'Credit', description: 'Description', addLine: 'Add line', none: '— None —', linesHelp: 'Pick the ledger account each line debits or credits.' },
     balanced: 'Balanced', unbalanced: 'Unbalanced', line: 'Line',
+    actions: { remove: 'Remove' },
 })
 
 const blankLine = () => ({ account_id: null, debit: 0, credit: 0, description: '' })
@@ -128,7 +130,7 @@ function submit() {
                         <td><input v-model.number="l.debit" type="number" step="any" min="0" class="input mono" style="text-align:end;" @input="l.credit = 0" /></td>
                         <td><input v-model.number="l.credit" type="number" step="any" min="0" class="input mono" style="text-align:end;" @input="l.debit = 0" /></td>
                         <td><input v-model="l.description" class="input" maxlength="191" /></td>
-                        <td><button type="button" class="btn btn-ghost btn-sm btn-icon" @click="removeLine(i)"><Icon name="x" :size="13" /></button></td>
+                        <td style="text-align:end;"><div class="row-actions"><button type="button" class="btn btn-row is-danger" @click="removeLine(i)"><Icon name="x" :size="13" /><span>{{ t.actions.remove }}</span></button></div></td>
                     </tr>
                 </tbody>
             </table>

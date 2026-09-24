@@ -249,10 +249,12 @@ const qtyNum = (n) => Number(n ?? 0).toLocaleString('en-US', { maximumFractionDi
                             <td class="mono" style="text-align:end;">{{ fmt(row.qty_on_hand_base) }}</td>
                             <td class="mono" style="text-align:end;">{{ row.min_qty_threshold_base != null ? fmt(row.min_qty_threshold_base) : '—' }}</td>
                             <td style="font-size:12px;">{{ row.bin_location || '—' }}</td>
-                            <td style="white-space:nowrap;">
-                                <button v-if="can_edit" class="btn btn-ghost btn-sm btn-icon" :title="t.receive" @click="openReceive(row)"><Icon name="truck" :size="14" /></button>
-                                <button v-if="can_edit" class="btn btn-ghost btn-sm btn-icon" :title="t.modal.edit" @click="openEdit(row)"><Icon name="pencil" :size="14" /></button>
-                                <button v-if="can_edit" class="btn btn-ghost btn-sm btn-icon" :title="t.modal.delete" @click="destroy(row)"><Icon name="trash-2" :size="14" /></button>
+                            <td style="white-space:nowrap; text-align:end;">
+                                <div class="row-actions">
+                                    <button v-if="can_edit" type="button" class="btn btn-row" @click="openReceive(row)"><Icon name="truck" :size="13" /><span>{{ t.modal.receiveDo }}</span></button>
+                                    <button v-if="can_edit" type="button" class="btn btn-row" @click="openEdit(row)"><Icon name="pencil" :size="13" /><span>{{ t.modal.edit }}</span></button>
+                                    <button v-if="can_edit" type="button" class="btn btn-row is-danger" @click="destroy(row)"><Icon name="trash-2" :size="13" /><span>{{ t.modal.delete }}</span></button>
+                                </div>
                             </td>
                         </tr>
                     </tbody>

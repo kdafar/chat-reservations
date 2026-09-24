@@ -107,11 +107,13 @@ const statusBadge = (s) => ({ draft: 'badge badge-warning', posted: 'badge badge
                             <td style="font-size:12px;">{{ row.account ? (row.account.code + ' — ' + row.account.name) : '—' }}</td>
                             <td class="mono" style="text-align:end;">{{ fmt(row.amount) }}</td>
                             <td><span :class="statusBadge(row.status)">{{ t.st[row.status] ?? row.status }}</span></td>
-                            <td style="white-space:nowrap;">
-                                <Link v-if="can_edit && row.status === 'draft'" :href="route('v2.accounting.expenses.edit', { expense: row.id })" class="btn btn-ghost btn-sm btn-icon" :title="t.row.edit"><Icon name="pencil" :size="14" /></Link>
-                                <button v-if="can_edit && row.status === 'draft'" class="btn btn-outline btn-sm" @click="postExpense(row)">{{ t.act.post }}</button>
-                                <button v-if="can_edit && row.status === 'posted'" class="btn btn-ghost btn-sm" @click="voidExpense(row)">{{ t.act.void }}</button>
-                                <button v-if="can_edit && row.status !== 'posted'" class="btn btn-ghost btn-sm btn-icon" :title="t.row.delete" @click="destroy(row)"><Icon name="trash-2" :size="14" /></button>
+                            <td style="white-space:nowrap; text-align:end;">
+                                <div class="row-actions">
+                                    <Link v-if="can_edit && row.status === 'draft'" :href="route('v2.accounting.expenses.edit', { expense: row.id })" class="btn btn-row"><Icon name="pencil" :size="13" /><span>{{ t.row.edit }}</span></Link>
+                                    <button v-if="can_edit && row.status === 'draft'" type="button" class="btn btn-row" @click="postExpense(row)"><Icon name="check" :size="13" /><span>{{ t.act.post }}</span></button>
+                                    <button v-if="can_edit && row.status === 'posted'" type="button" class="btn btn-row is-danger" @click="voidExpense(row)"><Icon name="ban" :size="13" /><span>{{ t.act.void }}</span></button>
+                                    <button v-if="can_edit && row.status !== 'posted'" type="button" class="btn btn-row is-danger" @click="destroy(row)"><Icon name="trash-2" :size="13" /><span>{{ t.row.delete }}</span></button>
+                                </div>
                             </td>
                         </tr>
                     </tbody>

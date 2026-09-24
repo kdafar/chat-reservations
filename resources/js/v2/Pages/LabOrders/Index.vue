@@ -201,8 +201,8 @@ const exportUrl = computed(() => route('v2.lab-orders.export', {
                 >
                     <Icon name="stethoscope" :size="12" /> {{ counts.awaiting_review }}
                 </span>
-                <button class="btn btn-ghost btn-sm btn-icon" :title="t.refreshed" @click="refresh">
-                    <Icon name="refresh-cw" :size="14" />
+                <button type="button" class="btn btn-outline btn-sm" @click="refresh">
+                    <Icon name="refresh-cw" :size="13" /> {{ isRtl ? 'تحديث' : 'Refresh' }}
                 </button>
                 <a v-if="can.export" class="btn btn-outline btn-sm" :href="exportUrl">
                     <Icon name="download" :size="13" /> {{ t.export }}

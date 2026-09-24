@@ -144,8 +144,10 @@ const dt = (d) => d ? String(d).slice(0, 16).replace('T', ' ') : '—'
                             <td style="font-size:12px;">{{ row.branch_name || '—' }}</td>
                             <td v-if="financials_enabled" class="mono" style="text-align:end;">{{ fmt(row.fees_total) }}</td>
                             <td><span :class="statusBadge(row.status)">{{ t.st[row.status] ?? row.status }}</span></td>
-                            <td @click.stop>
-                                <button v-if="can_recompute && row.status === 'completed'" class="btn btn-ghost btn-sm btn-icon" :title="t.recompute" @click="recompute(row)"><Icon name="calculator" :size="14" /></button>
+                            <td @click.stop style="text-align:end;">
+                                <div class="row-actions">
+                                    <button v-if="can_recompute && row.status === 'completed'" type="button" class="btn btn-row" @click="recompute(row)"><Icon name="calculator" :size="13" /><span>{{ t.recompute }}</span></button>
+                                </div>
                             </td>
                         </tr>
                     </tbody>

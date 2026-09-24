@@ -32,6 +32,7 @@ const t = computed(() => isRtl.value ? {
     modal: { createTitle: 'خطة جديدة', editTitle: 'تحرير الخطة', save: 'حفظ', cancel: 'إلغاء', deleteConfirm: 'حذف هذه الخطة؟' },
     fields: { insurer: 'شركة التأمين', tier: 'المستوى', name: 'الاسم', name_ar: 'الاسم بالعربية', code: 'الكود', effective_from: 'ساري من', effective_until: 'ساري حتى', is_active: 'فعّالة', notes: 'ملاحظات', none: '— بدون —' },
     stats: { total: 'الكل', active: 'فعّالة' },
+    actions: { delete: 'حذف' },
 } : {
     title: 'Insurance Plans', eyebrow: 'Insurance',
     desc: 'Coverage plans per insurer — tier, code, effective window.',
@@ -42,6 +43,7 @@ const t = computed(() => isRtl.value ? {
     modal: { createTitle: 'New plan', editTitle: 'Edit plan', save: 'Save', cancel: 'Cancel', deleteConfirm: 'Delete this plan?' },
     fields: { insurer: 'Insurer', tier: 'Tier', name: 'Name', name_ar: 'Arabic name', code: 'Code', effective_from: 'Effective from', effective_until: 'Effective until', is_active: 'Active', notes: 'Notes', none: '— None —' },
     stats: { total: 'Total', active: 'Active' },
+    actions: { delete: 'Delete' },
 })
 
 const insurerName = (id) => props.insurers.find(i => i.id === id)?.name ?? ('#' + id)
@@ -163,8 +165,10 @@ function destroy(row) {
                             <td class="mono" style="text-align:end;">{{ row.coverage_rules_count ?? 0 }}</td>
                             <td class="mono" style="text-align:end;">{{ row.policies_count ?? 0 }}</td>
                             <td><span :class="row.is_active ? 'badge-ok' : 'badge-muted'">{{ row.is_active ? t.active : t.inactive }}</span></td>
-                            <td @click.stop>
-                                <button v-if="can_edit" class="btn btn-ghost btn-sm btn-icon" @click="destroy(row)"><Icon name="trash-2" :size="14" /></button>
+                            <td @click.stop style="text-align:end;">
+                                <div class="row-actions">
+                                    <button v-if="can_edit" type="button" class="btn btn-row is-danger" @click="destroy(row)"><Icon name="trash-2" :size="13" /><span>{{ t.actions.delete }}</span></button>
+                                </div>
                             </td>
                         </tr>
                     </tbody>

@@ -22,8 +22,8 @@ const dragging = ref(false)
 const input = ref(null)
 
 const t = computed(() => isRtl.value
-    ? { drop: 'اسحب الملف إلى هنا أو', browse: 'تصفّح', change: 'تغيير', accepted: 'الصيغ المقبولة: ' + props.accept.replaceAll(',', '، ') }
-    : { drop: 'Drag your file here, or', browse: 'browse', change: 'Change', accepted: 'Accepted: ' + props.accept.replaceAll(',', ', ') })
+    ? { drop: 'اسحب الملف إلى هنا أو', browse: 'تصفّح', change: 'تغيير', remove: 'إزالة', accepted: 'الصيغ المقبولة: ' + props.accept.replaceAll(',', '، ') }
+    : { drop: 'Drag your file here, or', browse: 'browse', change: 'Change', remove: 'Remove', accepted: 'Accepted: ' + props.accept.replaceAll(',', ', ') })
 
 function pick() { input.value?.click() }
 function onInput(e) { const f = e.target.files?.[0]; if (f) emit('select', f) }
@@ -69,7 +69,7 @@ function fmtSize(b) {
                 <div style="font-size: 11px; color: var(--fg-faint);">{{ fmtSize(file.size) }}</div>
             </div>
             <button class="btn btn-ghost btn-sm" @click="pick">{{ t.change }}</button>
-            <button class="btn btn-ghost btn-sm btn-icon" @click="clear"><Icon name="x" :size="15" /></button>
+            <button type="button" class="btn btn-row is-danger" @click="clear"><Icon name="x" :size="13" /><span>{{ t.remove }}</span></button>
         </div>
     </div>
 </template>

@@ -289,6 +289,24 @@ th.eyebrow, td.eyebrow { display: table-cell; }
 }
 .btn-destructive:hover { background: oklch(0.58 0.21 18); }
 
+/* Row actions — the buttons at the end of a table row. Always icon + text
+   label (never a bare icon), clearly spaced, and a destructive action reads
+   red so it can't be mistaken for its neighbour. */
+.row-actions {
+    display: inline-flex; align-items: center; justify-content: flex-end;
+    gap: 8px; flex-wrap: nowrap; white-space: nowrap;
+}
+.btn-row {
+    height: 30px; padding: 0 10px; gap: 6px;
+    font-size: 12px; border-radius: 6px;
+    background: var(--bg-elev); color: var(--fg);
+    border-color: var(--line); box-shadow: var(--shadow-xs);
+}
+.btn-row:hover { background: var(--bg-hover); border-color: var(--line-strong); }
+.btn-row:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-row.is-danger { color: var(--destructive); border-color: color-mix(in oklch, var(--destructive) 40%, var(--line)); }
+.btn-row.is-danger:hover { background: var(--destructive-soft); border-color: var(--destructive); }
+
 /* Inputs */
 .input {
     height: 36px;

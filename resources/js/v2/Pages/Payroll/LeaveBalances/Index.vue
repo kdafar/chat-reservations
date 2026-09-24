@@ -206,10 +206,10 @@ function remainingColor(n) {
                                 <span v-else style="color:var(--fg-faint);">—</span>
                             </td>
                             <td class="mono" style="font-weight:700;" :style="{ color: remainingColor(row.remaining_days) }">{{ fmtDays(row.remaining_days) }}</td>
-                            <td v-if="can_manage">
-                                <div style="display:inline-flex; gap:4px;">
-                                    <button class="btn btn-ghost btn-sm btn-icon" @click="openEdit(row)" :title="t.edit">
-                                        <Icon name="pencil" :size="13" />
+                            <td v-if="can_manage" style="text-align:end;">
+                                <div class="row-actions">
+                                    <button type="button" class="btn btn-row" @click="openEdit(row)">
+                                        <Icon name="pencil" :size="13" /><span>{{ t.edit }}</span>
                                     </button>
                                 </div>
                             </td>

@@ -28,6 +28,7 @@ const t = computed(() => isRtl.value ? {
     unlimited: 'غير محدود',
     showing: 'عرض', of: 'من',
     stats: { total: 'الكل', active: 'فعّال' },
+    actions: { delete: 'حذف' },
 } : {
     eyebrow: 'Billing', title: 'Coupons', desc: 'Discount codes applied to a visit at checkout.',
     searchPh: 'Search code or name…', new: 'New coupon', clear: 'Clear',
@@ -39,6 +40,7 @@ const t = computed(() => isRtl.value ? {
     unlimited: 'Unlimited',
     showing: 'Showing', of: 'of',
     stats: { total: 'Total', active: 'Active' },
+    actions: { delete: 'Delete' },
 })
 
 const typeItems = computed(() => [
@@ -137,7 +139,9 @@ function validityLabel(r) {
                         <td class="tnum" style="text-align:end;">{{ row.uses_count }}<span style="color:var(--fg-faint);"> / {{ row.max_uses ?? '∞' }}</span></td>
                         <td style="text-align:end;">
                             <span :class="row.is_active ? 'badge badge-ok' : 'badge badge-muted'">{{ row.is_active ? t.active : t.inactive }}</span>
-                            <button class="btn btn-ghost btn-sm btn-icon" style="color:var(--destructive); margin-inline-start:6px;" @click.stop="destroy(row)"><Icon name="trash-2" :size="14" /></button>
+                            <div class="row-actions" style="margin-inline-start:8px;">
+                                <button type="button" class="btn btn-row is-danger" @click.stop="destroy(row)"><Icon name="trash-2" :size="13" /><span>{{ t.actions.delete }}</span></button>
+                            </div>
                         </td>
                     </tr>
                     <tr v-if="page.data.length === 0"><td colspan="6" style="text-align:center; padding:32px; color:var(--fg-subtle);">{{ t.empty }}</td></tr>

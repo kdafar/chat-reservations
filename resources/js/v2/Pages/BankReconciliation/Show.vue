@@ -142,7 +142,7 @@ function unmatch(line) {
                             <div v-else-if="editable && match.lineId === ln.id" style="display:flex; align-items:center; gap:6px;">
                                 <SearchableSelect v-model="match.jeLineId" :items="matchableItems" :nullable="false" :width="170" />
                                 <button class="btn btn-primary btn-sm" :disabled="match.busy || !match.jeLineId" @click="submitMatch">{{ match.busy ? '…' : t.do }}</button>
-                                <button class="btn btn-ghost btn-sm btn-icon" @click="cancelMatch"><Icon name="x" :size="13" /></button>
+                                <button type="button" class="btn btn-row" @click="cancelMatch"><Icon name="x" :size="13" /><span>{{ t.cancel }}</span></button>
                             </div>
                             <button v-else-if="editable" class="btn btn-ghost btn-sm" @click="startMatch(ln)">{{ t.match }}</button>
                         </td>

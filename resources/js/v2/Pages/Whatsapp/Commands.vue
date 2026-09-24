@@ -13,12 +13,14 @@ const locale = computed(() => pageProps.props.locale ?? 'en')
 const isRtl = computed(() => locale.value === 'ar')
 
 const t = computed(() => isRtl.value ? {
+    actions: { delete: 'حذف' },
     title: 'أوامر واتساب', eyebrow: 'واتساب', desc: 'كلمات مفتاحية يتعرف عليها البوت في المحادثة. للمسؤولين فقط.',
     searchPh: 'ابحث بالكلمة المفتاحية…', new: 'أمر جديد', allLang: 'كل اللغات',
     col: { keyword: 'الكلمة', lang: 'اللغة', action: 'الإجراء', jump: 'الحالة', priority: 'الأولوية', enabled: 'مفعّل' },
     empty: 'لا توجد أوامر', clear: 'مسح', showing: 'عرض', of: 'من',
     modal: { createTitle: 'أمر جديد', editTitle: 'تحرير الأمر', keyword: 'الكلمة المفتاحية', lang: 'اللغة', action: 'الإجراء', jump: 'الحالة المستهدفة (للقفز)', priority: 'الأولوية', enabled: 'مفعّل', save: 'حفظ', cancel: 'إلغاء', del: 'حذف هذا الأمر؟' },
 } : {
+    actions: { delete: 'Delete' },
     title: 'WhatsApp Commands', eyebrow: 'WhatsApp', desc: 'Keyword shortcuts the bot recognises in chat. Admin-only.',
     searchPh: 'Search keyword…', new: 'New command', allLang: 'All languages',
     col: { keyword: 'Keyword', lang: 'Lang', action: 'Action', jump: 'Jump state', priority: 'Priority', enabled: 'Enabled' },
@@ -81,7 +83,7 @@ function destroy(r) { confirm({ body: t.value.modal.del, tone: 'destructive', on
                         <td class="mono" style="font-size:12px; color:var(--fg-subtle);">{{ r.jump_state || '—' }}</td>
                         <td class="mono" style="text-align:end;">{{ r.priority }}</td>
                         <td><Icon v-if="r.enabled" name="check" :size="15" style="color:var(--ok);" /><Icon v-else name="minus" :size="15" style="color:var(--fg-faint);" /></td>
-                        <td @click.stop><button class="btn btn-ghost btn-sm btn-icon" @click="destroy(r)"><Icon name="trash-2" :size="14" /></button></td>
+                        <td @click.stop style="text-align:end;"><div class="row-actions"><button type="button" class="btn btn-row is-danger" @click="destroy(r)"><Icon name="trash-2" :size="13" /><span>{{ t.actions.delete }}</span></button></div></td>
                     </tr>
                 </tbody>
             </table>

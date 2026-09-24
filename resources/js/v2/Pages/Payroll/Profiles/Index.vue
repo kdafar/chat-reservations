@@ -61,6 +61,7 @@ const t = computed(() => isRtl.value
             save: 'حفظ', update: 'تحديث', cancel: 'إلغاء', deleteConfirm: 'حذف هذا الهيكل؟',
         },
         stats: { total: 'الكل', active: 'فعّال', monthlyBasic: 'إجمالي الأساسي الشهري' },
+        actions: { edit: 'تعديل', delete: 'حذف', remove: 'إزالة' },
     }
     : {
         title: 'Salary Profiles', eyebrow: 'Payroll',
@@ -85,6 +86,7 @@ const t = computed(() => isRtl.value
             save: 'Save', update: 'Update', cancel: 'Cancel', deleteConfirm: 'Delete this salary profile?',
         },
         stats: { total: 'Total', active: 'Active', monthlyBasic: 'Monthly basic' },
+        actions: { edit: 'Edit', delete: 'Delete', remove: 'Remove' },
     })
 
 const activeFilterItems = computed(() => [
@@ -272,13 +274,13 @@ function destroy(row) {
                             <td class="mono" style="text-align:end; font-weight:600;">{{ fmtMoney(row.gross_monthly) }}</td>
                             <td class="mono" style="text-align:end;">{{ row.annual_leave_days }} <span style="color:var(--fg-faint); font-size:11px;">{{ t.days }}</span></td>
                             <td><span :class="row.is_active ? 'badge-ok' : 'badge-muted'">{{ row.is_active ? t.activeYes : t.activeNo }}</span></td>
-                            <td v-if="can_edit">
-                                <div style="display:inline-flex; gap:4px;">
-                                    <button class="btn btn-ghost btn-sm btn-icon" @click="openEdit(row)" :title="t.modal.editTitle">
-                                        <Icon name="pencil" :size="13" />
+                            <td v-if="can_edit" style="text-align:end;">
+                                <div class="row-actions">
+                                    <button type="button" class="btn btn-row" @click="openEdit(row)">
+                                        <Icon name="pencil" :size="13" /><span>{{ t.actions.edit }}</span>
                                     </button>
-                                    <button class="btn btn-ghost btn-sm btn-icon" @click="destroy(row)" :title="t.modal.deleteConfirm">
-                                        <Icon name="trash-2" :size="13" />
+                                    <button type="button" class="btn btn-row is-danger" @click="destroy(row)">
+                                        <Icon name="trash-2" :size="13" /><span>{{ t.actions.delete }}</span>
                                     </button>
                                 </div>
                             </td>
@@ -343,7 +345,7 @@ function destroy(row) {
                         <div v-for="(a, i) in form.allowances" :key="'al' + i" class="rep-row">
                             <input v-model="a.label" type="text" class="input" :placeholder="t.modal.lineLabel" maxlength="120" />
                             <input v-model.number="a.amount" type="number" step="any" min="0" class="input rep-amount" :placeholder="t.modal.lineAmount" />
-                            <button type="button" class="btn btn-ghost btn-sm btn-icon" @click="removeAllowance(i)"><Icon name="trash-2" :size="13" /></button>
+                            <button type="button" class="btn btn-row is-danger" @click="removeAllowance(i)"><Icon name="trash-2" :size="13" /><span>{{ t.actions.remove }}</span></button>
                         </div>
                         <div v-if="errors.allowances" class="err">{{ errors.allowances }}</div>
                     </div>
@@ -357,7 +359,7 @@ function destroy(row) {
                         <div v-for="(d, i) in form.deductions" :key="'de' + i" class="rep-row">
                             <input v-model="d.label" type="text" class="input" :placeholder="t.modal.lineLabel" maxlength="120" />
                             <input v-model.number="d.amount" type="number" step="any" min="0" class="input rep-amount" :placeholder="t.modal.lineAmount" />
-                            <button type="button" class="btn btn-ghost btn-sm btn-icon" @click="removeDeduction(i)"><Icon name="trash-2" :size="13" /></button>
+                            <button type="button" class="btn btn-row is-danger" @click="removeDeduction(i)"><Icon name="trash-2" :size="13" /><span>{{ t.actions.remove }}</span></button>
                         </div>
                         <div v-if="errors.deductions" class="err">{{ errors.deductions }}</div>
                     </div>

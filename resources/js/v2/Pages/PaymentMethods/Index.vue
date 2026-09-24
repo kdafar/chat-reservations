@@ -131,8 +131,10 @@ function remove(row) {
                         <td><Icon v-if="row.requires_reference" name="check" :size="14" /><span v-else style="color:var(--fg-faint);">—</span></td>
                         <td><span class="pill" :class="row.is_active ? 'pill-on' : 'pill-off'">{{ row.is_active ? t.activeOnly : t.inactiveOnly }}</span></td>
                         <td class="mono" style="text-align:end;">{{ row.sort_order }}</td>
-                        <td @click.stop>
-                            <button v-if="can_edit" class="btn btn-ghost btn-sm btn-icon" :title="t.modal.delete" :aria-label="t.modal.delete" @click="remove(row)"><Icon name="trash-2" :size="13" /></button>
+                        <td @click.stop style="text-align:end;">
+                            <div class="row-actions">
+                                <button v-if="can_edit" type="button" class="btn btn-row is-danger" @click="remove(row)"><Icon name="trash-2" :size="13" /><span>{{ t.modal.delete }}</span></button>
+                            </div>
                         </td>
                     </tr>
                 </tbody>

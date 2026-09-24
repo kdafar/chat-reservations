@@ -26,6 +26,7 @@ const t = computed(() => isRtl.value
         empty: 'لا توجد فروع', emptyDesc: 'أضف أول فرع للعيادة.',
         clear: 'مسح', previous: 'السابق', next: 'التالي', showing: 'عرض', of: 'من',
         stats: { total: 'الكل', available: 'متاح', unavailable: 'غير متاح' },
+        actions: { deactivate: 'تعطيل' },
         modal: {
             createTitle: 'فرع جديد', editTitle: 'تحرير الفرع',
             clinic: 'العيادة (الجهة)', nameEn: 'الاسم (إنجليزي)', nameAr: 'الاسم (عربي)',
@@ -46,6 +47,7 @@ const t = computed(() => isRtl.value
         empty: 'No branches', emptyDesc: 'Add your clinic\'s first branch.',
         clear: 'Clear', previous: 'Previous', next: 'Next', showing: 'Showing', of: 'of',
         stats: { total: 'Total', available: 'Available', unavailable: 'Unavailable' },
+        actions: { deactivate: 'Deactivate' },
         modal: {
             createTitle: 'New branch', editTitle: 'Edit branch',
             clinic: 'Clinic (owner)', nameEn: 'Name (English)', nameAr: 'Name (Arabic)',
@@ -144,10 +146,12 @@ function deactivate(row) {
                                 {{ row.is_available ? t.status.available : t.status.unavailable }}
                             </span>
                         </td>
-                        <td @click.stop>
-                            <button v-if="row.is_available" class="btn btn-ghost btn-sm btn-icon" :title="t.modal.deleteConfirm" @click="deactivate(row)">
-                                <Icon name="eye-off" :size="14" />
-                            </button>
+                        <td @click.stop style="text-align:end;">
+                            <div class="row-actions">
+                                <button v-if="row.is_available" type="button" class="btn btn-row is-danger" @click="deactivate(row)">
+                                    <Icon name="eye-off" :size="13" /><span>{{ t.actions.deactivate }}</span>
+                                </button>
+                            </div>
                         </td>
                     </tr>
                 </tbody>

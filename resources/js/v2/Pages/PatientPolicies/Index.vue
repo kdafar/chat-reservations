@@ -36,6 +36,7 @@ const t = computed(() => isRtl.value ? {
     modal: { createTitle: 'بوليصة جديدة', editTitle: 'تحرير البوليصة', save: 'حفظ', cancel: 'إلغاء', deleteConfirm: 'حذف هذه البوليصة؟' },
     fields: { patient: 'المريض', insurer: 'الشركة', plan: 'الخطة', policy_number: 'رقم البوليصة', member_id: 'رقم العضوية', card_number: 'رقم البطاقة', holder_relationship: 'صلة حامل البوليصة', holder_name: 'اسم حامل البوليصة', status: 'الحالة', is_primary: 'بوليصة أساسية', priority: 'الأولوية', effective_from: 'سارية من', effective_until: 'سارية حتى', notes: 'ملاحظات', none: '— بدون خطة —', searchPatient: 'ابحث عن مريض…' },
     stats: { total: 'الكل', active: 'فعّالة' },
+    actions: { delete: 'حذف' },
 } : {
     title: 'Patient Policies', eyebrow: 'Insurance',
     desc: 'Insurance policies linked to patients — insurer, plan, policy number.',
@@ -48,6 +49,7 @@ const t = computed(() => isRtl.value ? {
     modal: { createTitle: 'New policy', editTitle: 'Edit policy', save: 'Save', cancel: 'Cancel', deleteConfirm: 'Delete this policy?' },
     fields: { patient: 'Patient', insurer: 'Insurer', plan: 'Plan', policy_number: 'Policy number', member_id: 'Member ID', card_number: 'Card number', holder_relationship: 'Holder relationship', holder_name: 'Holder name', status: 'Status', is_primary: 'Primary policy', priority: 'Priority', effective_from: 'Effective from', effective_until: 'Effective until', notes: 'Notes', none: '— No plan —', searchPatient: 'Search a patient…' },
     stats: { total: 'Total', active: 'Active' },
+    actions: { delete: 'Delete' },
 })
 
 const f = reactive({ q: props.filters.q || '', status: props.filters.status || 'all' })
@@ -193,8 +195,10 @@ const statusBadge = (s) => ({ active: 'badge badge-success', expired: 'badge bad
                             <td class="mono">{{ row.plan?.code ?? '—' }}</td>
                             <td><span :class="statusBadge(row.status)">{{ t.status[row.status] ?? row.status }}</span></td>
                             <td><Icon v-if="row.is_primary" name="check" :size="15" style="color:var(--ok);" /><span v-else style="color:var(--fg-faint);">—</span></td>
-                            <td @click.stop>
-                                <button v-if="can_edit" class="btn btn-ghost btn-sm btn-icon" @click="destroy(row)"><Icon name="trash-2" :size="14" /></button>
+                            <td @click.stop style="text-align:end;">
+                                <div class="row-actions">
+                                    <button v-if="can_edit" type="button" class="btn btn-row is-danger" @click="destroy(row)"><Icon name="trash-2" :size="13" /><span>{{ t.actions.delete }}</span></button>
+                                </div>
                             </td>
                         </tr>
                     </tbody>

@@ -23,8 +23,8 @@ const label = computed(() => isRtl.value ? 'محدد' : 'selected')
             <div class="bulkbar-actions">
                 <slot />
             </div>
-            <button class="btn btn-ghost btn-sm btn-icon" :aria-label="isRtl ? 'مسح التحديد' : 'Clear selection'" @click="$emit('clear')">
-                <Icon name="x" :size="15" />
+            <button type="button" class="btn btn-ghost btn-sm" @click="$emit('clear')">
+                <Icon name="x" :size="14" /> {{ isRtl ? 'مسح التحديد' : 'Clear selection' }}
             </button>
         </div>
     </Transition>

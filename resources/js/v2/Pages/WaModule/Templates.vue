@@ -73,7 +73,7 @@ const statusStyle = (s) => {
                     <div style="display:flex; align-items:center; gap:4px;">
                         <span :style="{ ...statusStyle(r.status), fontSize:'10px', fontWeight:'700', padding:'3px 8px', borderRadius:'20px', whiteSpace:'nowrap' }">{{ r.status || r.local_status || 'draft' }}</span>
                         <Popover :width="180" align="end">
-                            <template #trigger="{ toggle }"><button class="btn btn-ghost btn-sm btn-icon" @click.stop="toggle"><Icon name="more-horizontal" :size="14" /></button></template>
+                            <template #trigger="{ toggle }"><button type="button" class="btn btn-row" @click.stop="toggle"><span>{{ isRtl ? 'إجراءات' : 'Actions' }}</span><Icon name="chevron-down" :size="13" /></button></template>
                             <template #default="{ hide }">
                                 <div style="padding:6px;">
                                     <button class="wa-menu-row" @click="hide(); openEdit(r)"><Icon name="pencil" :size="13" /><span>{{ t.edit }}</span></button>

@@ -220,11 +220,11 @@ const candidateItems = computed(() => props.candidates.map(c => ({ value: c.id, 
                         <td class="num mono">{{ kwd(row.leave_encashment) }}</td>
                         <td class="num mono" style="font-weight:700; color:var(--brand,#6366f1);">{{ kwd(row.net_settlement) }}</td>
                         <td><span class="badge" :style="{ color: statusColor(row.status), borderColor: statusColor(row.status) }">{{ t.status[row.status] || row.status }}</span></td>
-                        <td>
-                            <div v-if="can_manage" style="display:inline-flex; gap:4px;">
-                                <button v-if="row.status === 'draft'" class="btn btn-ghost btn-sm" style="color:var(--ok,#10b981);" :title="t.act.approve" @click="approve(row)"><Icon name="check" :size="14" /></button>
-                                <button v-if="row.status === 'approved'" class="btn btn-ghost btn-sm" style="color:var(--ok,#10b981);" :title="t.act.pay" @click="openPay(row)"><Icon name="banknote" :size="14" /></button>
-                                <button v-if="row.status === 'draft'" class="btn btn-ghost btn-sm btn-icon" :title="t.act.del" @click="destroy(row)"><Icon name="trash-2" :size="13" /></button>
+                        <td style="text-align:end;">
+                            <div v-if="can_manage" class="row-actions">
+                                <button v-if="row.status === 'draft'" type="button" class="btn btn-row" @click="approve(row)"><Icon name="check" :size="13" /><span>{{ t.act.approve }}</span></button>
+                                <button v-if="row.status === 'approved'" type="button" class="btn btn-row" @click="openPay(row)"><Icon name="banknote" :size="13" /><span>{{ t.act.pay }}</span></button>
+                                <button v-if="row.status === 'draft'" type="button" class="btn btn-row is-danger" @click="destroy(row)"><Icon name="trash-2" :size="13" /><span>{{ t.act.del }}</span></button>
                             </div>
                         </td>
                     </tr>

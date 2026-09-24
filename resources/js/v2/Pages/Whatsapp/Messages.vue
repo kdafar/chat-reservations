@@ -13,11 +13,13 @@ const locale = computed(() => pageProps.props.locale ?? 'en')
 const isRtl = computed(() => locale.value === 'ar')
 
 const t = computed(() => isRtl.value ? {
+    actions: { delete: 'حذف' },
     title: 'قوالب رسائل واتساب', eyebrow: 'واتساب', desc: 'رسائل البوت حسب المفتاح واللغة، مع متغيرات {token}. للمسؤولين فقط.',
     searchPh: 'ابحث بالمفتاح أو النص…', new: 'قالب جديد', allLang: 'كل اللغات',
     col: { key: 'المفتاح', lang: 'اللغة', text: 'النص', enabled: 'مفعّل', updated: 'تحديث' }, empty: 'لا توجد قوالب', clear: 'مسح', showing: 'عرض', of: 'من',
     modal: { createTitle: 'قالب جديد', editTitle: 'تحرير القالب', key: 'المفتاح', lang: 'اللغة', text: 'النص', enabled: 'مفعّل', save: 'حفظ', cancel: 'إلغاء', del: 'حذف هذا القالب؟' },
 } : {
+    actions: { delete: 'Delete' },
     title: 'WhatsApp Templates', eyebrow: 'WhatsApp', desc: 'Bot messages keyed by name + language, with {token} variables. Admin-only.',
     searchPh: 'Search key or text…', new: 'New template', allLang: 'All languages',
     col: { key: 'Key', lang: 'Lang', text: 'Text', enabled: 'Enabled', updated: 'Updated' }, empty: 'No templates', clear: 'Clear', showing: 'Showing', of: 'of',
@@ -76,7 +78,7 @@ function destroy(r) { confirm({ body: t.value.modal.del, tone: 'destructive', on
                         <td style="color:var(--fg-subtle); max-width:360px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ r.text }}</td>
                         <td><Icon v-if="r.enabled" name="check" :size="15" style="color:var(--ok);" /><Icon v-else name="minus" :size="15" style="color:var(--fg-faint);" /></td>
                         <td style="font-size:12px; color:var(--fg-faint);">{{ r.updated_at }}</td>
-                        <td @click.stop><button class="btn btn-ghost btn-sm btn-icon" @click="destroy(r)"><Icon name="trash-2" :size="14" /></button></td>
+                        <td @click.stop style="text-align:end;"><div class="row-actions"><button type="button" class="btn btn-row is-danger" @click="destroy(r)"><Icon name="trash-2" :size="13" /><span>{{ t.actions.delete }}</span></button></div></td>
                     </tr>
                 </tbody>
             </table>

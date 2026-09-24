@@ -28,6 +28,7 @@ const t = computed(() => isRtl.value ? {
     searchPh: 'ابحث باسم الطبيب…', new: 'إعداد جديد', clear: 'مسح', typeAll: 'كل الأنواع',
     tp: { salary: 'راتب', percentage: 'نسبة' }, bs: { fees_only: 'الأتعاب فقط', net_profit: 'صافي الربح' },
     activeYes: 'فعّال', activeNo: 'غير فعّال',
+    actions: { delete: 'حذف' },
     col: { doctor: 'الطبيب', type: 'النوع', basis: 'الأساس', rate: 'النسبة', status: 'الحالة' },
     empty: 'لا توجد إعدادات', showing: 'عرض', of: 'من',
     modal: { createTitle: 'إعداد جديد', editTitle: 'تحرير الإعداد', save: 'حفظ', cancel: 'إلغاء', deleteConfirm: 'حذف هذا الإعداد؟' },
@@ -39,6 +40,7 @@ const t = computed(() => isRtl.value ? {
     searchPh: 'Search by doctor…', new: 'New profile', clear: 'Clear', typeAll: 'All types',
     tp: { salary: 'Salary', percentage: 'Percentage' }, bs: { fees_only: 'Fees only', net_profit: 'Net profit' },
     activeYes: 'Active', activeNo: 'Inactive',
+    actions: { delete: 'Delete' },
     col: { doctor: 'Doctor', type: 'Type', basis: 'Basis', rate: 'Rate', status: 'Status' },
     empty: 'No profiles', showing: 'Showing', of: 'of',
     modal: { createTitle: 'New profile', editTitle: 'Edit profile', save: 'Save', cancel: 'Cancel', deleteConfirm: 'Delete this profile?' },
@@ -149,8 +151,10 @@ function destroy(row) {
                             <td>{{ t.bs[row.basis] ?? row.basis }}</td>
                             <td class="mono" style="text-align:end;">{{ row.type === 'percentage' ? (Number(row.percentage_rate ?? 0).toFixed(3) + '%') : '—' }}</td>
                             <td><span :class="row.is_active ? 'badge-ok' : 'badge-muted'">{{ row.is_active ? t.activeYes : t.activeNo }}</span></td>
-                            <td @click.stop>
-                                <button v-if="can_edit" class="btn btn-ghost btn-sm btn-icon" @click="destroy(row)"><Icon name="trash-2" :size="14" /></button>
+                            <td @click.stop style="text-align:end;">
+                                <div class="row-actions">
+                                    <button v-if="can_edit" type="button" class="btn btn-row is-danger" @click="destroy(row)"><Icon name="trash-2" :size="13" /><span>{{ t.actions.delete }}</span></button>
+                                </div>
                             </td>
                         </tr>
                     </tbody>

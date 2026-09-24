@@ -184,10 +184,12 @@ function destroy(role) {
                         </td>
                         <td><span class="badge-info">{{ role.permissions_count }}</span></td>
                         <td class="mono" style="font-size:12px; color:var(--fg-subtle);">{{ role.users_count }}</td>
-                        <td @click.stop>
-                            <button v-if="!role.protected && role.users_count === 0" class="btn btn-ghost btn-sm btn-icon" :title="t.modal.delete" @click="destroy(role)">
-                                <Icon name="trash-2" :size="14" />
-                            </button>
+                        <td @click.stop style="text-align:end;">
+                            <div class="row-actions">
+                                <button v-if="!role.protected && role.users_count === 0" type="button" class="btn btn-row is-danger" @click="destroy(role)">
+                                    <Icon name="trash-2" :size="13" /><span>{{ t.modal.delete }}</span>
+                                </button>
+                            </div>
                         </td>
                     </tr>
                 </tbody>

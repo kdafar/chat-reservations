@@ -13,11 +13,13 @@ const locale = computed(() => pageProps.props.locale ?? 'en')
 const isRtl = computed(() => locale.value === 'ar')
 
 const t = computed(() => isRtl.value ? {
+    actions: { delete: 'حذف' },
     title: 'كتالوج الرسائل', eyebrow: 'النظام', desc: 'نصوص قابلة لإعادة الاستخدام حسب المفتاح واللغة. للمسؤولين فقط.',
     searchPh: 'ابحث بالمفتاح أو النص…', new: 'نص جديد', allLang: 'كل اللغات',
     col: { key: 'المفتاح', locale: 'اللغة', value: 'النص', updated: 'آخر تحديث' }, empty: 'لا توجد نصوص', clear: 'مسح', showing: 'عرض', of: 'من',
     modal: { createTitle: 'نص جديد', editTitle: 'تحرير النص', key: 'المفتاح', locale: 'اللغة', value: 'النص', save: 'حفظ', cancel: 'إلغاء', del: 'حذف هذا النص؟' },
 } : {
+    actions: { delete: 'Delete' },
     title: 'Message Catalog', eyebrow: 'System', desc: 'Reusable copy strings keyed by name + locale. Admin-only.',
     searchPh: 'Search key or text…', new: 'New string', allLang: 'All languages',
     col: { key: 'Key', locale: 'Locale', value: 'Text', updated: 'Updated' }, empty: 'No strings', clear: 'Clear', showing: 'Showing', of: 'of',
@@ -72,7 +74,7 @@ function destroy(r) { confirm({ body: t.value.modal.del, tone: 'destructive', on
                         <td><span class="badge-muted">{{ r.locale }}</span></td>
                         <td style="color:var(--fg-subtle); max-width:420px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ r.value }}</td>
                         <td style="font-size:12px; color:var(--fg-faint);">{{ r.updated_at }}</td>
-                        <td @click.stop><button class="btn btn-ghost btn-sm btn-icon" @click="destroy(r)"><Icon name="trash-2" :size="14" /></button></td>
+                        <td @click.stop style="text-align:end;"><div class="row-actions"><button type="button" class="btn btn-row is-danger" @click="destroy(r)"><Icon name="trash-2" :size="13" /><span>{{ t.actions.delete }}</span></button></div></td>
                     </tr>
                 </tbody>
             </table>

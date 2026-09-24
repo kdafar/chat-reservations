@@ -285,19 +285,19 @@ function progressPct(row) {
                                     {{ t.status[row.status] || row.status }}
                                 </span>
                             </td>
-                            <td>
-                                <div v-if="can_manage" style="display:inline-flex; gap:4px;">
-                                    <button v-if="row.status === 'pending'" class="btn btn-ghost btn-sm btn-icon" style="color:var(--ok);" @click="approve(row)" :title="t.act.approve">
-                                        <Icon name="check" :size="14" />
+                            <td style="text-align:end;">
+                                <div v-if="can_manage" class="row-actions">
+                                    <button v-if="row.status === 'pending'" type="button" class="btn btn-row" style="color:var(--ok);" @click="approve(row)">
+                                        <Icon name="check" :size="13" /><span>{{ t.act.approve }}</span>
                                     </button>
-                                    <button v-if="row.status === 'pending'" class="btn btn-ghost btn-sm btn-icon" @click="openEdit(row)" :title="t.act.edit">
-                                        <Icon name="pencil" :size="13" />
+                                    <button v-if="row.status === 'pending'" type="button" class="btn btn-row" @click="openEdit(row)">
+                                        <Icon name="pencil" :size="13" /><span>{{ t.act.edit }}</span>
                                     </button>
-                                    <button v-if="row.status === 'pending' || row.status === 'active'" class="btn btn-ghost btn-sm btn-icon" style="color:var(--err, #ef4444);" @click="cancel(row)" :title="t.act.cancel">
-                                        <Icon name="ban" :size="14" />
+                                    <button v-if="row.status === 'pending' || row.status === 'active'" type="button" class="btn btn-row is-danger" @click="cancel(row)">
+                                        <Icon name="ban" :size="13" /><span>{{ t.act.cancel }}</span>
                                     </button>
-                                    <button v-if="row.status === 'pending' && row.journal_entry_id == null" class="btn btn-ghost btn-sm btn-icon" @click="destroy(row)" :title="t.act.delete">
-                                        <Icon name="trash-2" :size="13" />
+                                    <button v-if="row.status === 'pending' && row.journal_entry_id == null" type="button" class="btn btn-row is-danger" @click="destroy(row)">
+                                        <Icon name="trash-2" :size="13" /><span>{{ t.act.delete }}</span>
                                     </button>
                                 </div>
                             </td>

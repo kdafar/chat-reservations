@@ -24,7 +24,7 @@ const isEdit = computed(() => props.mode === 'edit')
 const o = computed(() => props.order || {})
 
 const t = computed(() => isRtl.value ? {
-    crumbs: 'أوامر الشراء', create: 'أمر شراء جديد', edit: 'تعديل أمر الشراء', back: 'رجوع', cancel: 'إلغاء', save: 'حفظ',
+    crumbs: 'أوامر الشراء', actions: { remove: 'إزالة' }, create: 'أمر شراء جديد', edit: 'تعديل أمر الشراء', back: 'رجوع', cancel: 'إلغاء', save: 'حفظ',
     secVendor: 'المورّد والتسليم', secCurrency: 'العملة والشروط', secShip: 'الشحن / الاستيراد', secItems: 'الأصناف', secLanded: 'تكاليف الوصول (د.ك)', secNotes: 'ملاحظات',
     vendor: 'المورّد', branch: 'فرع الاستلام', orderDate: 'تاريخ الأمر', expected: 'موعد التسليم المتوقع',
     currency: 'العملة', exRate: 'سعر الصرف', exRateHint: 'د.ك لكل 1', incoterm: 'شرط التسليم', payTerms: 'شروط الدفع', dueOnReceipt: 'مستحق عند الاستلام', net: 'صافي',
@@ -35,7 +35,7 @@ const t = computed(() => isRtl.value ? {
     pickItem: 'اختر صنفاً', selBranch: 'اختر فرعاً', selVendor: 'اختر مورّداً', selCurrency: 'اختر عملة', selIncoterm: 'اختر شرطاً',
     needVendor: 'اختر المورّد والفرع وأضف صنفاً واحداً على الأقل.',
 } : {
-    crumbs: 'Purchase Orders', create: 'New purchase order', edit: 'Edit purchase order', back: 'Back', cancel: 'Cancel', save: 'Save',
+    crumbs: 'Purchase Orders', actions: { remove: 'Remove' }, create: 'New purchase order', edit: 'Edit purchase order', back: 'Back', cancel: 'Cancel', save: 'Save',
     secVendor: 'Vendor & delivery', secCurrency: 'Currency & terms', secShip: 'Shipment / import', secItems: 'Items', secLanded: 'Landed costs (KWD)', secNotes: 'Notes',
     vendor: 'Vendor', branch: 'Receiving branch', orderDate: 'Order date', expected: 'Expected delivery',
     currency: 'Currency', exRate: 'Exchange rate', exRateHint: 'KWD per 1', incoterm: 'Incoterm', payTerms: 'Payment terms', dueOnReceipt: 'Due on receipt', net: 'Net',
@@ -350,7 +350,7 @@ function save() {
                                 </div>
                                 <div class="tnum" style="text-align:end; font-weight:600;">{{ money(lineForeignTotal(l)) }} {{ form.currency }}</div>
                                 <div style="text-align:end;">
-                                    <button class="btn btn-ghost btn-sm btn-icon" style="color:var(--destructive);" @click="removeLine(i)"><Icon name="trash-2" :size="13" /></button>
+                                    <button type="button" class="btn btn-row is-danger" @click="removeLine(i)"><Icon name="trash-2" :size="13" /><span>{{ t.actions.remove }}</span></button>
                                 </div>
                             </div>
                         </div>
@@ -440,7 +440,7 @@ function save() {
 .ell { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
 .fl-grid {
     display:grid;
-    grid-template-columns: minmax(150px, 2fr) minmax(70px, 1fr) 90px 110px 110px 130px 40px;
+    grid-template-columns: minmax(150px, 2fr) minmax(70px, 1fr) 90px 110px 110px 130px 96px;
     align-items:center;
     gap:12px;
     padding:9px 14px;
@@ -455,7 +455,7 @@ function save() {
 }
 .fl-row { border-top:1px solid var(--line); font-size:13px; }
 @media (max-width:760px) {
-    .fl-grid { grid-template-columns: 1fr 80px 90px 110px 40px; }
+    .fl-grid { grid-template-columns: 1fr 80px 90px 110px 96px; }
     .fl-grid > :nth-child(2), .fl-head > :nth-child(2) { display:none; } /* origin */
     .fl-grid > :nth-child(5), .fl-head > :nth-child(5) { display:none; } /* discount */
 }

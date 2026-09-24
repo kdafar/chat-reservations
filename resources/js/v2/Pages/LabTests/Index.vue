@@ -263,25 +263,25 @@ function rowIsArchived(row) { return !!row.deleted_at || !row.is_active }
                             <td style="color:var(--fg-subtle); font-size:12px;">
                                 {{ row.branch?.name || t.branch.shared }}
                             </td>
-                            <td @click.stop>
-                                <template v-if="can_edit">
+                            <td @click.stop style="text-align:end;">
+                                <div v-if="can_edit" class="row-actions">
                                     <button
                                         v-if="!rowIsArchived(row)"
-                                        class="btn btn-ghost btn-sm btn-icon"
-                                        :title="t.modal.archive"
+                                        type="button"
+                                        class="btn btn-row is-danger"
                                         @click="archive(row)"
                                     >
-                                        <Icon name="archive" :size="14" />
+                                        <Icon name="archive" :size="13" /><span>{{ t.modal.archive }}</span>
                                     </button>
                                     <button
                                         v-else
-                                        class="btn btn-ghost btn-sm btn-icon"
-                                        :title="t.modal.restore"
+                                        type="button"
+                                        class="btn btn-row"
                                         @click="restore(row)"
                                     >
-                                        <Icon name="undo-2" :size="14" />
+                                        <Icon name="undo-2" :size="13" /><span>{{ t.modal.restore }}</span>
                                     </button>
-                                </template>
+                                </div>
                             </td>
                         </tr>
                     </tbody>

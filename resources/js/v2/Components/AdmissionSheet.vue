@@ -321,7 +321,7 @@ const dischargeStatusItems = [
                             <div><label style="font-size: 11px; color: var(--fg-muted);">Amount (KWD) <span class="req">*</span></label><input class="input" type="number" step="any" v-model.number="chargeAmount" /></div>
                             <div style="display: flex; gap: 6px;">
                                 <button class="btn btn-ghost btn-sm" @click="newChargeOpen = false">Cancel</button>
-                                <button class="btn btn-primary btn-sm" @click="doCharge"><Icon name="check" size="14" /></button>
+                                <button class="btn btn-primary btn-sm" @click="doCharge"><Icon name="check" size="14" /> Add</button>
                             </div>
                         </div>
                         <div v-if="admission.charges.length === 0" style="color: var(--fg-muted); padding: 20px; text-align: center;">No charges yet. Bed-day charges accrue overnight.</div>

@@ -42,6 +42,7 @@ const t = computed(() => isRtl.value
             impersonate: 'الدخول بحساب هذا المستخدم',
             impersonateConfirm: (n) => `ستدخل بحساب ${n} وترى النظام كما يراه تمامًا. كل ما تفعله يُسجَّل باسمك في سجل التدقيق. يمكنك العودة لحسابك من الشريط العلوي.`,
         },
+        actions: { loginAs: 'الدخول بحسابه', deactivate: 'تعطيل' },
         stats: { total: 'الكل', active: 'فعّال', inactive: 'غير فعّال', unassigned: 'بدون فرع' },
         bulk: {
             selected: 'محدد', clear: 'إلغاء التحديد',
@@ -77,6 +78,7 @@ const t = computed(() => isRtl.value
             impersonate: 'Log in as this user',
             impersonateConfirm: (n) => `You'll be logged in as ${n} and see exactly what they see. Everything you do is recorded in the audit log under your name. Use the banner at the top to return to your account.`,
         },
+        actions: { loginAs: 'Log in as', deactivate: 'Deactivate' },
         stats: { total: 'Total', active: 'Active', inactive: 'Inactive', unassigned: 'No branch' },
         bulk: {
             selected: 'selected', clear: 'Clear selection',
@@ -325,13 +327,15 @@ function submitBulk() {
                                     {{ row.status || '—' }}
                                 </span>
                             </td>
-                            <td @click.stop style="white-space:nowrap;">
-                                <button v-if="row.can_impersonate" class="btn btn-ghost btn-sm btn-icon" :title="t.modal.impersonate" :aria-label="t.modal.impersonate" @click="impersonate(row)">
-                                    <Icon name="log-in" :size="14" />
-                                </button>
-                                <button v-if="row.status === 'active'" class="btn btn-ghost btn-sm btn-icon" :title="t.modal.deleteConfirm" @click="deactivate(row)">
-                                    <Icon name="user-x" :size="14" />
-                                </button>
+                            <td @click.stop style="text-align:end;">
+                                <div class="row-actions">
+                                    <button v-if="row.can_impersonate" type="button" class="btn btn-row" @click="impersonate(row)">
+                                        <Icon name="log-in" :size="13" /><span>{{ t.actions.loginAs }}</span>
+                                    </button>
+                                    <button v-if="row.status === 'active'" type="button" class="btn btn-row is-danger" @click="deactivate(row)">
+                                        <Icon name="user-x" :size="13" /><span>{{ t.actions.deactivate }}</span>
+                                    </button>
+                                </div>
                             </td>
                         </tr>
                     </tbody>

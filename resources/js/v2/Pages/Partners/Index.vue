@@ -24,6 +24,7 @@ const t = computed(() => isRtl.value ? {
     col: { name: 'العيادة', code: 'الكود', license: 'الترخيص', specialties: 'التخصصات', branches: 'الفروع', status: 'الحالة' },
     empty: 'لا توجد عيادات', emptyDesc: 'أضف أول عيادة.', clear: 'مسح', showing: 'عرض', of: 'من',
     stats: { total: 'الكل', active: 'فعّالة', inactive: 'غير فعّالة' },
+    actions: { deactivate: 'تعطيل' },
     modal: {
         createTitle: 'عيادة جديدة', editTitle: 'تحرير العيادة',
         nameEn: 'الاسم (إنجليزي)', nameAr: 'الاسم (عربي)', slug: 'الكود / slug', slugHelp: 'يُستخدم في الروابط.',
@@ -40,6 +41,7 @@ const t = computed(() => isRtl.value ? {
     col: { name: 'Clinic', code: 'Code', license: 'License', specialties: 'Specialties', branches: 'Branches', status: 'Status' },
     empty: 'No clinics', emptyDesc: 'Add your first clinic.', clear: 'Clear', showing: 'Showing', of: 'of',
     stats: { total: 'Total', active: 'Active', inactive: 'Inactive' },
+    actions: { deactivate: 'Deactivate' },
     modal: {
         createTitle: 'New clinic', editTitle: 'Edit clinic',
         nameEn: 'Name (English)', nameAr: 'Name (Arabic)', slug: 'Code / slug', slugHelp: 'Used in links/URLs.',
@@ -130,8 +132,10 @@ function deactivate(row) {
                         <td style="font-size:12px; color:var(--fg-subtle); max-width:260px;">{{ row.specialties.join(', ') || '—' }}</td>
                         <td class="mono" style="text-align:end;">{{ row.branches_count }}</td>
                         <td><span :class="row.is_active ? 'badge-ok' : 'badge-muted'">{{ row.is_active ? t.status.active : t.status.inactive }}</span></td>
-                        <td @click.stop>
-                            <button v-if="row.is_active" class="btn btn-ghost btn-sm btn-icon" :title="t.modal.deleteConfirm" @click="deactivate(row)"><Icon name="eye-off" :size="14" /></button>
+                        <td @click.stop style="text-align:end;">
+                            <div class="row-actions">
+                                <button v-if="row.is_active" type="button" class="btn btn-row is-danger" @click="deactivate(row)"><Icon name="eye-off" :size="13" /><span>{{ t.actions.deactivate }}</span></button>
+                            </div>
                         </td>
                     </tr>
                 </tbody>

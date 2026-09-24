@@ -54,7 +54,7 @@ const t = computed(() => isRtl.value ? {
         sortOrder: 'الترتيب', sortHelp: 'الأصغر يظهر أولًا.',
         items: 'أصناف الباقة', item: 'الصنف', qty: 'الكمية (أساس)', consumable: 'يُخصم من المخزون',
         addItem: 'إضافة صنف', selectItem: '— اختر صنفًا —', noItems: 'لا أصناف بعد.',
-        save: 'حفظ', cancel: 'إلغاء', delete: 'حذف', deleteConfirm: 'حذف هذه الباقة نهائيًا؟',
+        save: 'حفظ', cancel: 'إلغاء', delete: 'حذف', remove: 'إزالة', deleteConfirm: 'حذف هذه الباقة نهائيًا؟',
     },
 } : {
     title: 'Clinic Packages', eyebrow: 'Setup',
@@ -81,7 +81,7 @@ const t = computed(() => isRtl.value ? {
         sortOrder: 'Sort order', sortHelp: 'Lower numbers appear first.',
         items: 'Package items', item: 'Item', qty: 'Qty (base)', consumable: 'Deduct from stock',
         addItem: 'Add item', selectItem: '— Select an item —', noItems: 'No items yet.',
-        save: 'Save', cancel: 'Cancel', delete: 'Delete', deleteConfirm: 'Permanently delete this package?',
+        save: 'Save', cancel: 'Cancel', delete: 'Delete', remove: 'Remove', deleteConfirm: 'Permanently delete this package?',
     },
 })
 
@@ -257,8 +257,10 @@ function destroy(row) {
                         </td>
                         <td class="mono" style="text-align:end;">{{ row.items_count }}</td>
                         <td><span :class="row.is_active ? 'badge-ok' : 'badge-muted'">{{ row.is_active ? t.status.active : t.status.inactive }}</span></td>
-                        <td @click.stop>
-                            <button v-if="can_manage" class="btn btn-ghost btn-sm btn-icon" :title="t.modal.delete" @click.stop="destroy(row)"><Icon name="trash-2" :size="14" /></button>
+                        <td @click.stop style="text-align:end;">
+                            <div class="row-actions">
+                                <button v-if="can_manage" type="button" class="btn btn-row is-danger" @click.stop="destroy(row)"><Icon name="trash-2" :size="13" /><span>{{ t.modal.delete }}</span></button>
+                            </div>
                         </td>
                     </tr>
                 </tbody>
@@ -382,7 +384,7 @@ function destroy(row) {
                     <SearchableSelect v-model="it.clinic_item_id" :items="clinicItems" :nullable="false" :placeholder="t.modal.selectItem" :width="'100%'" style="flex:1; min-width:0;" />
                     <input v-model.number="it.qty_base" type="number" step="any" min="0.0001" class="input" style="width:100px;" :placeholder="t.modal.qty" required />
                     <label class="role-check" :title="t.modal.consumable" style="padding:6px 8px;"><input type="checkbox" v-model="it.is_consumable" /><Icon name="package" :size="14" /></label>
-                    <button type="button" class="btn btn-ghost btn-sm btn-icon" @click="removeItem(i)"><Icon name="trash-2" :size="14" /></button>
+                    <button type="button" class="btn btn-row is-danger" @click="removeItem(i)"><Icon name="trash-2" :size="13" /><span>{{ t.modal.remove }}</span></button>
                 </div>
 
                 <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px; padding-top:12px; border-top:1px solid var(--line);">

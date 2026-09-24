@@ -60,6 +60,7 @@ const t = computed(() => isRtl.value
         cancelReason: 'سبب الإلغاء', confirmCancel: 'إلغاء هذا الطلب؟ سيتم إزالة رسومه من فاتورة الزيارة.',
         confirmRelease: 'إصدار التقرير؟ سيتم إشعار الطبيب ولا يمكن التعديل بعدها.',
         confirmRemoveFile: 'حذف هذا المرفق؟', pending: 'قيد التنفيذ', price: 'السعر',
+        actions: { send: 'إرسال', delete: 'حذف' },
     }
     : {
         eyebrow: 'Laboratory', back: 'Lab worklist',
@@ -85,6 +86,7 @@ const t = computed(() => isRtl.value
         cancelReason: 'Cancellation reason', confirmCancel: 'Cancel this order? Its charges come off the visit bill.',
         confirmRelease: 'Release the report? The doctor is notified and results are final.',
         confirmRemoveFile: 'Delete this attachment?', pending: 'Pending', price: 'Price',
+        actions: { send: 'Send', delete: 'Delete' },
     })
 
 // Local mirror of the server order so actions can patch it without a full reload.
@@ -496,15 +498,16 @@ const timeline = computed(() => [
                                     <span v-else style="font-size: 11.5px; color: var(--fg-subtle);">{{ item.notes || '—' }}</span>
                                 </td>
                                 <td class="td" style="text-align: end;">
-                                    <button
-                                        v-if="canEditResults && isOpen && !item.result_value && order.items.length > 1"
-                                        class="btn btn-ghost btn-sm btn-icon"
-                                        style="color: var(--destructive);"
-                                        :title="t.remove"
-                                        @click="removeItem(item)"
-                                    >
-                                        <Icon name="trash-2" :size="12" />
-                                    </button>
+                                    <div class="row-actions">
+                                        <button
+                                            v-if="canEditResults && isOpen && !item.result_value && order.items.length > 1"
+                                            type="button"
+                                            class="btn btn-row is-danger"
+                                            @click="removeItem(item)"
+                                        >
+                                            <Icon name="trash-2" :size="13" /><span>{{ t.remove }}</span>
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
                             <tr v-if="!order.items?.length">
@@ -651,24 +654,26 @@ const timeline = computed(() => [
                                     {{ att.display_size }}<span v-if="att.uploaded_by"> · {{ att.uploaded_by }}</span>
                                 </div>
                             </div>
-                            <button
-                                v-if="wa_enabled && isReleased && order.patient?.phone"
-                                class="btn btn-ghost btn-sm btn-icon"
-                                :title="t.sendWa"
-                                :disabled="busy"
-                                @click="sendWhatsApp(null, att.id)"
-                            >
-                                <Icon name="send" :size="12" />
-                            </button>
-                            <button
-                                v-if="can.lab_work"
-                                class="btn btn-ghost btn-sm btn-icon"
-                                style="color: var(--destructive);"
-                                :title="t.removeFile"
-                                @click="removeAttachment(att)"
-                            >
-                                <Icon name="trash-2" :size="12" />
-                            </button>
+                            <div class="row-actions">
+                                <button
+                                    v-if="wa_enabled && isReleased && order.patient?.phone"
+                                    type="button"
+                                    class="btn btn-row"
+                                    :title="t.sendWa"
+                                    :disabled="busy"
+                                    @click="sendWhatsApp(null, att.id)"
+                                >
+                                    <Icon name="send" :size="13" /><span>{{ t.actions.send }}</span>
+                                </button>
+                                <button
+                                    v-if="can.lab_work"
+                                    type="button"
+                                    class="btn btn-row is-danger"
+                                    @click="removeAttachment(att)"
+                                >
+                                    <Icon name="trash-2" :size="13" /><span>{{ t.actions.delete }}</span>
+                                </button>
+                            </div>
                         </div>
                     </div>
                     <div v-else style="font-size: 12px; color: var(--fg-subtle); font-style: italic; margin-bottom: 10px;">

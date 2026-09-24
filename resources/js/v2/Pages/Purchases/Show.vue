@@ -473,7 +473,7 @@ const st = computed(() => order.value.status)
                         <div class="tnum" :style="{ textAlign: 'end', textDecoration: r.reversed ? 'line-through' : 'none' }">{{ KWD(r.total) }}</div>
                         <div class="tnum" :style="{ textAlign: 'end', fontWeight: 600, textDecoration: r.reversed ? 'line-through' : 'none' }">{{ KWD(r.landed) }}</div>
                         <div style="text-align: end;">
-                            <button v-if="can_manage && !r.reversed" class="btn btn-ghost btn-sm btn-icon" style="color: var(--destructive);" :title="t.reverse" @click="reverseReceipt(r)"><Icon name="undo-2" :size="13" /></button>
+                            <button v-if="can_manage && !r.reversed" type="button" class="btn btn-row is-danger" @click="reverseReceipt(r)"><Icon name="undo-2" :size="13" /><span>{{ t.reverse }}</span></button>
                         </div>
                     </div>
                 </template>
@@ -501,7 +501,7 @@ const st = computed(() => order.value.status)
                         <div class="tnum" style="font-size: 12px; color: var(--fg-subtle);">{{ fmtDate(p.payment_date) }}</div>
                         <div class="tnum" style="text-align: end; font-weight: 600;">{{ KWD(p.amount) }}</div>
                         <div style="text-align: end;">
-                            <button v-if="can_pay" class="btn btn-ghost btn-sm btn-icon" style="color: var(--destructive);" :title="t.void" @click="voidPayment(p)"><Icon name="trash-2" :size="13" /></button>
+                            <button v-if="can_pay" type="button" class="btn btn-row is-danger" @click="voidPayment(p)"><Icon name="trash-2" :size="13" /><span>{{ t.void }}</span></button>
                         </div>
                     </div>
                 </template>
@@ -538,14 +538,14 @@ const st = computed(() => order.value.status)
 }
 .rc-grid {
     display: grid;
-    grid-template-columns: minmax(110px, 1.4fr) 100px 1fr 1fr 38px;
+    grid-template-columns: minmax(110px, 1.4fr) 100px 1fr 1fr 88px;
     align-items: center;
     gap: 10px;
     padding: 9px 14px;
 }
 .pm-grid {
     display: grid;
-    grid-template-columns: minmax(110px, 1.4fr) 1fr 90px 1fr 38px;
+    grid-template-columns: minmax(110px, 1.4fr) 1fr 90px 1fr 88px;
     align-items: center;
     gap: 10px;
     padding: 7px 14px;

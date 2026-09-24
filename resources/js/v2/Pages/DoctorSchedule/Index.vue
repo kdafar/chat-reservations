@@ -115,12 +115,14 @@ function apply() {
                         <span v-if="item.checked_in" class="badge-ok"><Icon name="check" :size="11" style="vertical-align:-1px;" /> {{ t.checkedIn }}</span>
                         <span v-else :class="item.status === 'confirmed' ? 'badge-ok' : 'badge-warn'">{{ t.status[item.status] || item.status }}</span>
 
-                        <a v-if="item.wa" :href="item.wa" target="_blank" rel="noopener" class="btn btn-ghost btn-sm btn-icon" :title="t.whatsapp" @click.stop>
-                            <Icon name="message-circle" :size="14" />
-                        </a>
-                        <Link v-if="!item.checked_in" :href="route('v2.checkin')" class="btn btn-ghost btn-sm" :title="t.checkin">
-                            <Icon name="log-in" :size="13" /><span>{{ t.checkin }}</span>
-                        </Link>
+                        <div class="row-actions">
+                            <a v-if="item.wa" :href="item.wa" target="_blank" rel="noopener" class="btn btn-row" @click.stop>
+                                <Icon name="message-circle" :size="13" /><span>{{ t.whatsapp }}</span>
+                            </a>
+                            <Link v-if="!item.checked_in" :href="route('v2.checkin')" class="btn btn-row">
+                                <Icon name="log-in" :size="13" /><span>{{ t.checkin }}</span>
+                            </Link>
+                        </div>
                     </div>
                 </div>
             </div>

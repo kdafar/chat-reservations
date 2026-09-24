@@ -35,6 +35,7 @@ const t = computed(() => isRtl.value ? {
     modal: { createTitle: 'طلب موافقة مسبقة', editTitle: 'تحرير الطلب', save: 'حفظ', cancel: 'إلغاء', deleteConfirm: 'حذف هذا الطلب؟', decide: 'تسجيل القرار', edit: 'تحرير', delete: 'حذف' },
     fields: { policy: 'البوليصة', visit_id: 'رقم الزيارة (اختياري)', reference_no: 'الرقم المرجعي', requested_at: 'تاريخ الطلب', services: 'الخدمات', label: 'الوصف', amount: 'المبلغ المقدّر', total: 'الإجمالي المقدّر', status: 'الحالة', valid_from: 'صالح من', valid_until: 'صالح حتى', decision_notes: 'ملاحظات القرار', addService: 'إضافة خدمة', decision: 'القرار', approved_amount: 'المبلغ المعتمد' },
     stats: { total: 'الكل', pending: 'قيد القرار', approved: 'موافَق', rejected: 'مرفوض' },
+    actions: { decide: 'القرار', remove: 'إزالة' },
 } : {
     title: 'Pre-authorizations', eyebrow: 'Insurance',
     desc: 'Insurer pre-authorization requests — estimated services and decision.',
@@ -46,6 +47,7 @@ const t = computed(() => isRtl.value ? {
     modal: { createTitle: 'Pre-authorization request', editTitle: 'Edit request', save: 'Save', cancel: 'Cancel', deleteConfirm: 'Delete this request?', decide: 'Record decision', edit: 'Edit', delete: 'Delete' },
     fields: { policy: 'Policy', visit_id: 'Visit # (optional)', reference_no: 'Reference no.', requested_at: 'Requested at', services: 'Services', label: 'Description', amount: 'Est. amount', total: 'Estimated total', status: 'Status', valid_from: 'Valid from', valid_until: 'Valid until', decision_notes: 'Decision notes', addService: 'Add service', decision: 'Decision', approved_amount: 'Approved amount' },
     stats: { total: 'Total', pending: 'Awaiting decision', approved: 'Approved', rejected: 'Rejected' },
+    actions: { decide: 'Decide', remove: 'Remove' },
 })
 
 const statusItems = computed(() => props.statuses.map((s) => ({ value: s, label: t.value.st[s] ?? s })))
@@ -218,10 +220,12 @@ onMounted(() => { if (props.open_record) openEdit(props.open_record) })
                                 <div>{{ row.requested_at ? String(row.requested_at).slice(0, 16).replace('T', ' ') : '—' }}</div>
                                 <div v-if="row.requested_by?.name" style="font-size:11px;">{{ t.by }} {{ row.requested_by.name }}</div>
                             </td>
-                            <td style="white-space:nowrap;">
-                                <button v-if="can_edit && canDecide(row)" class="btn btn-ghost btn-sm btn-icon" :title="t.modal.decide" @click="openDecide(row)"><Icon name="check-badge" :size="15" style="color:var(--ok);" /></button>
-                                <button v-if="can_edit" class="btn btn-ghost btn-sm btn-icon" :title="t.modal.edit" @click="openEdit(row)"><Icon name="pencil" :size="14" /></button>
-                                <button v-if="can_edit" class="btn btn-ghost btn-sm btn-icon" :title="t.modal.delete" @click="destroy(row)"><Icon name="trash-2" :size="14" /></button>
+                            <td style="white-space:nowrap; text-align:end;">
+                                <div class="row-actions">
+                                    <button v-if="can_edit && canDecide(row)" type="button" class="btn btn-row" :title="t.modal.decide" @click="openDecide(row)"><Icon name="check-badge" :size="13" style="color:var(--ok);" /><span>{{ t.actions.decide }}</span></button>
+                                    <button v-if="can_edit" type="button" class="btn btn-row" @click="openEdit(row)"><Icon name="pencil" :size="13" /><span>{{ t.modal.edit }}</span></button>
+                                    <button v-if="can_edit" type="button" class="btn btn-row is-danger" @click="destroy(row)"><Icon name="trash-2" :size="13" /><span>{{ t.modal.delete }}</span></button>
+                                </div>
                             </td>
                         </tr>
                     </tbody>
@@ -264,7 +268,7 @@ onMounted(() => { if (props.open_record) openEdit(props.open_record) })
                         <div v-for="(s, i) in form.services" :key="i" style="display:flex; gap:8px; margin-bottom:6px; align-items:center;">
                             <input v-model="s.label" class="input" :placeholder="t.fields.label" style="flex:1;" maxlength="191" />
                             <input v-model.number="s.estimated_amount" type="number" step="any" min="0" class="input" :placeholder="t.fields.amount" style="width:140px;" />
-                            <button type="button" class="btn btn-ghost btn-sm btn-icon" @click="removeService(i)"><Icon name="x" :size="14" /></button>
+                            <button type="button" class="btn btn-row is-danger" @click="removeService(i)"><Icon name="x" :size="13" /><span>{{ t.actions.remove }}</span></button>
                         </div>
                         <div v-if="errors.services" class="err">{{ errors.services }}</div>
                         <button type="button" class="btn btn-ghost btn-sm" @click="addService"><Icon name="plus" :size="13" /><span>{{ t.fields.addService }}</span></button>

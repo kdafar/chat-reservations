@@ -163,7 +163,7 @@ const pct = (r) => r.recipients_count ? Math.round((r.done_count / r.recipients_
                         <td style="font-size:11px; color:var(--fg-faint);">{{ r.scheduled_at || '—' }}</td>
                         <td>
                             <Popover :width="200" align="end">
-                                <template #trigger="{ toggle }"><button class="btn btn-ghost btn-sm btn-icon" @click.stop="toggle"><Icon name="more-horizontal" :size="14" /></button></template>
+                                <template #trigger="{ toggle }"><button type="button" class="btn btn-row" @click.stop="toggle"><span>{{ isRtl ? 'إجراءات' : 'Actions' }}</span><Icon name="chevron-down" :size="13" /></button></template>
                                 <template #default="{ hide }">
                                     <div style="padding:6px;">
                                         <button class="wa-menu-row" @click="hide(); openEdit(r)"><Icon name="settings-2" :size="13" /><span>{{ t.manage }}</span></button>

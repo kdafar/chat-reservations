@@ -26,7 +26,7 @@ const t = computed(() => isRtl.value ? {
     empty: 'لا يوجد موردون', emptyDesc: 'أضف أول مورد.', clear: 'مسح',
     showing: 'عرض', of: 'من',
     stats: { total: 'الكل', active: 'فعّال', inactive: 'غير فعّال' },
-    deleteConfirm: 'سيتم أرشفة هذا المورد. متابعة؟', archive: 'أرشفة',
+    deleteConfirm: 'سيتم أرشفة هذا المورد. متابعة؟', archive: 'أرشفة', actions: { edit: 'تعديل' },
 } : {
     title: 'Vendors', eyebrow: 'Accounting',
     desc: 'Payees the clinic incurs expenses with. Pin a default account to make logging expenses one click.',
@@ -36,7 +36,7 @@ const t = computed(() => isRtl.value ? {
     empty: 'No vendors', emptyDesc: 'Add your first vendor.', clear: 'Clear',
     showing: 'Showing', of: 'of',
     stats: { total: 'Total', active: 'Active', inactive: 'Inactive' },
-    deleteConfirm: 'Archive this vendor?', archive: 'Archive',
+    deleteConfirm: 'Archive this vendor?', archive: 'Archive', actions: { edit: 'Edit' },
 })
 
 const f = reactive({ q: props.filters.q || '', status: props.filters.status || 'all' })
@@ -119,10 +119,10 @@ function archive(row) {
                         <td class="mono" style="font-size:12px;">{{ row.phone || '—' }}</td>
                         <td style="font-size:12px; color:var(--fg-subtle);">{{ row.default_account_label || '—' }}</td>
                         <td><span :class="row.is_active ? 'badge-ok' : 'badge-muted'">{{ row.is_active ? t.status.active : t.status.inactive }}</span></td>
-                        <td @click.stop>
-                            <div style="display:flex; gap:4px; flex-wrap:nowrap; justify-content:flex-end;">
-                                <Link class="btn btn-ghost btn-sm btn-icon" :href="route('v2.accounting.vendors.edit', { vendor: row.id })"><Icon name="pencil" :size="14" /></Link>
-                                <button class="btn btn-ghost btn-sm btn-icon" :title="t.archive" @click="archive(row)"><Icon name="archive" :size="14" /></button>
+                        <td @click.stop style="text-align:end;">
+                            <div class="row-actions">
+                                <Link class="btn btn-row" :href="route('v2.accounting.vendors.edit', { vendor: row.id })"><Icon name="pencil" :size="13" /><span>{{ t.actions.edit }}</span></Link>
+                                <button type="button" class="btn btn-row is-danger" @click="archive(row)"><Icon name="archive" :size="13" /><span>{{ t.archive }}</span></button>
                             </div>
                         </td>
                     </tr>

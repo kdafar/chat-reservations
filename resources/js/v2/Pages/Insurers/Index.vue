@@ -39,6 +39,7 @@ const t = computed(() => isRtl.value ? {
     modal: { createTitle: 'شركة جديدة', editTitle: 'تحرير الشركة', save: 'حفظ', cancel: 'إلغاء', archiveConfirm: 'أرشفة الشركة؟' },
     fields: { name: 'الاسم', name_ar: 'الاسم بالعربية', code: 'الكود', tax_id: 'الرقم الضريبي', contact_email: 'البريد', contact_phone: 'الهاتف', address: 'العنوان', payment_terms_days: 'مدة الدفع (أيام)', is_active: 'فعّالة', notes: 'ملاحظات', ar_account: 'حساب الذمم المدينة (التأمين)', accountHelp: 'حساب الذمم الذي تُسجَّل عليه مستحقات هذه الشركة. يُترك للنظام إن لم يُحدَّد.', accountNone: 'افتراضي النظام (1140)' },
     stats: { total: 'الكل', active: 'فعّالة' },
+    actions: { followUp: 'متابعة', archive: 'أرشفة', restore: 'استعادة' },
 } : {
     title: 'Insurers', eyebrow: 'Insurance',
     desc: 'Manage the insurance companies you contract with — codes, contacts, payment terms.',
@@ -51,6 +52,7 @@ const t = computed(() => isRtl.value ? {
     modal: { createTitle: 'New insurer', editTitle: 'Edit insurer', save: 'Save', cancel: 'Cancel', archiveConfirm: 'Archive this insurer?' },
     fields: { name: 'Name', name_ar: 'Arabic name', code: 'Code', tax_id: 'Tax ID', contact_email: 'Email', contact_phone: 'Phone', address: 'Address', payment_terms_days: 'Payment terms (days)', is_active: 'Active', notes: 'Notes', ar_account: 'Receivable (AR) account', accountHelp: "The AR account this insurer's receivables post to. Leave as system default if unset.", accountNone: 'System default (1140)' },
     stats: { total: 'Total', active: 'Active' },
+    actions: { followUp: 'Follow up', archive: 'Archive', restore: 'Restore' },
 })
 
 const f = reactive({ q: props.filters.q || '', active: props.filters.active || 'all' })
@@ -135,10 +137,12 @@ const rowArchived = row => !!row.deleted_at || !row.is_active
                             <td class="mono" style="font-size:12px;">{{ row.contact_phone || '—' }}</td>
                             <td class="mono" style="text-align:end;">{{ row.payment_terms_days || '—' }}</td>
                             <td><span :class="rowArchived(row) ? 'badge-muted' : 'badge-ok'">{{ rowArchived(row) ? t.active.inactive : t.active.active }}</span></td>
-                            <td @click.stop>
-                                <Link class="btn btn-ghost btn-sm btn-icon" :href="route('v2.insurance.follow-up.index', { insurer: row.id, tab: 'all' })" :title="isRtl ? 'متابعة التحصيل' : 'Follow up on what they owe'"><Icon name="bell" :size="14" /></Link>
-                                <button v-if="can_edit && !rowArchived(row)" class="btn btn-ghost btn-sm btn-icon" @click="archive(row)"><Icon name="archive" :size="14" /></button>
-                                <button v-else-if="can_edit" class="btn btn-ghost btn-sm btn-icon" @click="restore(row)"><Icon name="undo-2" :size="14" /></button>
+                            <td @click.stop style="text-align:end;">
+                                <div class="row-actions">
+                                    <Link class="btn btn-row" :href="route('v2.insurance.follow-up.index', { insurer: row.id, tab: 'all' })" :title="isRtl ? 'متابعة التحصيل' : 'Follow up on what they owe'"><Icon name="bell" :size="13" /><span>{{ t.actions.followUp }}</span></Link>
+                                    <button v-if="can_edit && !rowArchived(row)" type="button" class="btn btn-row is-danger" @click="archive(row)"><Icon name="archive" :size="13" /><span>{{ t.actions.archive }}</span></button>
+                                    <button v-else-if="can_edit" type="button" class="btn btn-row" @click="restore(row)"><Icon name="undo-2" :size="13" /><span>{{ t.actions.restore }}</span></button>
+                                </div>
                             </td>
                         </tr>
                     </tbody>

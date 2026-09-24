@@ -99,7 +99,7 @@ function remove(row) { confirm({ body: t.value.modal.deleteConfirm, tone: 'destr
 
             <div class="card" style="overflow:hidden;">
                 <table class="table">
-                    <thead><tr><th>{{ t.col.code }}</th><th>{{ t.col.ward }}</th><th>{{ t.col.status }}</th><th style="text-align:end;">{{ t.col.rate }}</th><th style="width:60px;"></th></tr></thead>
+                    <thead><tr><th>{{ t.col.code }}</th><th>{{ t.col.ward }}</th><th>{{ t.col.status }}</th><th style="text-align:end;">{{ t.col.rate }}</th><th></th></tr></thead>
                     <tbody>
                         <tr v-if="page.data.length === 0"><td colspan="5" style="text-align:center; padding:48px; color:var(--fg-faint);"><Icon name="bed" :size="32" style="margin-bottom:8px; opacity:0.4;" /><div style="font-weight:600;">{{ t.empty }}</div><div style="font-size:12px;">{{ t.emptyDesc }}</div></td></tr>
                         <tr v-for="row in page.data" :key="row.id" @click="openEdit(row)" :style="can_edit ? 'cursor:pointer;' : ''">
@@ -107,8 +107,10 @@ function remove(row) { confirm({ body: t.value.modal.deleteConfirm, tone: 'destr
                             <td style="font-size:12px;">{{ row.ward?.name || '—' }} <span style="color:var(--fg-faint);">({{ row.ward?.code }})</span></td>
                             <td><span class="badge" :style="{ color: statusColor(row.status), borderColor: statusColor(row.status) }">{{ t.statuses[row.status] || row.status }}</span></td>
                             <td class="mono" style="text-align:end;">{{ row.daily_rate_override !== null ? formatMoney(row.daily_rate_override) : '—' }}</td>
-                            <td @click.stop>
-                                <button v-if="can_edit" class="btn btn-ghost btn-sm btn-icon" :title="t.modal.delete" :aria-label="t.modal.delete" @click="remove(row)"><Icon name="trash-2" :size="13" /></button>
+                            <td @click.stop style="text-align:end;">
+                                <div class="row-actions">
+                                    <button v-if="can_edit" type="button" class="btn btn-row is-danger" @click="remove(row)"><Icon name="trash-2" :size="13" /><span>{{ t.modal.delete }}</span></button>
+                                </div>
                             </td>
                         </tr>
                     </tbody>

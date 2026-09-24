@@ -106,7 +106,7 @@ const num = (v) => Number(v || 0)
                         <template v-if="row.status === 'draft'">
                             <Link v-if="can_edit" class="btn btn-outline btn-sm" :href="route('v2.accounting.journal-entries.edit', { journalEntry: row.id })"><Icon name="pencil" :size="13" /><span>{{ t.modal.edit }}</span></Link>
                             <button v-if="can_edit" class="btn btn-primary btn-sm" @click="postEntry(row)">{{ t.act.post }}</button>
-                            <button v-if="can_delete" class="btn btn-ghost btn-sm btn-icon" :title="t.modal.delete" @click="destroy(row)"><Icon name="trash-2" :size="14" /></button>
+                            <button v-if="can_delete" type="button" class="btn btn-row is-danger" @click="destroy(row)"><Icon name="trash-2" :size="13" /><span>{{ t.modal.delete }}</span></button>
                         </template>
                         <template v-else-if="row.status === 'posted'">
                             <span class="je-lock" :title="t.det.locked"><Icon name="lock" :size="11" /></span>

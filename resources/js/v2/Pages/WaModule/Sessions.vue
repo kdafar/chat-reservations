@@ -38,7 +38,7 @@ function del(r) { confirm({ body: t.value.confirmDel, tone: 'destructive', onCon
                         <td style="font-size:11px; color:var(--fg-faint);">{{ r.last_interacted_at || '—' }}</td>
                         <td>
                             <Popover :width="170" align="end">
-                                <template #trigger="{ toggle }"><button class="btn btn-ghost btn-sm btn-icon" @click.stop="toggle"><Icon name="more-horizontal" :size="14" /></button></template>
+                                <template #trigger="{ toggle }"><button type="button" class="btn btn-row" @click.stop="toggle"><span>{{ isRtl ? 'إجراءات' : 'Actions' }}</span><Icon name="chevron-down" :size="13" /></button></template>
                                 <template #default="{ hide }">
                                     <div style="padding:6px;">
                                         <button class="wa-menu-row" @click="hide(); toggleBlock(r)"><Icon :name="r.is_blocked ? 'shield-off' : 'shield'" :size="13" /><span>{{ r.is_blocked ? t.unblock : t.block }}</span></button>

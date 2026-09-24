@@ -111,8 +111,10 @@ function remove(row) { confirm({ body: t.value.modal.deleteConfirm, tone: 'destr
                             <td style="font-size:12px;">{{ row.branch?.name || '—' }}</td>
                             <td>{{ row.beds_count || 0 }}</td>
                             <td class="mono" style="text-align:end;">{{ formatMoney(row.daily_rate) }}</td>
-                            <td @click.stop>
-                                <button v-if="can_edit" class="btn btn-ghost btn-sm btn-icon" :title="t.modal.delete" :aria-label="t.modal.delete" @click="remove(row)"><Icon name="trash-2" :size="13" /></button>
+                            <td @click.stop style="text-align:end;">
+                                <div class="row-actions">
+                                    <button v-if="can_edit" type="button" class="btn btn-row is-danger" @click="remove(row)"><Icon name="trash-2" :size="13" /><span>{{ t.modal.delete }}</span></button>
+                                </div>
                             </td>
                         </tr>
                     </tbody>

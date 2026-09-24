@@ -10,9 +10,11 @@ import WaMediaInput from '../../Components/WaMediaInput.vue'
 const pageProps = usePage()
 const isRtl = computed(() => (pageProps.props.locale ?? 'en') === 'ar')
 const t = computed(() => isRtl.value ? {
+    actions: { remove: 'إزالة' },
     crumbs: 'القوالب', title: 'قالب كاروسيل', bundle: 'رسالة التقديم', cards: 'البطاقات', addCard: 'إضافة بطاقة', img: 'رابط الصورة', cbody: 'نص البطاقة', addBtn: 'زر',
     name: 'الاسم', category: 'الفئة', lang: 'اللغة', cancel: 'إلغاء', save: 'حفظ كمسودة', saveSubmit: 'حفظ وإرسال',
 } : {
+    actions: { remove: 'Remove' },
     crumbs: 'Message Templates', title: 'Carousel Template', bundle: 'Intro message', cards: 'Cards', addCard: 'Add card', img: 'Image URL', cbody: 'Card text', addBtn: 'Button',
     name: 'Template Name (Slug)', category: 'Category', lang: 'Language', cancel: 'Cancel', save: 'Save draft', saveSubmit: 'Save & submit',
 })
@@ -46,14 +48,14 @@ function submit(publish) { cForm.publish = publish; cForm.post(route('v2.wa-modu
             <div style="display:flex; justify-content:space-between; align-items:center;"><label class="wa-lbl" style="margin:0;">{{ t.cards }} ({{ cForm.cards.length }}/10)</label><button type="button" class="btn btn-ghost btn-sm" :disabled="cForm.cards.length>=10" @click="addCard"><Icon name="plus" :size="12" /> {{ t.addCard }}</button></div>
             <div style="display:flex; gap:12px; overflow-x:auto; padding-bottom:6px;">
                 <div v-for="(card,ci) in cForm.cards" :key="ci" class="card" style="min-width:260px; max-width:260px; padding:12px; flex:0 0 auto;">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;"><span style="font-size:12px; font-weight:600; color:var(--fg);">#{{ ci+1 }}</span><button v-if="cForm.cards.length>2" type="button" class="btn btn-ghost btn-sm btn-icon" @click="removeCard(ci)"><Icon name="x" :size="12" :style="{color:'var(--destructive)'}" /></button></div>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;"><span style="font-size:12px; font-weight:600; color:var(--fg);">#{{ ci+1 }}</span><button v-if="cForm.cards.length>2" type="button" class="btn btn-row is-danger" @click="removeCard(ci)"><Icon name="trash-2" :size="13" /><span>{{ t.actions.remove }}</span></button></div>
                     <div style="margin-bottom:8px;"><WaMediaInput v-model="card.image_path" :url="card.image_url" @update:url="v => card.image_url = v" kind="image" /></div>
                     <div v-if="cForm.errors['cards.'+ci+'.image_path']" class="wa-err" style="margin-bottom:6px;">{{ cForm.errors['cards.'+ci+'.image_path'] }}</div>
                     <textarea v-model="card.body" class="input" :placeholder="t.cbody" rows="2" maxlength="160" style="font-size:12px;"></textarea>
                     <div v-for="(b,bi) in card.buttons" :key="bi" style="display:flex; gap:4px; margin-top:6px; align-items:center;">
                         <SearchableSelect v-model="b.type" :items="[{ value: 'QUICK_REPLY', label: 'Reply' }, { value: 'URL', label: 'URL' }]" :nullable="false" :width="90" />
                         <input v-model="b.text" class="input" placeholder="Text" style="flex:1; font-size:11px;" maxlength="25" />
-                        <button type="button" class="btn btn-ghost btn-sm btn-icon" @click="removeCardBtn(card,bi)"><Icon name="x" :size="11" /></button>
+                        <button type="button" class="btn btn-row is-danger" @click="removeCardBtn(card,bi)"><Icon name="trash-2" :size="13" /><span>{{ t.actions.remove }}</span></button>
                     </div>
                     <input v-for="(b,bi) in card.buttons.filter(x=>x.type==='URL')" :key="'u'+bi" v-model="b.url" class="input" placeholder="https://…" style="font-size:11px; margin-top:4px;" />
                     <button v-if="card.buttons.length<2" type="button" class="btn btn-ghost btn-sm" style="margin-top:6px; width:100%;" @click="addCardBtn(card)"><Icon name="plus" :size="11" /> {{ t.addBtn }}</button>

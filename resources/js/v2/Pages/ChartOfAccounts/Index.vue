@@ -25,6 +25,7 @@ const t = computed(() => isRtl.value ? {
     modal: { createTitle: 'حساب جديد', editTitle: 'تحرير الحساب', save: 'حفظ', cancel: 'إلغاء', deleteConfirm: 'حذف هذا الحساب؟' },
     fields: { code: 'الكود', name: 'الاسم', type: 'النوع', parent: 'الحساب الأب', branch: 'الفرع', currency: 'العملة', is_active: 'فعّال', description: 'الوصف', none: '— بدون —', sysNote: 'حساب نظام — الكود والنوع مقفلان.' },
     stats: { total: 'الكل', active: 'فعّال' },
+    actions: { statement: 'كشف الحساب', edit: 'تعديل', delete: 'حذف' },
 } : {
     title: 'Chart of Accounts', eyebrow: 'Accounting',
     desc: 'The financial account tree — balances are computed from posted entries.',
@@ -34,6 +35,7 @@ const t = computed(() => isRtl.value ? {
     modal: { createTitle: 'New account', editTitle: 'Edit account', save: 'Save', cancel: 'Cancel', deleteConfirm: 'Delete this account?' },
     fields: { code: 'Code', name: 'Name', type: 'Type', parent: 'Parent account', branch: 'Branch', currency: 'Currency', is_active: 'Active', description: 'Description', none: '— None —', sysNote: 'System account — code & type are locked.' },
     stats: { total: 'Total', active: 'Active' },
+    actions: { statement: 'Statement', edit: 'Edit', delete: 'Delete' },
 })
 
 const typeLabel = (ty) => (ty || '').replace(/_/g, ' ')
@@ -106,11 +108,11 @@ function destroy(row) {
                             <td style="font-size:12px; color:var(--fg-subtle);">{{ row.parent ? (row.parent.code + ' — ' + row.parent.name) : '—' }}</td>
                             <td class="mono" style="text-align:end;">{{ fmt(row.balance) }}</td>
                             <td><span :class="row.is_active ? 'badge-ok' : 'badge-muted'">{{ row.is_active ? t.active : t.inactive }}</span></td>
-                            <td>
-                                <div style="display:flex; gap:2px;">
-                                    <Link v-if="can_view_ledger" :href="route('v2.reports.accounting.general-ledger', { account_id: row.id })" class="btn btn-ghost btn-sm btn-icon" :title="t.statement"><Icon name="file-text" :size="14" /></Link>
-                                    <Link v-if="can_edit" class="btn btn-ghost btn-sm btn-icon" :title="t.modal.editTitle" :href="route('v2.accounting.accounts.edit', { account: row.id })"><Icon name="pencil" :size="14" /></Link>
-                                    <button v-if="can_edit && !row.is_system" class="btn btn-ghost btn-sm btn-icon" @click="destroy(row)"><Icon name="trash-2" :size="14" /></button>
+                            <td style="text-align:end;">
+                                <div class="row-actions">
+                                    <Link v-if="can_view_ledger" :href="route('v2.reports.accounting.general-ledger', { account_id: row.id })" class="btn btn-row"><Icon name="file-text" :size="13" /><span>{{ t.actions.statement }}</span></Link>
+                                    <Link v-if="can_edit" class="btn btn-row" :href="route('v2.accounting.accounts.edit', { account: row.id })"><Icon name="pencil" :size="13" /><span>{{ t.actions.edit }}</span></Link>
+                                    <button v-if="can_edit && !row.is_system" type="button" class="btn btn-row is-danger" @click="destroy(row)"><Icon name="trash-2" :size="13" /><span>{{ t.actions.delete }}</span></button>
                                 </div>
                             </td>
                         </tr>

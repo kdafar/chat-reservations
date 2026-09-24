@@ -49,6 +49,7 @@ const t = computed(() => isRtl.value
             save: 'إرسال', update: 'تحديث', cancel: 'إلغاء',
         },
         decide: { approve: 'اعتمد', reject: 'ارفض', notes: 'ملاحظات', deleteConfirm: 'هل أنت متأكد من حذف هذا الطلب؟' },
+        actions: { edit: 'تعديل', delete: 'حذف' },
         stats: { total: 'الكل', pending: 'قيد المراجعة', approved: 'معتمدة' },
     }
     : {
@@ -69,6 +70,7 @@ const t = computed(() => isRtl.value
             save: 'Submit', update: 'Update', cancel: 'Cancel',
         },
         decide: { approve: 'Approve', reject: 'Reject', notes: 'Notes', deleteConfirm: 'Delete this leave request?' },
+        actions: { edit: 'Edit', delete: 'Delete' },
         stats: { total: 'Total', pending: 'Pending', approved: 'Approved' },
     })
 
@@ -273,19 +275,19 @@ function canDeleteRow(row) {
                             <td v-if="is_hr_manager" style="color:var(--fg-subtle); font-size:12px;">
                                 {{ row.decided_by?.name || '—' }}
                             </td>
-                            <td>
-                                <div style="display:inline-flex; gap:4px;">
-                                    <button v-if="is_hr_manager && row.status === 'pending'" class="btn btn-ghost btn-sm" style="color:var(--ok);" @click="openApprove(row)" :title="t.decide.approve">
-                                        <Icon name="check" :size="14" />
+                            <td style="text-align:end;">
+                                <div class="row-actions">
+                                    <button v-if="is_hr_manager && row.status === 'pending'" type="button" class="btn btn-row" @click="openApprove(row)">
+                                        <Icon name="check" :size="13" /><span>{{ t.decide.approve }}</span>
                                     </button>
-                                    <button v-if="is_hr_manager && row.status === 'pending'" class="btn btn-ghost btn-sm" style="color:var(--err, #ef4444);" @click="openReject(row)" :title="t.decide.reject">
-                                        <Icon name="x" :size="14" />
+                                    <button v-if="is_hr_manager && row.status === 'pending'" type="button" class="btn btn-row is-danger" @click="openReject(row)">
+                                        <Icon name="x" :size="13" /><span>{{ t.decide.reject }}</span>
                                     </button>
-                                    <button v-if="canEditRow(row)" class="btn btn-ghost btn-sm btn-icon" @click="openEdit(row)" :title="t.modal.editTitle">
-                                        <Icon name="pencil" :size="13" />
+                                    <button v-if="canEditRow(row)" type="button" class="btn btn-row" @click="openEdit(row)">
+                                        <Icon name="pencil" :size="13" /><span>{{ t.actions.edit }}</span>
                                     </button>
-                                    <button v-if="canDeleteRow(row)" class="btn btn-ghost btn-sm btn-icon" @click="archive(row)" :title="t.decide.deleteConfirm">
-                                        <Icon name="trash-2" :size="13" />
+                                    <button v-if="canDeleteRow(row)" type="button" class="btn btn-row is-danger" @click="archive(row)">
+                                        <Icon name="trash-2" :size="13" /><span>{{ t.actions.delete }}</span>
                                     </button>
                                 </div>
                             </td>

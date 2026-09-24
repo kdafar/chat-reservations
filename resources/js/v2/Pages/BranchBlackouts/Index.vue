@@ -124,8 +124,10 @@ function remove(row) {
                         <td style="font-size:12px;">{{ dayName(String(row.date).slice(0, 10)) }}</td>
                         <td style="font-size:12px;">{{ row.branch?.name || '—' }}</td>
                         <td>{{ row.reason || '—' }}</td>
-                        <td @click.stop>
-                            <button v-if="can_edit" class="btn btn-ghost btn-sm btn-icon" :title="t.modal.delete" :aria-label="t.modal.delete" @click="remove(row)"><Icon name="trash-2" :size="13" /></button>
+                        <td @click.stop style="text-align:end;">
+                            <div class="row-actions">
+                                <button v-if="can_edit" type="button" class="btn btn-row is-danger" @click="remove(row)"><Icon name="trash-2" :size="13" /><span>{{ t.modal.delete }}</span></button>
+                            </div>
                         </td>
                     </tr>
                 </tbody>

@@ -19,14 +19,14 @@ const t = computed(() => isRtl.value ? {
     recipients: 'المستلمون', addTitle: 'إضافة مستلمين', numbers: 'الأرقام (سطر لكل رقم)', region: 'المنطقة المفضّلة', nameOpt: 'الاسم (اختياري)', localeOpt: 'اللغة', add: 'إضافة', noRecipients: 'لا يوجد مستلمون بعد.',
     col: { phone: 'الهاتف', name: 'الاسم', locale: 'اللغة', source: 'المصدر', status: 'الحالة', error: 'الخطأ' },
     actions: 'الإجراءات', test: 'إرسال تجريبي', testPhone: 'هاتف الاختبار', queue: 'تحقّق وأرسل', sendTest: 'إرسال',
-    statusLabel: 'الحالة',
+    statusLabel: 'الحالة', remove: 'إزالة',
 } : {
     eyebrow: 'WhatsApp · Campaigns', back: 'All campaigns', save: 'Save changes', deleteCampaign: 'Delete campaign', delConfirm: 'Delete this campaign and all its recipients?',
     config: 'Configuration', name: 'Name', template: 'Template', rate: 'Max sends / minute', schedule: 'Schedule at', variables: 'Template variables', bodyPreview: 'Body preview', headerImg: 'Requires header image', headerImgPath: 'Header image path',
     recipients: 'Recipients', addTitle: 'Add recipients', numbers: 'Numbers (one per line)', region: 'Preferred region', nameOpt: 'Name (optional)', localeOpt: 'Locale', add: 'Add', noRecipients: 'No recipients yet.',
     col: { phone: 'Phone', name: 'Name', locale: 'Locale', source: 'Source', status: 'Status', error: 'Error' },
     actions: 'Actions', test: 'Send test', testPhone: 'Test phone', queue: 'Validate & queue', sendTest: 'Send',
-    statusLabel: 'Status',
+    statusLabel: 'Status', remove: 'Remove',
 })
 
 const statusColor = (s) => ({ draft: 'var(--fg-faint)', scheduled: 'var(--accent, #2563eb)', running: 'var(--warn, #d97706)', completed: 'var(--ok)', failed: 'var(--err, #dc2626)', paused: 'var(--fg-subtle)', pending: 'var(--fg-subtle)', sent: 'var(--ok)' }[s] || 'var(--fg-subtle)')
@@ -183,7 +183,7 @@ function queue() {
                         <td style="font-size:12px; color:var(--fg-subtle);">{{ r.source || '—' }}</td>
                         <td><span class="badge-status" :style="{ color: statusColor(r.status), borderColor: statusColor(r.status) }">{{ r.status }}</span></td>
                         <td style="font-size:11px; color:var(--err, #dc2626); max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ r.error_message || '' }}</td>
-                        <td><button class="btn btn-ghost btn-sm btn-icon" @click="delRecipient(r)"><Icon name="trash-2" :size="14" /></button></td>
+                        <td style="text-align:end;"><div class="row-actions"><button type="button" class="btn btn-row is-danger" @click="delRecipient(r)"><Icon name="trash-2" :size="13" /><span>{{ t.remove }}</span></button></div></td>
                     </tr>
                 </tbody>
             </table>

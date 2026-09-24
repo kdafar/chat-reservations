@@ -58,7 +58,7 @@ const t = computed(() => isRtl.value ? {
     searchPh: 'ابحث برقم المطالبة أو اسم المريض…', clear: 'مسح', allBranches: 'كل الفروع',
     showing: 'عرض', of: 'من', empty: 'لا شيء هنا', emptyChase: 'لا توجد مطالبات تحتاج متابعة الآن 🎉',
     chased: 'تُوبعت', times: 'مرة', never: 'لم تُتابع', due: 'مستحقة', dueOn: 'الموعد',
-    act: { chase: 'تسجيل متابعة', history: 'السجل', snooze: 'تأجيل', open: 'فتح المطالبة' },
+    act: { chase: 'تسجيل متابعة', history: 'السجل', snooze: 'تأجيل', open: 'فتح المطالبة', call: 'اتصال', whatsapp: 'واتساب', email: 'بريد' },
     snooze: { d3: '٣ أيام', d7: 'أسبوع', d14: 'أسبوعان', clear: 'إلغاء الموعد' },
     modal: {
         title: 'تسجيل متابعة', channel: 'وسيلة التواصل', note: 'ماذا قالوا؟',
@@ -141,7 +141,7 @@ const t = computed(() => isRtl.value ? {
     searchPh: 'Search by claim # or patient…', clear: 'Clear', allBranches: 'All branches',
     showing: 'Showing', of: 'of', empty: 'Nothing here', emptyChase: 'Nothing needs chasing right now 🎉',
     chased: 'Chased', times: '×', never: 'Never chased', due: 'Due', dueOn: 'Due',
-    act: { chase: 'Log chase', history: 'History', snooze: 'Snooze', open: 'Open claim' },
+    act: { chase: 'Log chase', history: 'History', snooze: 'Snooze', open: 'Open claim', call: 'Call', whatsapp: 'WhatsApp', email: 'Email' },
     snooze: { d3: '3 days', d7: '1 week', d14: '2 weeks', clear: 'Clear date' },
     modal: {
         title: 'Log a follow-up', channel: 'How did you contact them?', note: 'What did they say?',
@@ -590,11 +590,11 @@ async function openHistory(row) {
                                 <template v-if="row.last_chased_at">{{ String(row.last_chased_at).slice(0, 10) }}</template>
                                 <span v-else style="color:var(--warning, #d97706);">{{ t.insurerTbl.never }}</span>
                             </td>
-                            <td @click.stop>
-                                <div style="display:flex; gap:4px;">
-                                    <a v-if="row.contact_phone" class="btn btn-ghost btn-sm btn-icon" :href="`tel:${row.contact_phone}`" :title="row.contact_phone"><Icon name="phone" :size="13" /></a>
-                                    <a v-if="row.contact_phone" class="btn btn-ghost btn-sm btn-icon" :href="waLink(row.contact_phone, chaseText(row))" target="_blank" rel="noopener" title="WhatsApp"><Icon name="message-circle" :size="13" /></a>
-                                    <a v-if="row.contact_email" class="btn btn-ghost btn-sm btn-icon" :href="`mailto:${row.contact_email}?subject=${encodeURIComponent('Outstanding claims')}&body=${encodeURIComponent(chaseText(row))}`" :title="row.contact_email"><Icon name="mail" :size="13" /></a>
+                            <td @click.stop style="text-align:end;">
+                                <div class="row-actions">
+                                    <a v-if="row.contact_phone" class="btn btn-row" :href="`tel:${row.contact_phone}`" :title="row.contact_phone"><Icon name="phone" :size="13" /><span>{{ t.act.call }}</span></a>
+                                    <a v-if="row.contact_phone" class="btn btn-row" :href="waLink(row.contact_phone, chaseText(row))" target="_blank" rel="noopener"><Icon name="message-circle" :size="13" /><span>{{ t.act.whatsapp }}</span></a>
+                                    <a v-if="row.contact_email" class="btn btn-row" :href="`mailto:${row.contact_email}?subject=${encodeURIComponent('Outstanding claims')}&body=${encodeURIComponent(chaseText(row))}`" :title="row.contact_email"><Icon name="mail" :size="13" /><span>{{ t.act.email }}</span></a>
                                 </div>
                             </td>
                         </tr>
@@ -678,11 +678,11 @@ async function openHistory(row) {
                                 <div v-else style="color:var(--warning, #d97706); font-size:11px;">{{ t.never }}</div>
                                 <div v-if="row.follow_up_note" style="color:var(--fg-faint); font-size:11px; max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" :title="row.follow_up_note">“{{ row.follow_up_note }}”</div>
                             </td>
-                            <td @click.stop>
-                                <div style="display:flex; gap:4px; align-items:center; justify-content:flex-end;">
-                                    <button v-if="can.chase" class="btn btn-sm btn-outline" @click="openChase(row)"><Icon name="phone-call" :size="13" /><span>{{ t.act.chase }}</span></button>
-                                    <button v-if="can.chase" class="btn btn-ghost btn-sm btn-icon" :title="t.snooze.d7" @click="snooze(row, 7)"><Icon name="alarm-clock" :size="13" /></button>
-                                    <Link class="btn btn-ghost btn-sm btn-icon" :title="t.act.open" :href="route('v2.insurance.claims.index', { q: row.claim_number, status: 'all' })"><Icon name="external-link" :size="13" /></Link>
+                            <td @click.stop style="text-align:end;">
+                                <div class="row-actions">
+                                    <button v-if="can.chase" type="button" class="btn btn-row" @click="openChase(row)"><Icon name="phone-call" :size="13" /><span>{{ t.act.chase }}</span></button>
+                                    <button v-if="can.chase" type="button" class="btn btn-row" @click="snooze(row, 7)"><Icon name="alarm-clock" :size="13" /><span>{{ t.act.snooze }} {{ t.snooze.d7 }}</span></button>
+                                    <Link class="btn btn-row" :href="route('v2.insurance.claims.index', { q: row.claim_number, status: 'all' })"><Icon name="external-link" :size="13" /><span>{{ t.act.open }}</span></Link>
                                 </div>
                             </td>
                         </tr>

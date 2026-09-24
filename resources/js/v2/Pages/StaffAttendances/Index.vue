@@ -40,6 +40,7 @@ const t = computed(() => isRtl.value
         stats: { week: 'ساعات هذا الأسبوع', month: 'ساعات هذا الشهر' },
         editTitle: 'تحرير السجل', save: 'حفظ', cancel: 'إلغاء',
         deleteConfirm: 'هل أنت متأكد من حذف هذا السجل؟',
+        actions: { clockOut: 'تسجيل خروج', edit: 'تعديل', delete: 'حذف' },
     }
     : {
         title: props.is_hr_manager ? 'Staff Attendance' : 'My Attendance', eyebrow: 'HR',
@@ -58,6 +59,7 @@ const t = computed(() => isRtl.value
         stats: { week: 'Hours this week', month: 'Hours this month' },
         editTitle: 'Edit attendance', save: 'Save', cancel: 'Cancel',
         deleteConfirm: 'Delete this attendance row?',
+        actions: { clockOut: 'Clock out', edit: 'Edit', delete: 'Delete' },
     })
 
 const f = reactive({
@@ -223,16 +225,16 @@ function canClockOutRow(row) {
                             </td>
                             <td class="mono">{{ row.hours_worked }}</td>
                             <td v-if="is_hr_manager" style="color:var(--fg-subtle); font-size:12px;">{{ row.recorded_by?.name || '—' }}</td>
-                            <td>
-                                <div style="display:inline-flex; gap:4px;">
-                                    <button v-if="row.clock_in_at && !row.clock_out_at && canClockOutRow(row)" class="btn btn-ghost btn-sm" style="color:var(--ok);" @click="clockOut(row)" :title="t.clockOut">
-                                        <Icon name="log-out" :size="14" />
+                            <td style="text-align:end;">
+                                <div class="row-actions">
+                                    <button v-if="row.clock_in_at && !row.clock_out_at && canClockOutRow(row)" type="button" class="btn btn-row" @click="clockOut(row)">
+                                        <Icon name="log-out" :size="13" /><span>{{ t.actions.clockOut }}</span>
                                     </button>
-                                    <button v-if="is_hr_manager" class="btn btn-ghost btn-sm btn-icon" @click="openEdit(row)" :title="t.editTitle">
-                                        <Icon name="pencil" :size="13" />
+                                    <button v-if="is_hr_manager" type="button" class="btn btn-row" @click="openEdit(row)">
+                                        <Icon name="pencil" :size="13" /><span>{{ t.actions.edit }}</span>
                                     </button>
-                                    <button v-if="is_hr_manager" class="btn btn-ghost btn-sm btn-icon" @click="removeRow(row)" :title="t.deleteConfirm">
-                                        <Icon name="trash-2" :size="13" />
+                                    <button v-if="is_hr_manager" type="button" class="btn btn-row is-danger" @click="removeRow(row)">
+                                        <Icon name="trash-2" :size="13" /><span>{{ t.actions.delete }}</span>
                                     </button>
                                 </div>
                             </td>

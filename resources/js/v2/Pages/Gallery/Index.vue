@@ -25,6 +25,7 @@ const t = computed(() => isRtl.value ? {
     thTitle: 'الحالة', thService: 'العلاج', thDoctor: 'الطبيب', thStatus: 'الحالة على الموقع', thOrder: 'الترتيب', thActions: '',
     empty: 'لا توجد حالات بعد', live: 'ظاهر على الموقع', notLive: 'غير ظاهر', noConsent: 'بانتظار الموافقة', draftBadge: 'مسودة',
     totalT: 'إجمالي الحالات', liveT: 'ظاهرة على الموقع',
+    actions: { edit: 'تعديل', delete: 'حذف' },
     modal: {
         createTitle: 'حالة جديدة', editTitle: 'تعديل الحالة',
         titleEn: 'العنوان (إنجليزي)', titleAr: 'العنوان (عربي)',
@@ -44,6 +45,7 @@ const t = computed(() => isRtl.value ? {
     thTitle: 'Case', thService: 'Treatment', thDoctor: 'Doctor', thStatus: 'On the website', thOrder: 'Order', thActions: '',
     empty: 'No cases yet', live: 'Live', notLive: 'Not shown', noConsent: 'Consent missing', draftBadge: 'Draft',
     totalT: 'Total cases', liveT: 'Live on site',
+    actions: { edit: 'Edit', delete: 'Delete' },
     modal: {
         createTitle: 'New case', editTitle: 'Edit case',
         titleEn: 'Title (English)', titleAr: 'Title (Arabic)',
@@ -195,8 +197,10 @@ const doctorOptions = computed(() => form.branch_id
                         </td>
                         <td style="text-align:center;" class="mono">{{ c.sort_order }}</td>
                         <td style="text-align:end; white-space:nowrap;">
-                            <button class="btn btn-ghost btn-sm btn-icon" @click="openEdit(c)"><Icon name="pencil" :size="13" /></button>
-                            <button class="btn btn-ghost btn-sm btn-icon" @click="destroy(c)"><Icon name="trash-2" :size="13" /></button>
+                            <div class="row-actions">
+                                <button type="button" class="btn btn-row" @click="openEdit(c)"><Icon name="pencil" :size="13" /><span>{{ t.actions.edit }}</span></button>
+                                <button type="button" class="btn btn-row is-danger" @click="destroy(c)"><Icon name="trash-2" :size="13" /><span>{{ t.actions.delete }}</span></button>
+                            </div>
                         </td>
                     </tr>
                 </tbody>

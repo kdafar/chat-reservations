@@ -14,6 +14,7 @@ const pageProps = usePage()
 const isRtl = computed(() => (pageProps.props.locale ?? 'en') === 'ar')
 const isEdit = computed(() => props.mode === 'edit')
 const t = computed(() => isRtl.value ? {
+    actions: { remove: 'إزالة' },
     crumbs: 'القوالب', create: 'إنشاء قالب', edit: 'تعديل القالب', sub: 'أنشئ قالب رسالة وأرسله لمراجعة ميتا.',
     connected: 'متصل باسم', business: 'أعمال', save: 'حفظ كمسودة', submit: 'إرسال للمراجعة', cancel: 'إلغاء', preview: 'معاينة حيّة', realtime: 'فوري',
     basics: 'الأساسيات', name: 'اسم القالب', nameHint: 'أحرف صغيرة وأرقام وشرطة سفلية فقط.', category: 'الفئة', lang: 'اللغة',
@@ -25,6 +26,7 @@ const t = computed(() => isRtl.value ? {
     tips: 'نصائح', lockedNote: 'القالب معتمد/منشور — الحقول مقفلة.',
     bText: 'النص', bUrl: 'الرابط', bPhone: 'الهاتف',
 } : {
+    actions: { remove: 'Remove' },
     crumbs: 'Message Templates', create: 'Create Template', edit: 'Edit Template', sub: 'Build a message template and submit it for Meta review.',
     connected: 'Connected as', business: 'Business', save: 'Save draft', submit: 'Submit for Review', cancel: 'Cancel', preview: 'Live Preview', realtime: 'Realtime',
     basics: 'Basics', name: 'Template name', nameHint: 'Lowercase letters, numbers, and underscores only.', category: 'Category', lang: 'Language',
@@ -242,7 +244,7 @@ function submit(publish) {
                             <input v-model="b.text" class="input" :placeholder="t.bText" maxlength="25" style="flex:1;" />
                             <input v-if="b.type==='URL'" v-model="b.url" class="input" :placeholder="t.bUrl" style="flex:1.4;" />
                             <input v-if="b.type==='PHONE_NUMBER'" v-model="b.phone_number" class="input" :placeholder="t.bPhone" style="flex:1.4;" />
-                            <button type="button" class="btn btn-ghost btn-sm btn-icon" @click="removeButton(i)"><Icon name="x" :size="13" :style="{ color:'var(--destructive)' }" /></button>
+                            <button type="button" class="btn btn-row is-danger" @click="removeButton(i)"><Icon name="trash-2" :size="13" /><span>{{ t.actions.remove }}</span></button>
                         </div>
                         <div v-if="form.errors.buttons" class="err">{{ form.errors.buttons }}</div>
                     </div>

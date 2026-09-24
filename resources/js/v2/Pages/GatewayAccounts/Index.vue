@@ -33,6 +33,7 @@ const t = computed(() => isRtl.value ? {
     col: { account: 'الحساب', kind: 'النوع', method: 'الطريقة', gateway: 'البوابة', currency: 'العملة', owner: 'المالك', active: 'فعّال', default: 'افتراضي' },
     empty: 'لا توجد حسابات', clear: 'مسح', showing: 'عرض', of: 'من', yes: 'نعم',
     stats: { total: 'الكل', active: 'فعّال' },
+    actions: { delete: 'حذف', remove: 'إزالة' },
     modal: {
         createTitle: 'حساب دفع جديد', editTitle: 'تحرير الحساب',
         kindLabel: 'نوع الحساب', manual: 'طريقة يدوية / نقطة بيع', gateway: 'بوابة إلكترونية',
@@ -51,6 +52,7 @@ const t = computed(() => isRtl.value ? {
     col: { account: 'Account', kind: 'Kind', method: 'Method', gateway: 'Gateway', currency: 'Currency', owner: 'Owner', active: 'Active', default: 'Default' },
     empty: 'No accounts', clear: 'Clear', showing: 'Showing', of: 'of', yes: 'Yes',
     stats: { total: 'Total', active: 'Active' },
+    actions: { delete: 'Delete', remove: 'Remove' },
     modal: {
         createTitle: 'New gateway account', editTitle: 'Edit account',
         kindLabel: 'Account kind', manual: 'Manual / POS method', gateway: 'Online gateway',
@@ -191,8 +193,10 @@ const ownerColor = (o) => ({ system: 'var(--accent, #2563eb)', partner: 'var(--w
                         </td>
                         <td><Icon v-if="row.is_active" name="check" :size="15" style="color:var(--ok);" /><Icon v-else name="minus" :size="15" style="color:var(--fg-faint);" /></td>
                         <td><Icon v-if="row.is_default" name="star" :size="15" style="color:var(--warn, #d97706);" /><span v-else style="color:var(--fg-faint);">—</span></td>
-                        <td @click.stop>
-                            <button class="btn btn-ghost btn-sm btn-icon" :title="t.modal.deleteConfirm" @click="destroy(row)"><Icon name="trash-2" :size="14" /></button>
+                        <td @click.stop style="text-align:end;">
+                            <div class="row-actions">
+                                <button type="button" class="btn btn-row is-danger" @click="destroy(row)"><Icon name="trash-2" :size="13" /><span>{{ t.actions.delete }}</span></button>
+                            </div>
                         </td>
                     </tr>
                 </tbody>
@@ -275,7 +279,7 @@ const ownerColor = (o) => ({ system: 'var(--accent, #2563eb)', partner: 'var(--w
                 <div v-for="(c, i) in form.extra_credentials" :key="i" style="display:flex; gap:8px; margin-bottom:8px;">
                     <input v-model="c.key" type="text" class="input" :placeholder="t.modal.key" style="flex:1;" />
                     <input v-model="c.value" type="text" class="input" :placeholder="t.modal.value" style="flex:2;" />
-                    <button type="button" class="btn btn-ghost btn-sm btn-icon" @click="removeCred(i)"><Icon name="trash-2" :size="14" /></button>
+                    <button type="button" class="btn btn-row is-danger" @click="removeCred(i)"><Icon name="trash-2" :size="13" /><span>{{ t.actions.remove }}</span></button>
                 </div>
 
                 <!-- Settlement / clearing account (accountant only) -->

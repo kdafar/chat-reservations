@@ -16,6 +16,7 @@ const TYPES = ['keyword', 'welcome', 'finale', 'fallback']
 const RESPONSE_TYPES = ['text', 'link', 'image_upload', 'document_upload', 'buttons', 'list', 'template', 'flow']
 
 const t = computed(() => isRtl.value ? {
+    actions: { delete: 'حذف', remove: 'إزالة', add: 'إضافة' },
     title: 'محفّزات واتساب', eyebrow: 'واتساب', desc: 'قواعد الرد الآلي للبوت. للمسؤولين فقط.',
     searchPh: 'ابحث بالكلمة أو الرد…', new: 'محفّز جديد', allTypes: 'كل الأنواع', allReply: 'كل الردود',
     col: { active: 'مفعّل', type: 'النوع', reply: 'نوع الرد', keyword: 'الكلمات', preview: 'الرد (EN)', updated: 'تحديث' },
@@ -34,6 +35,7 @@ const t = computed(() => isRtl.value ? {
         save: 'حفظ', cancel: 'إلغاء', del: 'حذف هذا المحفّز؟', current: 'الحالي',
     },
 } : {
+    actions: { delete: 'Delete', remove: 'Remove', add: 'Add' },
     title: 'WhatsApp Triggers', eyebrow: 'WhatsApp', desc: "The bot's auto-reply rules. Admin-only.",
     searchPh: 'Search keyword or reply…', new: 'New trigger', allTypes: 'All types', allReply: 'All replies',
     col: { active: 'Active', type: 'Type', reply: 'Reply type', keyword: 'Keywords', preview: 'Reply (EN)', updated: 'Updated' },
@@ -185,7 +187,7 @@ function onMedia(e) { mediaFile.value = e.target.files[0] || null }
                         <td style="font-size:12px; color:var(--fg-subtle); max-width:200px;">{{ r.keyword.join(', ') || '—' }}</td>
                         <td style="font-size:12px; color:var(--fg-subtle); max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ r.response_message_en || '—' }}</td>
                         <td style="font-size:12px; color:var(--fg-faint);">{{ r.updated_at }}</td>
-                        <td @click.stop><button class="btn btn-ghost btn-sm btn-icon" @click="destroy(r)"><Icon name="trash-2" :size="14" /></button></td>
+                        <td @click.stop style="text-align:end;"><div class="row-actions"><button type="button" class="btn btn-row is-danger" @click="destroy(r)"><Icon name="trash-2" :size="13" /><span>{{ t.actions.delete }}</span></button></div></td>
                     </tr>
                 </tbody>
             </table>
@@ -264,7 +266,7 @@ function onMedia(e) { mediaFile.value = e.target.files[0] || null }
                         <div v-for="(b, i) in form.meta.buttons" :key="i" class="repeater-row">
                             <input v-model="b.title_en" class="input" :placeholder="t.m.titleEn" />
                             <input v-model="b.title_ar" class="input" :placeholder="t.m.titleAr" dir="rtl" />
-                            <button type="button" class="btn btn-ghost btn-sm btn-icon" @click="form.meta.buttons.splice(i, 1)"><Icon name="trash-2" :size="14" /></button>
+                            <button type="button" class="btn btn-row is-danger" @click="form.meta.buttons.splice(i, 1)"><Icon name="trash-2" :size="13" /><span>{{ t.actions.remove }}</span></button>
                         </div>
                     </template>
 
@@ -279,12 +281,12 @@ function onMedia(e) { mediaFile.value = e.target.files[0] || null }
                             <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
                                 <input v-model="s.title_en" class="input" :placeholder="t.m.sectionTitleEn" style="flex:1;" />
                                 <input v-model="s.title_ar" class="input" :placeholder="t.m.sectionTitleAr" style="flex:1;" dir="rtl" />
-                                <button type="button" class="btn btn-ghost btn-sm btn-icon" @click="form.meta.sections.splice(si, 1)"><Icon name="trash-2" :size="14" /></button>
+                                <button type="button" class="btn btn-row is-danger" @click="form.meta.sections.splice(si, 1)"><Icon name="trash-2" :size="13" /><span>{{ t.actions.remove }}</span></button>
                             </div>
                             <div v-for="(row, ri) in s.rows" :key="ri" class="repeater-row" style="padding-inline-start:12px;">
                                 <input v-model="row.title_en" class="input" :placeholder="t.m.titleEn" />
                                 <input v-model="row.title_ar" class="input" :placeholder="t.m.titleAr" dir="rtl" />
-                                <button type="button" class="btn btn-ghost btn-sm btn-icon" @click="s.rows.splice(ri, 1)"><Icon name="trash-2" :size="14" /></button>
+                                <button type="button" class="btn btn-row is-danger" @click="s.rows.splice(ri, 1)"><Icon name="trash-2" :size="13" /><span>{{ t.actions.remove }}</span></button>
                             </div>
                             <button type="button" class="btn btn-ghost btn-sm" style="margin-top:4px;" @click="addRow(s)"><Icon name="plus" :size="12" />{{ t.m.addRow }}</button>
                         </div>
@@ -300,12 +302,12 @@ function onMedia(e) { mediaFile.value = e.target.files[0] || null }
                     </div>
                     <div class="rgrid-2" style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:10px;">
                         <div>
-                            <div style="display:flex; justify-content:space-between; align-items:center;"><label class="label" style="margin:0;">{{ t.m.bodyParamsEn }}</label><button type="button" class="btn btn-ghost btn-sm btn-icon" @click="addParam(form.meta.body_params_en)"><Icon name="plus" :size="13" /></button></div>
-                            <div v-for="(p, i) in form.meta.body_params_en" :key="i" style="display:flex; gap:6px; margin-top:6px;"><input v-model="form.meta.body_params_en[i]" class="input" /><button type="button" class="btn btn-ghost btn-sm btn-icon" @click="form.meta.body_params_en.splice(i,1)"><Icon name="trash-2" :size="13" /></button></div>
+                            <div style="display:flex; justify-content:space-between; align-items:center;"><label class="label" style="margin:0;">{{ t.m.bodyParamsEn }}</label><button type="button" class="btn btn-ghost btn-sm" @click="addParam(form.meta.body_params_en)"><Icon name="plus" :size="13" />{{ t.actions.add }}</button></div>
+                            <div v-for="(p, i) in form.meta.body_params_en" :key="i" style="display:flex; gap:6px; margin-top:6px;"><input v-model="form.meta.body_params_en[i]" class="input" /><button type="button" class="btn btn-row is-danger" @click="form.meta.body_params_en.splice(i,1)"><Icon name="trash-2" :size="13" /><span>{{ t.actions.remove }}</span></button></div>
                         </div>
                         <div>
-                            <div style="display:flex; justify-content:space-between; align-items:center;"><label class="label" style="margin:0;">{{ t.m.bodyParamsAr }}</label><button type="button" class="btn btn-ghost btn-sm btn-icon" @click="addParam(form.meta.body_params_ar)"><Icon name="plus" :size="13" /></button></div>
-                            <div v-for="(p, i) in form.meta.body_params_ar" :key="i" style="display:flex; gap:6px; margin-top:6px;"><input v-model="form.meta.body_params_ar[i]" class="input" dir="rtl" /><button type="button" class="btn btn-ghost btn-sm btn-icon" @click="form.meta.body_params_ar.splice(i,1)"><Icon name="trash-2" :size="13" /></button></div>
+                            <div style="display:flex; justify-content:space-between; align-items:center;"><label class="label" style="margin:0;">{{ t.m.bodyParamsAr }}</label><button type="button" class="btn btn-ghost btn-sm" @click="addParam(form.meta.body_params_ar)"><Icon name="plus" :size="13" />{{ t.actions.add }}</button></div>
+                            <div v-for="(p, i) in form.meta.body_params_ar" :key="i" style="display:flex; gap:6px; margin-top:6px;"><input v-model="form.meta.body_params_ar[i]" class="input" dir="rtl" /><button type="button" class="btn btn-row is-danger" @click="form.meta.body_params_ar.splice(i,1)"><Icon name="trash-2" :size="13" /><span>{{ t.actions.remove }}</span></button></div>
                         </div>
                     </div>
                 </div>

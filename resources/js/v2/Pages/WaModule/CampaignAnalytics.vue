@@ -21,12 +21,14 @@ const t = computed(() => isRtl.value ? {
     deliveryRate: 'نسبة التسليم', readRate: 'نسبة القراءة', failRate: 'نسبة الفشل', avgDeliver: 'متوسط التسليم', avgRead: 'متوسط القراءة',
     col: { phone: 'الهاتف', name: 'الاسم', status: 'الحالة', sent: 'إرسال', delivered: 'تسليم', read: 'قراءة', error: 'الخطأ' },
     reason: 'السبب', code: 'الرمز', count: 'العدد', all: 'الكل', none: 'لا يوجد', showing: 'عرض', of: 'من',
+    actions: { retry: 'إعادة المحاولة' },
 } : {
     eyebrow: 'Campaign analytics', back: 'Back', funnel: 'Delivery funnel', failures: 'Failure reasons', recipients: 'Recipients', refresh: 'Refresh',
     sent: 'Sent', delivered: 'Delivered', read: 'Read', failed: 'Failed', pending: 'Pending', total: 'Total',
     deliveryRate: 'Delivery rate', readRate: 'Read rate', failRate: 'Fail rate', avgDeliver: 'Avg deliver', avgRead: 'Avg read',
     col: { phone: 'Phone', name: 'Name', status: 'Status', sent: 'Sent', delivered: 'Delivered', read: 'Read', error: 'Error' },
     reason: 'Reason', code: 'Code', count: 'Count', all: 'All', none: 'No failures 🎉', showing: 'Showing', of: 'of',
+    actions: { retry: 'Retry' },
 })
 
 const m = computed(() => props.metrics)
@@ -112,7 +114,7 @@ const stStyle = (s) => {
                         <td class="mono" style="font-size:11px; color:var(--fg-faint);">{{ r.delivered_at || '—' }}</td>
                         <td class="mono" style="font-size:11px; color:var(--fg-faint);">{{ r.read_at || '—' }}</td>
                         <td style="font-size:11px; color:#dc2626; max-width:180px;">{{ r.error || '' }}</td>
-                        <td style="width:60px;"><button v-if="isFailed(r.status)" class="btn btn-ghost btn-sm btn-icon" :title="'Retry'" @click="retry(r)"><Icon name="rotate-cw" :size="13" /></button></td>
+                        <td style="text-align:end;"><div class="row-actions"><button v-if="isFailed(r.status)" type="button" class="btn btn-row" @click="retry(r)"><Icon name="rotate-cw" :size="13" /><span>{{ t.actions.retry }}</span></button></div></td>
                     </tr>
                 </tbody>
             </table>

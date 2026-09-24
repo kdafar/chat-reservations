@@ -56,6 +56,7 @@ const t = computed(() => isRtl.value
             bio: 'نبذة', active: 'فعّال',
             save: 'حفظ', cancel: 'إلغاء',
             archiveConfirm: 'إخفاء الطبيب من القوائم النشطة؟',
+            archive: 'أرشفة', restore: 'استعادة', copyAll: 'نسخ للكل',
             slotLen: 'مدة الموعد (دقيقة)',
             slotLenHelp: 'اتركه فارغًا لاستخدام مدة الفرع',
             slotLenHelp2: 'يحدّد طول كل موعد لهذا الطبيب، وتُرتَّب مواعيده تباعًا بهذه المدة.',
@@ -93,6 +94,7 @@ const t = computed(() => isRtl.value
             bio: 'Bio', active: 'Active',
             save: 'Save', cancel: 'Cancel',
             archiveConfirm: 'Archive this doctor from active lists?',
+            archive: 'Archive', restore: 'Restore', copyAll: 'Copy to all',
             slotLen: 'Appointment length (min)',
             slotLenHelp: "Leave empty to use the branch's",
             slotLenHelp2: 'Sets how long each appointment with this doctor takes; their slots run back-to-back at this length.',
@@ -425,13 +427,15 @@ function rowIsArchived(row) { return !!row.deleted_at || !row.is_active }
                                     {{ rowIsArchived(row) ? t.active.inactive : t.active.active }}
                                 </span>
                             </td>
-                            <td @click.stop>
-                                <button v-if="can_edit && !rowIsArchived(row)" class="btn btn-ghost btn-sm btn-icon" :title="t.modal.archiveConfirm" @click="archive(row)">
-                                    <Icon name="archive" :size="14" />
-                                </button>
-                                <button v-else-if="can_edit" class="btn btn-ghost btn-sm btn-icon" title="Restore" @click="restore(row)">
-                                    <Icon name="undo-2" :size="14" />
-                                </button>
+                            <td @click.stop style="text-align:end;">
+                                <div class="row-actions">
+                                    <button v-if="can_edit && !rowIsArchived(row)" type="button" class="btn btn-row is-danger" @click="archive(row)">
+                                        <Icon name="archive" :size="13" /><span>{{ t.modal.archive }}</span>
+                                    </button>
+                                    <button v-else-if="can_edit" type="button" class="btn btn-row" @click="restore(row)">
+                                        <Icon name="undo-2" :size="13" /><span>{{ t.modal.restore }}</span>
+                                    </button>
+                                </div>
                             </td>
                         </tr>
                     </tbody>
@@ -555,8 +559,8 @@ function rowIsArchived(row) { return !!row.deleted_at || !row.is_active }
                                         <span class="hours-sep">–</span>
                                         <input v-model="row.end" type="time" class="input input-sm" />
                                         <span class="hours-window" v-if="windowLabel(row.day)">{{ t.modal.branchWindow }} {{ windowLabel(row.day) }}</span>
-                                        <button type="button" class="btn btn-ghost btn-sm" :title="t.modal.copyToAll" @click="copyToAllDays(row)">
-                                            <Icon name="copy" :size="12" />
+                                        <button type="button" class="btn btn-row" :title="t.modal.copyToAll" @click="copyToAllDays(row)">
+                                            <Icon name="copy" :size="13" /><span>{{ t.modal.copyAll }}</span>
                                         </button>
                                     </template>
                                     <div v-else class="hours-off">{{ t.off }}</div>

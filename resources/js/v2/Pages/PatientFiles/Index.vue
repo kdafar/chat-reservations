@@ -154,13 +154,13 @@ function downloadUrl(row, inline = false) {
                             <td class="mono" style="font-size:12px; color:var(--fg-subtle);">{{ fmtSize(row.size_bytes) }}</td>
                             <td style="font-size:12px; color:var(--fg-subtle);">{{ row.uploaded_by?.name || '—' }}</td>
                             <td class="mono" style="font-size:12px; color:var(--fg-subtle);">{{ row.created_at?.slice(0, 10) }}</td>
-                            <td>
-                                <div style="display:inline-flex; gap:4px;">
-                                    <a :href="downloadUrl(row, true)" target="_blank" class="btn btn-ghost btn-sm btn-icon" :title="t.view">
-                                        <Icon name="eye" :size="14" />
+                            <td style="text-align:end;">
+                                <div class="row-actions">
+                                    <a :href="downloadUrl(row, true)" target="_blank" class="btn btn-row">
+                                        <Icon name="eye" :size="13" /><span>{{ t.view }}</span>
                                     </a>
-                                    <a :href="downloadUrl(row)" class="btn btn-ghost btn-sm btn-icon" :title="t.download">
-                                        <Icon name="download" :size="14" />
+                                    <a :href="downloadUrl(row)" class="btn btn-row">
+                                        <Icon name="download" :size="13" /><span>{{ t.download }}</span>
                                     </a>
                                 </div>
                             </td>

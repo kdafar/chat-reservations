@@ -24,11 +24,11 @@ const t = computed(() => isRtl.value
     ? { title: 'تحويلات المخزون', sub: 'نقل المخزون بين الفروع — المركز الرئيسي يرسل للفرع.', new: 'تحويل جديد',
         from: 'من', to: 'إلى', items: 'الأصناف', status: 'الحالة', requestedBy: 'بواسطة', date: 'التاريخ', actions: '',
         dispatch: 'إرسال', cancel: 'إلغاء', empty: 'لا توجد تحويلات', all: 'الكل', pending: 'بالانتظار', dispatched: 'تم الإرسال', cancelled: 'ملغى',
-        modalTitle: 'تحويل مخزون جديد', source: 'الفرع المصدر', dest: 'الفرع الوجهة', hub: 'المركز الرئيسي', item: 'الصنف', qty: 'الكمية', onHand: 'متوفر', add: 'إضافة', notes: 'ملاحظات', save: 'إنشاء التحويل', close: 'إغلاق', pick: 'اختر…', noHub: 'لم يتم تعيين مركز رئيسي لهذه العيادة' }
+        modalTitle: 'تحويل مخزون جديد', source: 'الفرع المصدر', dest: 'الفرع الوجهة', hub: 'المركز الرئيسي', item: 'الصنف', qty: 'الكمية', onHand: 'متوفر', add: 'إضافة', notes: 'ملاحظات', save: 'إنشاء التحويل', close: 'إغلاق', pick: 'اختر…', noHub: 'لم يتم تعيين مركز رئيسي لهذه العيادة', actions: { remove: 'إزالة' } }
     : { title: 'Stock Transfers', sub: "Move stock between branches — the hub dispatches to a branch.", new: 'New transfer',
         from: 'From', to: 'To', items: 'Items', status: 'Status', requestedBy: 'By', date: 'Date', actions: '',
         dispatch: 'Dispatch', cancel: 'Cancel', empty: 'No transfers yet', all: 'All', pending: 'Pending', dispatched: 'Dispatched', cancelled: 'Cancelled',
-        modalTitle: 'New stock transfer', source: 'Source branch', dest: 'Destination branch', hub: 'Hub', item: 'Item', qty: 'Qty', onHand: 'on hand', add: 'Add', notes: 'Notes', save: 'Create transfer', close: 'Close', pick: 'Select…', noHub: 'No hub set for this clinic' })
+        modalTitle: 'New stock transfer', source: 'Source branch', dest: 'Destination branch', hub: 'Hub', item: 'Item', qty: 'Qty', onHand: 'on hand', add: 'Add', notes: 'Notes', save: 'Create transfer', close: 'Close', pick: 'Select…', noHub: 'No hub set for this clinic', actions: { remove: 'Remove' } })
 
 function setStatus(s) {
     router.get(route('v2.stock-transfers.index'), { status: s }, { preserveScroll: true, preserveState: true, replace: true })
@@ -202,7 +202,7 @@ const fmtDate = (d) => d ? new Date(d).toLocaleDateString([], { day: '2-digit', 
                                 <span style="font-size: 13px;">{{ itemName(l.clinic_item_id) }}</span>
                                 <span style="display: inline-flex; align-items: center; gap: 10px;">
                                     <span class="tnum" style="font-size: 13px;">×{{ l.qty_base }}</span>
-                                    <button class="btn btn-ghost btn-sm btn-icon" style="color: var(--destructive);" @click="removeLine(i)"><Icon name="trash-2" :size="13" /></button>
+                                    <button type="button" class="btn btn-row is-danger" @click="removeLine(i)"><Icon name="trash-2" :size="13" /><span>{{ t.actions.remove }}</span></button>
                                 </span>
                             </div>
                         </div>

@@ -26,7 +26,7 @@ const t = computed(() => isRtl.value ? {
     empty: 'لا توجد عروض',
     f: { name: 'الاسم', type: 'نوع الخصم', amount: 'مبلغ (د.ك)', percent: 'نسبة (%)', value: 'قيمة الخصم', scope: 'النطاق', scopeAll: 'كل الأصناف', scopeType: 'حسب النوع', scopeItems: 'أصناف محددة', scopeAllPackages: 'كل الباقات', scopePackages: 'باقات محددة', items: 'الأصناف', packages: 'الباقات', itemType: 'النوع', branch: 'الفرع', allBranches: '— كل الفروع —', starts: 'يبدأ في', ends: 'ينتهي في', prio: 'الأولوية', isActive: 'فعّال', pickItem: '— أضف صنفًا —', pickPackage: '— أضف باقة —' },
     types: { service: 'خدمة', consumable: 'مستهلك', product: 'منتج' },
-    save: 'حفظ', cancel: 'إلغاء', editTitle: 'تحرير العرض', createTitle: 'عرض جديد', del: 'حذف هذا العرض؟',
+    save: 'حفظ', cancel: 'إلغاء', editTitle: 'تحرير العرض', createTitle: 'عرض جديد', del: 'حذف هذا العرض؟', actions: { delete: 'حذف' },
     showing: 'عرض', of: 'من', more: 'أخرى',
     stats: { total: 'الكل', active: 'فعّال' },
 } : {
@@ -36,7 +36,7 @@ const t = computed(() => isRtl.value ? {
     empty: 'No promotions',
     f: { name: 'Name', type: 'Discount type', amount: 'Amount (KWD)', percent: 'Percent (%)', value: 'Discount value', scope: 'Applies to', scopeAll: 'All items', scopeType: 'By type', scopeItems: 'Specific items', scopeAllPackages: 'All packages', scopePackages: 'Specific packages', items: 'Items', packages: 'Packages', itemType: 'Type', branch: 'Branch', allBranches: '— All branches —', starts: 'Starts at', ends: 'Ends at', prio: 'Priority', isActive: 'Active', pickItem: '— Add an item —', pickPackage: '— Add a package —' },
     types: { service: 'Service', consumable: 'Consumable', product: 'Product' },
-    save: 'Save', cancel: 'Cancel', editTitle: 'Edit promotion', createTitle: 'New promotion', del: 'Delete this promotion?',
+    save: 'Save', cancel: 'Cancel', editTitle: 'Edit promotion', createTitle: 'New promotion', del: 'Delete this promotion?', actions: { delete: 'Delete' },
     showing: 'Showing', of: 'of', more: 'more',
     stats: { total: 'Total', active: 'Active' },
 })
@@ -168,7 +168,7 @@ function validityLabel(r) { return (!r.starts_at && !r.ends_at) ? '—' : `${r.s
                         <td class="tnum" style="text-align:end;">{{ row.priority }}</td>
                         <td style="text-align:end;">
                             <span :class="row.is_active ? 'badge badge-ok' : 'badge badge-muted'">{{ row.is_active ? t.active : t.inactive }}</span>
-                            <button class="btn btn-ghost btn-sm btn-icon" style="color:var(--destructive); margin-inline-start:6px;" @click.stop="destroy(row)"><Icon name="trash-2" :size="14" /></button>
+                            <button type="button" class="btn btn-row is-danger" style="margin-inline-start:8px;" @click.stop="destroy(row)"><Icon name="trash-2" :size="13" /><span>{{ t.actions.delete }}</span></button>
                         </td>
                     </tr>
                     <tr v-if="page.data.length === 0"><td colspan="6" style="text-align:center; padding:32px; color:var(--fg-subtle);">{{ t.empty }}</td></tr>

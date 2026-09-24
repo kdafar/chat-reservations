@@ -208,7 +208,7 @@ const isPackageRemoved = (row) => row.status === 'cancelled'
                 </div>
                 <div v-if="canAct && row.status === 'pending'" style="display:flex; gap:6px; flex-shrink:0;">
                     <button class="btn btn-primary btn-sm" @click="openFulfil(row)"><Icon name="check-circle" :size="13" /><span>{{ t.fulfill }}</span></button>
-                    <button class="btn btn-ghost btn-sm" style="color:var(--err, #dc2626);" @click="openCancel(row)"><Icon name="x-circle" :size="13" /></button>
+                    <button type="button" class="btn btn-row is-danger" @click="openCancel(row)"><Icon name="x-circle" :size="13" /><span>{{ t.cancel }}</span></button>
                 </div>
                 <div v-else-if="canAct && row.status === 'fulfilled'" style="display:flex; gap:6px; flex-shrink:0;">
                     <button class="btn btn-primary btn-sm" @click="openReceive(row)"><Icon name="package-check" :size="13" /><span>{{ t.receive }}</span></button>

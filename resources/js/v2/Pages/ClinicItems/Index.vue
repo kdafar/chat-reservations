@@ -39,7 +39,7 @@ const t = computed(() => isRtl.value ? {
     empty: 'لا توجد أصناف', showing: 'عرض', of: 'من',
     modal: { createTitle: 'صنف جديد', editTitle: 'تحرير الصنف', save: 'حفظ', cancel: 'إلغاء', deleteConfirm: 'حذف هذا الصنف؟', inventory: 'إعدادات المخزون', delete: 'حذف' },
     fields: { branch: 'الفرع', type: 'النوع', name_en: 'الاسم (إنجليزي)', name_ar: 'الاسم (عربي)', is_active: 'فعّال', is_stockable: 'قابل للتخزين', stock_unit: 'وحدة التخزين', usage_unit: 'وحدة الاستهلاك', conversion_factor: 'معامل التحويل', consume_step: 'خطوة الاستهلاك', is_billable: 'قابل للفوترة', default_cost: 'التكلفة الافتراضية', default_price: 'السعر الافتراضي', global: '— عام (كل الفروع) —', inventory_account: 'حساب المخزون', cogs_account: 'حساب تكلفة البضاعة', accountNone: 'افتراضي النظام', accountHelp: 'الحسابات التي تُرحَّل إليها قيمة مخزون هذا الصنف وتكلفته. تُترك للنظام إن لم تُحدَّد.' },
-    bom: { title: 'المستهلكات المستخدمة لكل خدمة', hint: 'أصناف تُخصم من المخزون في كل مرة تُؤدّى فيها هذه الخدمة.', add: 'إضافة مستهلك', item: 'الصنف', qty: 'الكمية (أساس)', optional: 'اختياري (لا يُخصم تلقائيًا)', empty: 'لا توجد مستهلكات بعد.', selectItem: '— اختر صنفًا —' },
+    bom: { title: 'المستهلكات المستخدمة لكل خدمة', hint: 'أصناف تُخصم من المخزون في كل مرة تُؤدّى فيها هذه الخدمة.', add: 'إضافة مستهلك', item: 'الصنف', qty: 'الكمية (أساس)', optional: 'اختياري (لا يُخصم تلقائيًا)', empty: 'لا توجد مستهلكات بعد.', selectItem: '— اختر صنفًا —', remove: 'إزالة' },
     stats: { total: 'الكل', active: 'فعّال' },
     cat: {
         field: 'الفئة', none: '— بدون فئة —', all: 'كل الفئات', uncategorised: 'بدون فئة', inactive: 'غير فعّالة',
@@ -58,7 +58,7 @@ const t = computed(() => isRtl.value ? {
     col: { name: 'Name', category: 'Category', branch: 'Branch', type: 'Type', stockable: 'Stockable', cost: 'Cost', price: 'Price', status: 'Status' },
     empty: 'No items', showing: 'Showing', of: 'of',
     modal: { createTitle: 'New item', editTitle: 'Edit item', save: 'Save', cancel: 'Cancel', deleteConfirm: 'Delete this item?', inventory: 'Inventory settings', delete: 'Delete' },
-    bom: { title: 'Consumables used per service', hint: 'Items deducted from stock each time this service is performed.', add: 'Add consumable', item: 'Item', qty: 'Qty (base)', optional: 'Optional (not auto-deducted)', empty: 'No consumables yet.', selectItem: '— Select an item —' },
+    bom: { title: 'Consumables used per service', hint: 'Items deducted from stock each time this service is performed.', add: 'Add consumable', item: 'Item', qty: 'Qty (base)', optional: 'Optional (not auto-deducted)', empty: 'No consumables yet.', selectItem: '— Select an item —', remove: 'Remove' },
     fields: { branch: 'Branch', type: 'Type', name_en: 'Name (English)', name_ar: 'Name (Arabic)', is_active: 'Active', is_stockable: 'Stockable', stock_unit: 'Stock unit', usage_unit: 'Usage unit', conversion_factor: 'Conversion factor', consume_step: 'Consume step', is_billable: 'Billable', default_cost: 'Default cost', default_price: 'Default price', global: '— Global (all branches) —', inventory_account: 'Inventory account', cogs_account: 'COGS account', accountNone: 'System default', accountHelp: "Accounts this item's stock value and cost of goods post to. Leave as system default if unset." },
     stats: { total: 'Total', active: 'Active' },
     cat: {
@@ -279,8 +279,10 @@ onMounted(() => { if (props.open_record) openEdit(props.open_record) })
                             <td class="mono" style="text-align:end;">{{ fmt(row.default_cost) }}</td>
                             <td class="mono" style="text-align:end;">{{ fmt(row.default_price) }}</td>
                             <td><span :class="row.is_active ? 'badge-ok' : 'badge-muted'">{{ row.is_active ? t.active : t.inactive }}</span></td>
-                            <td @click.stop>
-                                <button v-if="can_edit" class="btn btn-ghost btn-sm btn-icon" :title="t.modal.delete" @click="destroy(row)"><Icon name="trash-2" :size="14" /></button>
+                            <td @click.stop style="text-align:end;">
+                                <div class="row-actions">
+                                    <button v-if="can_edit" type="button" class="btn btn-row is-danger" @click="destroy(row)"><Icon name="trash-2" :size="13" /><span>{{ t.modal.delete }}</span></button>
+                                </div>
                             </td>
                         </tr>
                     </tbody>
@@ -401,7 +403,7 @@ onMounted(() => { if (props.open_record) openEdit(props.open_record) })
                             <SearchableSelect v-model="c.component_item_id" :items="componentItems" :nullable="false" :placeholder="t.bom.selectItem" :width="'100%'" style="flex:1; min-width:0;" />
                             <input v-model.number="c.qty_base" type="number" step="any" min="0.0001" class="input" style="width:110px;" :placeholder="t.bom.qty" />
                             <label class="role-check" :title="t.bom.optional" style="padding:6px 8px; white-space:nowrap;"><input type="checkbox" v-model="c.is_optional" /><span style="font-size:11.5px;">{{ t.bom.optional }}</span></label>
-                            <button type="button" class="btn btn-ghost btn-sm btn-icon" @click="removeComponent(i)"><Icon name="trash-2" :size="14" /></button>
+                            <button type="button" class="btn btn-row is-danger" @click="removeComponent(i)"><Icon name="trash-2" :size="13" /><span>{{ t.bom.remove }}</span></button>
                         </div>
                     </template>
 
@@ -436,7 +438,7 @@ onMounted(() => { if (props.open_record) openEdit(props.open_record) })
                             <div class="cat-count">{{ t.cat.count(row.items_count, row.packages_count) }}</div>
                         </div>
                         <label class="cat-active"><input type="checkbox" :checked="row.is_active" :disabled="catBusy" @change="toggleCategory(row)" /><span>{{ t.cat.active }}</span></label>
-                        <button type="button" class="btn btn-ghost btn-sm btn-icon" :title="t.cat.delete" :disabled="catBusy" @click="deleteCategory(row)"><Icon name="trash-2" :size="14" /></button>
+                        <button type="button" class="btn btn-row is-danger" :disabled="catBusy" @click="deleteCategory(row)"><Icon name="trash-2" :size="13" /><span>{{ t.cat.delete }}</span></button>
                     </div>
                     <form class="cat-row cat-add" @submit.prevent="addCategory">
                         <div class="cat-move"><Icon name="plus" :size="14" style="color:var(--fg-faint);" /></div>

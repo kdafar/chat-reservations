@@ -748,12 +748,12 @@ const visitsByMonth = computed(() => {
                                             {{ f.notes }}
                                         </div>
                                     </div>
-                                    <div style="display: inline-flex; gap: 6px; align-items: center;">
+                                    <div class="row-actions">
                                         <a
                                             :href="f.view_url"
                                             target="_blank"
                                             rel="noopener"
-                                            class="btn btn-outline btn-sm"
+                                            class="btn btn-row"
                                             style="text-decoration: none;"
                                             :title="fileT.view"
                                         >
@@ -762,29 +762,33 @@ const visitsByMonth = computed(() => {
                                         </a>
                                         <a
                                             :href="f.download_url"
-                                            class="btn btn-ghost btn-sm btn-icon"
+                                            class="btn btn-row"
+                                            style="text-decoration: none;"
                                             :title="fileT.download"
                                         >
                                             <Icon name="download" :size="13" />
+                                            <span class="file-action-label">{{ fileT.download }}</span>
                                         </a>
                                         <button
                                             v-if="permissions.files_upload"
                                             type="button"
-                                            class="btn btn-ghost btn-sm btn-icon"
+                                            class="btn btn-row"
                                             :title="fileT.edit"
                                             @click="openEdit(f)"
                                         >
                                             <Icon name="pencil" :size="13" />
+                                            <span class="file-action-label">{{ fileT.edit }}</span>
                                         </button>
                                         <Popover :width="320">
                                             <template #trigger="{ toggle }">
                                                 <button
                                                     type="button"
-                                                    class="btn btn-ghost btn-sm btn-icon"
+                                                    class="btn btn-row"
                                                     :title="fileT.logs"
                                                     @click="() => { loadLogs(f.id); toggle(); }"
                                                 >
                                                     <Icon name="history" :size="13" />
+                                                    <span class="file-action-label">{{ fileT.logs }}</span>
                                                 </button>
                                             </template>
                                             <template #default>
@@ -827,12 +831,12 @@ const visitsByMonth = computed(() => {
                                         <button
                                             v-if="permissions.files_delete"
                                             type="button"
-                                            class="btn btn-ghost btn-sm btn-icon"
+                                            class="btn btn-row is-danger"
                                             :title="fileT.del"
-                                            style="color: var(--destructive);"
                                             @click="askDelete(f)"
                                         >
                                             <Icon name="trash-2" :size="13" />
+                                            <span class="file-action-label">{{ fileT.del }}</span>
                                         </button>
                                     </div>
                                 </div>
@@ -1188,11 +1192,12 @@ const visitsByMonth = computed(() => {
     flex-wrap: wrap;
     align-items: center;
 }
+/* Phones: keep every label visible (icons alone were unclear) — the
+   buttons wrap two to a line instead of shrinking to bare icons. */
 @media (max-width: 720px) {
-    .file-action-label { display: none; }
     .pp-actions { width: 100%; }
-    .pp-actions .btn { flex: 1; min-width: 0; padding-inline: 10px; }
-    .pp-action-label { display: none; }
+    .pp-actions .btn { flex: 1 1 calc(50% - 4px); min-width: 0; padding-inline: 10px; }
+    .file-row .row-actions { flex-wrap: wrap; justify-content: flex-start; white-space: normal; }
 }
 .th {
     text-align: start;
