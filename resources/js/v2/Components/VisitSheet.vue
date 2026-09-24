@@ -1043,9 +1043,19 @@ const selectedMethod = computed(() => paymentMethods.value.find((m) => m.id === 
 const referenceRequired = computed(() => !!selectedMethod.value?.requires_reference)
 const onlinePaymentAvailable = computed(() => !!visit.value?.online_payment_available)
 
+// Default payment kind: consultation only while a consultation fee is still
+// owed. A free-of-charge doctor (fee 0) or an already-paid fee means the money
+// is for packages/items, so tag it that way.
+function defaultPayKind(v) {
+    const fee = v?.fee || {}
+    if ((fee.amount ?? 0) > 0 && !fee.consultation_paid) return 'consultation'
+    if ((v?.totals?.packages_price ?? 0) > 0) return 'services'
+    if ((v?.totals?.items_price ?? 0) > 0) return 'medicines'
+    return (fee.amount ?? 0) > 0 ? 'consultation' : 'other'
+}
 function openPaymentModal() {
     payAmount.value = totals.value.balance > 0 ? totals.value.balance.toFixed(3) : ''
-    payKind.value = 'consultation'
+    payKind.value = defaultPayKind(visit.value)
     payMethod.value = paymentMethods.value[0]?.id || 'cash'
     payRef.value = ''
     // reset any previously-generated link

@@ -81,7 +81,8 @@ class CheckinController extends Controller
             ->where('status', 'paid')
             ->sum('amount');
 
-        $fee = (float) ($booking->doctor->consultation_fee ?? 0);
+        // What the visit was billed once a fee was raised, else the doctor's fee.
+        $fee = app(\App\Services\Clinic\ConsultationFeeService::class)->forBooking($booking);
 
         return response()->json([
             'booking' => $this->summarizeBooking($booking, [
@@ -439,7 +440,8 @@ class CheckinController extends Controller
         //   1. VisitCharge with label='Consultation Fee' must exist (invoice raised)
         //   2. VisitPayment(kind=consultation, status=paid) > 0 must exist (money in)
         $visitId = Visit::query()->where('booking_id', $booking->id)->value('id');
-        $fee = (float) ($booking->doctor->consultation_fee ?? 0);
+        // 0 = the doctor works free of charge, and nothing has been billed.
+        $fee = app(\App\Services\Clinic\ConsultationFeeService::class)->forBooking($booking);
 
         if ($fee > 0) {
             $hasCharge = $visitId

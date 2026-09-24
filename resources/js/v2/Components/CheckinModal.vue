@@ -631,7 +631,8 @@ function fmtMoney(n) { return (Number(n) || 0).toFixed(3) }
                             <div style="font-size: 13px; color: var(--fg-muted); margin-top: 4px;">
                                 {{ booking?.patient?.name }} · {{ booking?.booking_code }}
                             </div>
-                            <div style="margin-top: 16px; display: inline-flex; gap: 8px; flex-wrap: wrap; justify-content: center;">
+                            <!-- Nothing was billed or paid for a free-of-charge doctor — no paper to print. -->
+                            <div v-if="(booking?.fee ?? 0) > 0" style="margin-top: 16px; display: inline-flex; gap: 8px; flex-wrap: wrap; justify-content: center;">
                                 <button type="button" class="btn btn-outline" :disabled="!!printing" @click="printPaper('receipt')">
                                     <Icon :name="printing === 'receipt' ? 'loader' : 'printer'" :size="14" :class="{ 'ci-spin': printing === 'receipt' }" />
                                     {{ t.printReceipt }}

@@ -484,10 +484,20 @@ async function submitInsurance() {
     } finally { insuranceApplying.value = false }
 }
 
+// Default payment kind: consultation only while a consultation fee is still
+// owed. A free-of-charge doctor (fee 0) or an already-paid fee means the money
+// is for packages/items, so tag it that way.
+function defaultPayKind(v) {
+    const fee = v?.fee || {}
+    if ((fee.amount ?? 0) > 0 && !fee.consultation_paid) return 'consultation'
+    if ((v?.totals?.packages_price ?? 0) > 0) return 'services'
+    if ((v?.totals?.items_price ?? 0) > 0) return 'medicines'
+    return (fee.amount ?? 0) > 0 ? 'consultation' : 'other'
+}
 function openAddPayment(kindHint) {
     addPaymentOpen.value = true
     addPaymentAmount.value = ''
-    addPaymentKind.value = kindHint || 'consultation'
+    addPaymentKind.value = kindHint || defaultPayKind(props.visit)
     addPaymentMethod.value = 'cash'
     addPaymentRef.value = ''
 }

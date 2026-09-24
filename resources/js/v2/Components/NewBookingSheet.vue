@@ -196,7 +196,7 @@ const doctorItems = computed(() => {
     return list.map((d) => ({
         value: d.id,
         label: d.name,
-        sublabel: d.consultation_fee > 0 ? (Number(d.consultation_fee).toFixed(3) + ' ' + t.value.kwd) : null,
+        sublabel: d.consultation_fee > 0 ? (Number(d.consultation_fee).toFixed(3) + ' ' + t.value.kwd) : (isRtl.value ? 'مجاني' : 'Free'),
     }))
 })
 const selectedDoctor = computed(() => doctors.value.find((d) => Number(d.id) === Number(form.doctor_id)) ?? null)

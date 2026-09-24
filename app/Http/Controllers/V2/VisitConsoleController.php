@@ -1891,6 +1891,12 @@ class VisitConsoleController extends Controller
             return false;
         }
 
+        // Nothing billed (a free-of-charge doctor, no items) — nothing to
+        // claim, so don't make reception file a 0.000 claim or skip one.
+        if (app(\App\Services\Clinic\VisitBalanceService::class)->billed($visit) <= \App\Services\Clinic\VisitBalanceService::TOLERANCE) {
+            return false;
+        }
+
         // Already filed a (non-void) claim — let it through.
         $hasClaim = \App\Models\Insurance\InsuranceClaim::query()
             ->where('visit_id', $visit->id)
@@ -2221,12 +2227,22 @@ class VisitConsoleController extends Controller
             return response()->json(['ok' => false, 'error' => "Selected doctor is not at this visit's branch."], 422);
         }
 
-        \Illuminate\Support\Facades\DB::transaction(function () use ($visit, $doctor) {
-            $visit->forceFill(['doctor_id' => $doctor->id, 'updated_by_user_id' => auth()->id()])->save();
-            if ($visit->booking_id) {
-                \App\Models\Booking::query()->where('id', $visit->booking_id)->update(['doctor_id' => $doctor->id]);
-            }
-        });
+        try {
+            \Illuminate\Support\Facades\DB::transaction(function () use ($visit, $doctor) {
+                // The consultation is billed at the treating doctor's fee —
+                // moving a patient from a free doctor to a paid one (or back)
+                // must re-price it, or the visit is discharged at the old price.
+                app(\App\Services\Clinic\ConsultationFeeService::class)->repriceForDoctor($visit, $doctor);
+
+                $visit->forceFill(['doctor_id' => $doctor->id, 'updated_by_user_id' => auth()->id()])->save();
+                if ($visit->booking_id) {
+                    \App\Models\Booking::query()->where('id', $visit->booking_id)->update(['doctor_id' => $doctor->id]);
+                }
+            });
+        } catch (\RuntimeException $e) {
+            return response()->json(['ok' => false, 'error' => $e->getMessage()], 422);
+        }
+        $this->recomputeTotals($visit->fresh());
 
         return response()->json(['ok' => true, 'doctor' => ['id' => $doctor->id, 'name' => $doctor->name]]);
     }
@@ -2295,7 +2311,8 @@ class VisitConsoleController extends Controller
             }
         }
 
-        $feeAmount = (float) ($v->doctor->consultation_fee ?? 0);
+        // The billed consultation charge once raised, else the doctor's fee (0 = free).
+        $feeAmount = app(\App\Services\Clinic\ConsultationFeeService::class)->forVisit($v);
         $paidConsultation = (float) VisitPayment::query()
             ->where('visit_id', $v->id)
             ->where('kind', VisitPayment::KIND_CONSULTATION)

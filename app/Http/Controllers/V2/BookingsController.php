@@ -143,7 +143,7 @@ class BookingsController extends Controller
         $booking->load(['patient', 'doctor', 'branch']);
 
         $visit = Visit::query()->where('booking_id', $booking->id)->first();
-        $fee = (float) ($booking->doctor->consultation_fee ?? 0);
+        $fee = app(\App\Services\Clinic\ConsultationFeeService::class)->forBooking($booking);
         $paid = 0.0;
         if ($visit) {
             $paid = (float) VisitPayment::query()
@@ -506,7 +506,24 @@ class BookingsController extends Controller
             $update['notes'] = $data['notes'];
         }
 
-        $apply = fn () => $booking->update($update);
+        $apply = function () use ($booking, $update, $data) {
+            $booking->update($update);
+
+            // A fee taken at the desk before check-in already raised the
+            // visit's consultation charge at the old doctor's price — follow
+            // the booking to the new doctor and re-price it (free ↔ paid).
+            if (! empty($data['doctor_id'])) {
+                $visit = Visit::query()->where('booking_id', $booking->id)->first();
+                if ($visit && (int) $visit->doctor_id !== (int) $data['doctor_id']) {
+                    $doctor = Doctor::query()->withoutGlobalScopes()->findOrFail((int) $data['doctor_id']);
+                    app(\App\Services\Clinic\ConsultationFeeService::class)->repriceForDoctor($visit, $doctor);
+                    $visit->forceFill(['doctor_id' => $doctor->id, 'updated_by_user_id' => auth()->id()])->save();
+                    if (config('clinic.visit_financials_enabled', false)) {
+                        app(\App\Services\Clinic\VisitCostingService::class)->compute($visit->fresh(), (int) (auth()->id() ?? 0));
+                    }
+                }
+            }
+        };
 
         // Handing the appointment to a different doctor has to respect that
         // doctor's hours and existing bookings — the time isn't moving, but
@@ -516,21 +533,25 @@ class BookingsController extends Controller
             && $booking->res_date && $booking->res_time
             && ! in_array($booking->status, [Booking::S_CANCELLED, Booking::S_COMPLETED, Booking::S_NO_SHOW], true);
 
-        if ($reassigning) {
-            [$ok, $problem] = $svc->guardedBooking(
-                (int) $booking->branch_id,
-                (int) $data['doctor_id'],
-                Carbon::parse($booking->res_date)->toDateString(),
-                substr((string) $booking->res_time, 0, 5),
-                $booking->id,
-                $apply,
-            );
+        try {
+            if ($reassigning) {
+                [$ok, $problem] = $svc->guardedBooking(
+                    (int) $booking->branch_id,
+                    (int) $data['doctor_id'],
+                    Carbon::parse($booking->res_date)->toDateString(),
+                    substr((string) $booking->res_time, 0, 5),
+                    $booking->id,
+                    $apply,
+                );
 
-            if (! $ok) {
-                return response()->json(['ok' => false, 'error' => $problem], 422);
+                if (! $ok) {
+                    return response()->json(['ok' => false, 'error' => $problem], 422);
+                }
+            } else {
+                DB::transaction($apply);
             }
-        } else {
-            $apply();
+        } catch (\RuntimeException $e) {
+            return response()->json(['ok' => false, 'error' => $e->getMessage()], 422);
         }
 
         return response()->json(['ok' => true]);

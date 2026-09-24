@@ -43,12 +43,12 @@ const t = computed(() => isRtl.value
         new: 'طبيب جديد',
         active: { all: 'الكل', active: 'فعّال', inactive: 'مؤرشف' },
         col: { name: 'الاسم', specialty: 'التخصص', branch: 'الفرع', phone: 'الهاتف', license: 'الترخيص', fee: 'الرسوم', status: 'الحالة' },
-        empty: 'لا يوجد أطباء', emptyDesc: 'أضف طبيبًا لتبدأ.',
+        freeBadge: 'مجاني', empty: 'لا يوجد أطباء', emptyDesc: 'أضف طبيبًا لتبدأ.',
         clear: 'مسح', branchAll: 'كل الفروع', previous: 'السابق', next: 'التالي', showing: 'عرض', of: 'من',
         modal: {
             createTitle: 'طبيب جديد', editTitle: 'تحرير بيانات الطبيب',
             name: 'الاسم', specialty: 'التخصص', phone: 'الهاتف', email: 'البريد', license: 'رقم الترخيص',
-            fee: 'رسوم الاستشارة (د.ك)', branch: 'الفرع', partner: 'العيادة',
+            fee: 'رسوم الاستشارة (د.ك)', free: 'بدون رسوم (مجاني)', freeHelp: 'لا تُحصَّل رسوم استشارة، ويتخطى تسجيل الوصول خطوة الدفع.', branch: 'الفرع', partner: 'العيادة',
             emailHelp: 'يُنشأ حساب دخول للطبيب بهذا البريد، وتظهر كلمة المرور المؤقتة مرة واحدة.',
             emailLocked: 'البريد هو حساب الدخول ولا يمكن تغييره بعد الإنشاء.',
             pickPartnerFirst: 'اختر العيادة أولاً',
@@ -80,12 +80,12 @@ const t = computed(() => isRtl.value
         new: 'New doctor',
         active: { all: 'All', active: 'Active', inactive: 'Archived' },
         col: { name: 'Name', specialty: 'Specialty', branch: 'Branch', phone: 'Phone', license: 'License', fee: 'Fee', status: 'Status' },
-        empty: 'No doctors yet', emptyDesc: 'Add a doctor to get started.',
+        freeBadge: 'Free', empty: 'No doctors yet', emptyDesc: 'Add a doctor to get started.',
         clear: 'Clear', branchAll: 'All branches', previous: 'Previous', next: 'Next', showing: 'Showing', of: 'of',
         modal: {
             createTitle: 'New doctor', editTitle: 'Edit doctor',
             name: 'Name', specialty: 'Specialty', phone: 'Phone', email: 'Email', license: 'License #',
-            fee: 'Consultation fee (KWD)', branch: 'Branch', partner: 'Clinic',
+            fee: 'Consultation fee (KWD)', free: 'Free of charge', freeHelp: 'No consultation fee is collected; check-in skips the payment step.', branch: 'Branch', partner: 'Clinic',
             emailHelp: "Creates the doctor's login account; a temporary password is shown once.",
             emailLocked: "Email is the login account and can't be changed after creation.",
             pickPartnerFirst: 'Pick a clinic first',
@@ -141,7 +141,7 @@ function blankHours() {
 
 const form = reactive({
     name: '', specialty: '', phone: '', email: '', license_number: '',
-    consultation_fee: 1, branch_id: '', partner_id: '', restaurant_table_id: '',
+    consultation_fee: 1, free_of_charge: false, branch_id: '', partner_id: '', restaurant_table_id: '',
     default_slot_minutes: '', bio: '', is_active: true, working_hours: blankHours(),
 })
 const errors = ref({})
@@ -266,7 +266,7 @@ function openCreate() {
     modalMode.value = 'create'; editing.value = null
     Object.assign(form, {
         name: '', specialty: '', phone: '', email: '', license_number: '',
-        consultation_fee: 1, restaurant_table_id: '', bio: '', is_active: true,
+        consultation_fee: 1, free_of_charge: false, restaurant_table_id: '', bio: '', is_active: true,
         default_slot_minutes: '', working_hours: blankHours(),
         ...defaultAssignment(),
     })
@@ -279,7 +279,8 @@ function openEdit(row) {
         name: row.name || '', specialty: row.specialty || '',
         phone: row.phone || '', email: row.email || '',
         license_number: row.license_number || '',
-        consultation_fee: Number(row.consultation_fee ?? 1),
+        free_of_charge: Number(row.consultation_fee ?? 0) <= 0,
+        consultation_fee: Number(row.consultation_fee ?? 0) > 0 ? Number(row.consultation_fee) : 1,
         branch_id: row.branch_id || '', partner_id: row.partner_id || '',
         restaurant_table_id: row.restaurant_table_id || '',
         default_slot_minutes: row.default_slot_minutes ?? '',
@@ -415,7 +416,10 @@ function rowIsArchived(row) { return !!row.deleted_at || !row.is_active }
                                     {{ row.default_slot_minutes }} {{ isRtl ? 'د/موعد' : 'min/appt' }}
                                 </div>
                             </td>
-                            <td class="mono" style="text-align:end;">{{ fmt(row.consultation_fee) }}</td>
+                            <td class="mono" style="text-align:end;">
+                                <span v-if="Number(row.consultation_fee ?? 0) <= 0" class="badge badge-success">{{ t.freeBadge }}</span>
+                                <template v-else>{{ fmt(row.consultation_fee) }}</template>
+                            </td>
                             <td>
                                 <span :class="rowIsArchived(row) ? 'badge-muted' : 'badge-ok'">
                                     {{ rowIsArchived(row) ? t.active.inactive : t.active.active }}
@@ -487,8 +491,13 @@ function rowIsArchived(row) { return !!row.deleted_at || !row.is_active }
                         <div v-if="errors.license_number" class="err">{{ errors.license_number }}</div>
                     </div>
                     <div>
-                        <label class="label">{{ t.modal.fee }} <span class="req">*</span></label>
-                        <input v-model.number="form.consultation_fee" type="number" step="any" min="0.001" class="input" required />
+                        <label class="label">{{ t.modal.fee }} <span v-if="!form.free_of_charge" class="req">*</span></label>
+                        <input v-if="!form.free_of_charge" v-model.number="form.consultation_fee" type="number" step="any" min="0.001" class="input" required />
+                        <div style="display:flex; align-items:center; gap:8px; margin-top:6px;">
+                            <input id="d_free" v-model="form.free_of_charge" type="checkbox" />
+                            <label for="d_free" style="font-size:13px;">{{ t.modal.free }}</label>
+                        </div>
+                        <div v-if="form.free_of_charge" style="font-size:12px; color:var(--fg-subtle); margin-top:4px;">{{ t.modal.freeHelp }}</div>
                         <div v-if="errors.consultation_fee" class="err">{{ errors.consultation_fee }}</div>
                     </div>
                     <div>

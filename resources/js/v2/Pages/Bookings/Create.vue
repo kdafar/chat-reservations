@@ -144,7 +144,7 @@ const doctorItems = computed(() => {
     return list.map((d) => ({
         value: d.id,
         label: d.name,
-        sublabel: d.consultation_fee > 0 ? (formatMoney(d.consultation_fee) + ' ' + t.value.kwd) : null,
+        sublabel: d.consultation_fee > 0 ? (formatMoney(d.consultation_fee) + ' ' + t.value.kwd) : (isRtl.value ? 'مجاني' : 'Free'),
     }))
 })
 

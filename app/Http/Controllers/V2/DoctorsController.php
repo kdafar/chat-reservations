@@ -307,8 +307,13 @@ class DoctorsController extends Controller
                 ? ['required', 'email', 'max:191', Rule::unique('users', 'email')]
                 : ['nullable', 'email', 'max:191'],
             'license_number' => ['nullable', 'string', 'max:64', Rule::unique('doctors', 'license_number')->ignore($exceptId)->whereNull('deleted_at')],
-            // Consultation fee is mandatory and must be > 0 (matches old admin).
-            'consultation_fee' => ['required', 'numeric', 'gt:0'],
+            // A fee of 0 means the doctor works free of charge — check-in then
+            // skips the fee step. It must be chosen explicitly via the
+            // free_of_charge toggle so a forgotten fee can't slip through as 0.
+            'free_of_charge' => ['sometimes', 'boolean'],
+            'consultation_fee' => $request->boolean('free_of_charge')
+                ? ['nullable', 'numeric', 'min:0']
+                : ['required', 'numeric', 'gt:0'],
             // How long one appointment with this doctor takes. Empty = inherit
             // the branch's appointment length.
             'default_slot_minutes' => ['nullable', 'integer', 'min:5', 'max:480'],
@@ -332,6 +337,10 @@ class DoctorsController extends Controller
         ]);
         $data['is_active'] = (bool) $request->input('is_active', true);
         $data['default_slot_minutes'] = $data['default_slot_minutes'] ?? null;
+        if ($request->boolean('free_of_charge')) {
+            $data['consultation_fee'] = 0;
+        }
+        unset($data['free_of_charge']);
 
         if ($request->has('working_hours')) {
             $data['working_hours'] = $this->validatedWorkingHours(

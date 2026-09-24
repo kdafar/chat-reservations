@@ -87,6 +87,12 @@ class WaitingPatientsController extends Controller
         // booking onto the visit card — two bulk queries for the whole screen.
         $requestedPackageByVisit = $this->requestedPackageByVisit($visitRows);
 
+        // Consultation fee per card: the billed charge once raised, else the
+        // doctor's current fee (0 = free of charge). Bulk, one query each.
+        $feeSvc = app(\App\Services\Clinic\ConsultationFeeService::class);
+        $feeByVisit = $feeSvc->forVisits($visitRows);
+        $feeByBooking = $feeSvc->forBookings($bookingRows);
+
         $visits = $visitRows->map(fn (Visit $v) => $this->transform(
             $v,
             (float) ($paidByVisit[$v->id] ?? 0),
@@ -94,12 +100,14 @@ class WaitingPatientsController extends Controller
             $policyByPatient[$v->patient_id] ?? null,
             $labByVisit[$v->id] ?? null,
             $requestedPackageByVisit[$v->id] ?? null,
+            $feeByVisit[$v->id] ?? null,
         ));
         $pendingCheckins = $bookingRows->map(fn (Booking $b) => $this->transformBooking(
             $b,
             (float) ($paidByBooking[$b->id] ?? 0),
             (float) ($allPaidByBooking[$b->id] ?? 0),
             $policyByPatient[$b->patient_id] ?? null,
+            $feeByBooking[$b->id] ?? null,
         ));
 
         $combined = $pendingCheckins->concat($visits)->values();
@@ -211,14 +219,14 @@ class WaitingPatientsController extends Controller
             ->orderBy('res_time');
     }
 
-    protected function transformBooking(Booking $b, float $paid = 0.0, float $paidTotal = 0.0, ?array $policy = null): array
+    protected function transformBooking(Booking $b, float $paid = 0.0, float $paidTotal = 0.0, ?array $policy = null, ?float $fee = null): array
     {
         $age = null;
         if ($b->patient && $b->patient->dob) {
             try { $age = Carbon::parse($b->patient->dob)->age; } catch (\Throwable) {}
         }
 
-        $fee = (float) ($b->doctor->consultation_fee ?? 0);
+        $fee ??= (float) ($b->doctor->consultation_fee ?? 0);
 
         return [
             // Booking rows are mixed into the visits array but use a
@@ -395,14 +403,14 @@ class WaitingPatientsController extends Controller
         return $out;
     }
 
-    protected function transform(Visit $v, float $paidConsultation = 0.0, float $paidTotal = 0.0, ?array $policy = null, ?array $lab = null, ?array $requestedPackage = null): array
+    protected function transform(Visit $v, float $paidConsultation = 0.0, float $paidTotal = 0.0, ?array $policy = null, ?array $lab = null, ?array $requestedPackage = null, ?float $consultationFee = null): array
     {
         $age = null;
         if ($v->patient && $v->patient->dob) {
             try { $age = Carbon::parse($v->patient->dob)->age; } catch (\Throwable) {}
         }
 
-        $consultationFee = (float) ($v->doctor->consultation_fee ?? 0);
+        $consultationFee ??= (float) ($v->doctor->consultation_fee ?? 0);
 
         // Outstanding balance from the visit's own snapshot columns minus the
         // bulk all-kind paid total — avoids calling VisitCostingService per row.
